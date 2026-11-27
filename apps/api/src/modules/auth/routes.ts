@@ -1,16 +1,33 @@
-import { adminLoginSchema, changePasswordSchema } from '@cenario/shared';
-import type { FastifyInstance } from 'fastify';
+import {
+  DEFAULT_ROLE_SKILLS,
+  EVENT_TYPES,
+  GESTOR_ROLE_KEY,
+  adminLoginSchema,
+  changePasswordSchema,
+  signupSchema,
+} from '@cenario/shared';
+import { createCompanyContent, isUniqueViolation } from '@cenario/db';
+import { appendEvent } from '../../core/events/append';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { loginSecondStepSchema, type Permission } from '@cenario/shared';
+import { normalizeRecovery, openSecret, verifyTotp } from '../../lib/totp';
 import { actorFrom, audit } from '../../core/audit';
 import { loadUserPermissions } from '../../core/permissions';
 import { createSession, revokeSessions } from '../../core/sessions';
 import { AuthThrottle, POLICIES, clientIpKey } from '../../core/throttle';
-import { burnVerification, hashSecret, verifySecret } from '../../lib/crypto';
+import { burnVerification, hashSecret, safeEqual, verifySecret } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { cookieOptions } from '../../plugins/auth';
-import { buildMe } from '../presenters';
+import { buildMe, employeeEventPayload } from '../presenters';
+import { captchaFailed } from '../../core/captcha';
+import { platformConfig } from '../../core/platform-config';
+import { sendConfirmationEmail } from '../account/emails';
+import { maybeSendNewDeviceEmail, sendPasswordChangedEmail } from '../../core/security-emails';
+import { LEGAL_VERSION, signupExtrasSchema, signupSourceFrom } from '@cenario/shared';
 
 export async function authRoutes(app: FastifyInstance) {
-  const { prisma, env, hashToken, cookies } = app.ctx;
+  const { prisma, system, env, hashToken, cookies } = app.ctx;
+  const webUrl = () => env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!;
   const throttle = new AuthThrottle(prisma);
 
   /** Login do painel administrativo (e-mail + senha). */
@@ -20,9 +37,13 @@ export async function authRoutes(app: FastifyInstance) {
     const ipKey = clientIpKey(request, 'ip');
     await throttle.assertAllowed([accountKey, ipKey]);
 
-    const user = await prisma.user.findUnique({
+    // Multi-empresa: o e-mail é único no sistema todo e diz de qual empresa é o usuário.
+    const user = await system.user.findUnique({
       where: { email: input.email },
-      include: { employee: { select: { active: true } } },
+      include: {
+        employee: { select: { active: true } },
+        company: { select: { blockedAt: true } },
+      },
     });
     const ok = user?.passwordHash
       ? await verifySecret(user.passwordHash, input.password)
@@ -35,14 +56,58 @@ export async function authRoutes(app: FastifyInstance) {
       throw Errors.invalidCredentials('E-mail ou senha incorretos.');
     }
 
+    if (user.company.blockedAt) {
+      throw Errors.forbidden(
+        'O acesso desta empresa está bloqueado. Fale com o suporte do Cenário.',
+      );
+    }
+    if (request.tenant) request.tenant.companyId = user.companyId;
     const permissions = await loadUserPermissions(prisma, user.id);
     if (!permissions.has('painel.acessar')) {
       throw Errors.forbidden('Seu usuário não tem acesso ao painel administrativo.');
     }
     await throttle.reset(accountKey);
 
+    // Melhoria 98: com a verificação em duas etapas ligada, a senha certa só devolve um desafio;
+    // a sessão nasce no segundo passo, com o código do celular.
+    if (user.totpEnabledAt && user.totpSecret)
+      return { twoFactorRequired: true, challenge: loginChallenge(user.id) };
+    return startWebSession(request, reply, user, permissions, 'auth.login');
+  });
+
+  const CHALLENGE_MS = 5 * 60_000;
+  function loginChallenge(userId: string) {
+    const exp = Date.now() + CHALLENGE_MS;
+    return `${userId}.${exp}.${hashToken(`desafio-2fa:${userId}:${exp}`).slice(0, 32)}`;
+  }
+  function challengeUser(challenge: string): string | null {
+    const [userId, exp, sig] = challenge.split('.');
+    if (!userId || !exp || !sig || Number(exp) < Date.now()) return null;
+    const want = hashToken(`desafio-2fa:${userId}:${exp}`).slice(0, 32);
+    return want.length === sig.length && safeEqual(want, sig) ? userId : null;
+  }
+
+  async function startWebSession(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    user: { id: string; displayName: string },
+    permissions: Set<Permission>,
+    action: string,
+  ) {
     const actor = { ...actorFrom(request), userId: user.id };
     const { session, token } = await prisma.$transaction(async (tx) => {
+      // Segurança (26/11/2026): entrada num aparelho novo vira e-mail para a pessoa.
+      const person = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { email: true, supportAgent: true },
+      });
+      if (person && !person.supportAgent)
+        await maybeSendNewDeviceEmail(
+          tx,
+          { id: user.id, email: person.email, displayName: user.displayName },
+          request.headers['user-agent'],
+          webUrl(),
+        );
       const created = await createSession(tx, env, hashToken, {
         kind: 'WEB',
         userId: user.id,
@@ -55,10 +120,10 @@ export async function authRoutes(app: FastifyInstance) {
         tx,
         { ...actor, sessionId: created.session.id },
         {
-          action: 'auth.login',
+          action,
           entityType: 'session',
           entityId: created.session.id,
-          summary: `${user.displayName} entrou no painel administrativo.`,
+          summary: `${user.displayName} entrou no painel administrativo${action === 'auth.login_2fa' ? ' (com verificação em duas etapas)' : ''}.`,
         },
       );
       return created;
@@ -74,6 +139,192 @@ export async function authRoutes(app: FastifyInstance) {
       expiresAt: session.expiresAt,
       permissions,
     });
+  }
+
+  /** Melhoria 98: segundo passo do login (código do aplicativo ou um código de recuperação). */
+  app.post(
+    '/api/auth/login/2fa',
+    { config: { access: { public: true } } },
+    async (request, reply) => {
+      const input = loginSecondStepSchema.parse(request.body);
+      const userId = challengeUser(input.challenge);
+      if (!userId) throw Errors.business('O tempo para digitar o código acabou. Entre de novo.');
+      const key = `2fa:${userId}`;
+      const ipKey = clientIpKey(request, 'ip');
+      await throttle.assertAllowed([key, ipKey]);
+      const user = await system.user.findUnique({
+        where: { id: userId },
+        include: {
+          employee: { select: { active: true } },
+          company: { select: { blockedAt: true } },
+        },
+      });
+      if (!user || !user.active || user.employee?.active === false || !user.totpSecret)
+        throw Errors.invalidCredentials('Entre de novo.');
+      if (user.company.blockedAt)
+        throw Errors.forbidden(
+          'O acesso desta empresa está bloqueado. Fale com o suporte do Cenário.',
+        );
+      if (request.tenant) request.tenant.companyId = user.companyId;
+      const secret = openSecret(env.TOKEN_HASH_SECRET, user.totpSecret);
+      let ok = verifyTotp(secret, input.code);
+      if (!ok && input.code.includes('-')) {
+        const hash = hashToken(`recuperacao:${normalizeRecovery(input.code)}`);
+        if (user.totpRecoveryHashes.includes(hash)) {
+          ok = true;
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { totpRecoveryHashes: user.totpRecoveryHashes.filter((h) => h !== hash) },
+          });
+        }
+      }
+      if (!ok) {
+        await throttle.registerFailure(key, POLICIES.account);
+        await throttle.registerFailure(ipKey, POLICIES.ip);
+        throw Errors.invalidCredentials('Código incorreto. Confira o aplicativo do celular.');
+      }
+      await throttle.reset(key);
+      const permissions = await loadUserPermissions(prisma, user.id);
+      if (!permissions.has('painel.acessar'))
+        throw Errors.forbidden('Seu usuário não tem acesso ao painel administrativo.');
+      return startWebSession(request, reply, user, permissions, 'auth.login_2fa');
+    },
+  );
+
+  /**
+   * Criar conta (tela /entrar). Multi-empresa, etapa 4 (decisão do dono, 16/11/2026): cada conta
+   * criada é uma EMPRESA NOVA, com dados separados de todas as outras, e entra direto, sem
+   * aprovação. Quem cria vira o gestor dessa empresa (todas as permissões dela). Nunca entra numa
+   * empresa que já existe.
+   */
+  app.post('/api/auth/signup', { config: { access: { public: true } } }, async (request, reply) => {
+    const input = signupSchema.parse(request.body);
+    const extras = signupExtrasSchema.parse(request.body ?? {});
+    const origem = signupSourceFrom(extras.origem);
+    const ipKey = clientIpKey(request, 'signup-ip');
+    await throttle.assertAllowed([ipKey, 'signup:global']);
+    // Anti-robô (melhoria 5): campo-isca invisível (só robô preenche) e o Turnstile, quando
+    // configurado. O robô recebe a mesma recusa e não gasta o limite de quem é de verdade.
+    if (extras.website) throw captchaFailed();
+    if (app.ctx.captcha && !(await app.ctx.captcha(extras.captcha, request.ip)))
+      throw captchaFailed();
+    await throttle.registerFailure(ipKey, POLICIES.signup);
+    await throttle.registerFailure(
+      'signup:global',
+      app.ctx.captcha ? POLICIES.signupGlobalWithCaptcha : POLICIES.signupGlobal,
+    );
+
+    const taken = await system.user.findUnique({
+      where: { email: input.email },
+      select: { id: true },
+    });
+    if (taken) throw Errors.conflict('Já existe uma conta com este e-mail. Entre com a sua senha.');
+
+    const passwordHash = await hashSecret(input.password);
+    // Nome da empresa e de quem cria vêm do próprio cadastro (decisão do dono, 26/11/2026). O
+    // telefone é pedido na primeira entrada (needsWhatsapp), antes de mexer no sistema.
+    const displayName = input.ownerName;
+    let created;
+    try {
+      created = await system.$transaction(async (tx) => {
+        // Cobrança: teste grátis (7 dias, decisão do dono), no plano Cenário Gestão.
+        const company = await tx.companySettings.create({
+          data: {
+            tradeName: input.companyName,
+            phone: input.whatsapp ?? null,
+            email: input.email,
+            plan: 'gestao',
+            trialEndsAt: new Date(Date.now() + platformConfig().trialDays * 86_400_000),
+            onboardingEmails: ['boas-vindas'],
+            // Item 45: de onde veio (o site guarda da primeira visita).
+            signupSource: origem.source,
+            signupSourceDetail: origem.detail,
+          },
+        });
+        // Daqui em diante a transação é da empresa nova, com a trava do banco ligada: tudo o que
+        // for gravado fica nela, e nada de outra empresa aparece.
+        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(company.id)}, true),
+          set_config('app.bypass_rls', 'off', true)`;
+        if (request.tenant) request.tenant.companyId = company.id;
+
+        const roles = await createCompanyContent(tx);
+        const user = await tx.user.create({
+          data: {
+            email: input.email,
+            passwordHash,
+            displayName,
+            credentialsChangedAt: new Date(),
+            roles: { create: { roleId: roles.get(GESTOR_ROLE_KEY)! } },
+          },
+        });
+        const employee = await tx.employee.create({
+          data: {
+            userId: user.id,
+            fullName: displayName,
+            displayName,
+            phone: input.whatsapp ?? null,
+            jobTitle: 'Gestor',
+            color: '#1D4ED8',
+          },
+        });
+        const skills = DEFAULT_ROLE_SKILLS[GESTOR_ROLE_KEY] ?? [];
+        if (skills.length)
+          await tx.employeeSkill.createMany({
+            data: skills.map((skill) => ({ employeeId: employee.id, skill })),
+          });
+        const session = await createSession(tx, env, hashToken, {
+          kind: 'WEB',
+          userId: user.id,
+          deviceId: null,
+          ip: request.ip,
+          userAgent: request.headers['user-agent'] ?? null,
+        });
+        await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+        const actor = { ...actorFrom(request), userId: user.id, sessionId: session.session.id };
+        await audit(tx, actor, {
+          action: 'auth.signup',
+          entityType: 'company',
+          entityId: String(company.id),
+          summary: `Conta criada pela tela de entrar (${input.email}): empresa nova nº ${company.id} "${input.companyName}". Aceitou os Termos de uso e a Política de privacidade (versão ${LEGAL_VERSION}).`,
+        });
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.EMPLOYEE_CREATED,
+          aggregateType: 'employee',
+          aggregateId: employee.id,
+          payload: employeeEventPayload(employee),
+        });
+        // Melhoria 3: link para confirmar o e-mail (a conta já funciona; o painel mostra o aviso).
+        await sendConfirmationEmail(
+          tx,
+          env,
+          hashToken,
+          { id: user.id, companyId: company.id, email: input.email },
+          { name: displayName, companyName: input.companyName },
+        );
+        return { ...session, userId: user.id };
+      });
+    } catch (error) {
+      if (request.tenant) request.tenant.companyId = null;
+      if (isUniqueViolation(error, 'email')) {
+        throw Errors.conflict('Já existe uma conta com este e-mail. Entre com a sua senha.');
+      }
+      throw error;
+    }
+
+    app.ctx.mailer.kick();
+    const { session, token, userId } = created;
+    const permissions = await loadUserPermissions(prisma, userId);
+    const maxAge = Math.floor((session.expiresAt.getTime() - Date.now()) / 1000);
+    void reply.setCookie(cookies.session, token, cookieOptions(env.COOKIE_SECURE, maxAge));
+    const me = await buildMe(prisma, {
+      sessionId: session.id,
+      kind: 'WEB',
+      userId,
+      deviceId: null,
+      expiresAt: session.expiresAt,
+      permissions,
+    });
+    return reply.status(201).send(me);
   });
 
   /** Encerra a sessão atual (painel ou tablet). No tablet, o dispositivo continua vinculado. */
@@ -137,7 +388,9 @@ export async function authRoutes(app: FastifyInstance) {
           entityId: auth.userId,
           summary: `${auth.displayName} alterou a própria senha.`,
         });
+        await sendPasswordChangedEmail(tx, user, webUrl());
       });
+      app.ctx.mailer.kick();
       return reply.status(204).send();
     },
   );

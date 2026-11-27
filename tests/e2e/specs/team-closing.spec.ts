@@ -209,7 +209,8 @@ test.describe.serial('Evolução Fase 7 — fechamento semanal geral', () => {
 
     // ── Tela (desktop): linhas, pendências que bloqueiam a conferência ──
     await page.goto('/painel/financeiro');
-    await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
+    await page.getByRole('tab', { name: 'Equipe', exact: true }).click();
+    await page.getByRole('tab', { name: 'Semana da equipe' }).click();
     const closing = page.getByTestId('weekly-closing');
     await expect(closing.getByTestId('closing-rows')).toContainText(RIC.displayName);
     await expect(closing.getByTestId('closing-rows')).toContainText(MAR.displayName);
@@ -250,7 +251,8 @@ test.describe.serial('Evolução Fase 7 — fechamento semanal geral', () => {
       });
     }
     await page.reload();
-    await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
+    await page.getByRole('tab', { name: 'Equipe', exact: true }).click();
+    await page.getByRole('tab', { name: 'Semana da equipe' }).click();
 
     // ── D13 (R2): sem a conferência do André, o gestor libera por exceção administrativa ──
     const andreRow = page.getByTestId(`closing-row-${ANDRE.displayName}-LOGISTICA`);
@@ -309,7 +311,8 @@ test.describe.serial('Evolução Fase 7 — fechamento semanal geral', () => {
     // ── Celular (390×844): mesma tela utilizável ──
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
-    await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
+    await page.getByRole('tab', { name: 'Equipe', exact: true }).click();
+    await page.getByRole('tab', { name: 'Semana da equipe' }).click();
     await expect(page.getByTestId('closing-rows')).toBeVisible();
     await expect(page.getByTestId('closing-totals')).toBeVisible();
     await evidence(page, '05-fechamento-celular');

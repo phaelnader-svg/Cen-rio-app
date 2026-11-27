@@ -1,11 +1,14 @@
+import { plural } from '@cenario/shared';
+import { reworkStats } from '../reworks/routes';
 import {
+  BILL_UPCOMING_DAYS,
   EXPENSE_CATEGORIES,
   contributionMargin,
+  formatCents,
   laborDue,
   logisticsCostCode,
   managementResult,
   taskTimings,
-  type ExpenseCategory,
   type FinanceDashboardDto,
   type LogisticsCostKind,
   type OrderResultDto,
@@ -17,12 +20,16 @@ import type { ActorContext } from '../../core/types';
 import { serviceOrderCode } from '../commercial/common';
 import { workers } from '../production/plans';
 import { dateOnly, localDateOf, parseDate, period, shopTimezone, todayIso } from './common';
+import { billsDue } from './bills';
 import { materialSummary, syncMaterialCosts } from './costs';
 import { isEligible, laborInclude, refreshLaborOf, toLaborDto } from './labor';
 import { serviceOrderRevenue } from './revenue';
+import { requireCompanyId } from '../../core/tenant';
 
 export async function taxRate(db: Tx | PrismaClient) {
-  return (await db.companySettings.findUnique({ where: { id: 1 } }))?.taxRateBps ?? null;
+  return (
+    (await db.companySettings.findUnique({ where: { id: requireCompanyId() } }))?.taxRateBps ?? null
+  );
 }
 
 /**
@@ -37,7 +44,12 @@ export async function completion(db: Tx | PrismaClient, serviceOrderId: string) 
   const delivered = items.length > 0 && items.every((i) => i.fulfillmentStage === 'ENTREGUE');
   if (!delivered) return { delivered: false, completedAt: null as Date | null };
   const last = await db.deliveryItem.aggregate({
-    where: { serviceOrderItemId: { in: items.map((i) => i.id) }, deliveredAt: { not: null } },
+    // Fase 3 (D5): só itens efetivamente entregues (entrega direta desfeita não conta).
+    where: {
+      serviceOrderItemId: { in: items.map((i) => i.id) },
+      deliveredAt: { not: null },
+      status: { in: ['ENTREGUE', 'DIVERGENTE'] },
+    },
     _max: { deliveredAt: true },
   });
   const fallback = new Date(Math.max(...items.map((i) => i.updatedAt.getTime())));
@@ -146,9 +158,17 @@ export async function orderResult(
     warnings.push(
       'Há materiais sem preço conhecido: o custo está subestimado até o gestor ajustar.',
     );
+  if (materials.mixedSources)
+    warnings.push(
+      `Conciliação pendente: ${plural(materials.pendingReconciliationLines, 'material', 'materiais')} da lista da OS com custo informado (${formatCents(materials.pendingReconciliationCents)} no realizado) e a OS também tem custo formal (compra, estoque ou sobra). O valor continua contando até o financeiro vincular ao registro formal (se for o mesmo material) ou marcar como distinto, na aba Materiais da OS.`,
+    );
+  if (materials.linkedReversedLines)
+    warnings.push(
+      `Conciliação a revisar: ${plural(materials.linkedReversedLines, 'material da lista da OS vinculado', 'materiais da lista da OS vinculados')} a compra formal que teve estorno de recebimento. O custo informado continua fora do resultado; confira se o vínculo ainda vale ou desfaça-o na aba Materiais da OS.`,
+    );
   if (c.delivered && materials.activeReservations)
     warnings.push(
-      `Material reservado ainda não teve consumo confirmado (${materials.activeReservations} reserva(s)): o custo realizado está subestimado até registrar o consumo ou liberar a reserva.`,
+      `Material reservado ainda não teve consumo confirmado (${plural(materials.activeReservations, 'reserva', 'reservas')}): o custo realizado está subestimado até registrar o consumo ou liberar a reserva.`,
     );
   if (!laborRows.length)
     warnings.push('Mão de obra por produção ainda não combinada para esta OS.');
@@ -262,9 +282,19 @@ export async function dashboard(
     where: { receivedAt: { gte: p.fromDate, lte: p.toDate } },
     _sum: { amountCents: true },
   });
+  // 2026-11-18: receitas avulsas (aba Receitas) também são dinheiro que entrou.
+  const manualReceived = await tx.manualRevenue.aggregate({
+    where: { receivedAt: { gte: p.fromDate, lte: p.toDate }, cancelledAt: null },
+    _sum: { amountCents: true },
+  });
   const paidPayables = await tx.payablePayment.aggregate({
     where: { paidAt: { gte: p.fromDate, lte: p.toDate } },
     _sum: { amountCents: true },
+  });
+  // Revisão geral (item 9): "Para onde foi o dinheiro" soma o que foi pago, por categoria.
+  const paidRows = await tx.payablePayment.findMany({
+    where: { paidAt: { gte: p.fromDate, lte: p.toDate } },
+    select: { amountCents: true, payable: { select: { category: true } } },
   });
   const paidLabor = await tx.professionalPayment.aggregate({
     where: { paidAt: { gte: p.fromDate, lte: p.toDate } },
@@ -289,7 +319,8 @@ export async function dashboard(
   const payableOverdue = pays
     .filter((r) => dateOnly(r.dueDate)! < today)
     .reduce((a, r) => a + r.amountCents - r.paidCents, 0);
-  const receivedCents = received._sum.amountCents ?? 0;
+  const receivedCents = (received._sum.amountCents ?? 0) + (manualReceived._sum.amountCents ?? 0);
+  const rw = await reworkStats(tx, { from: p.from, to: p.to }, true);
   const paidPayablesCents = paidPayables._sum.amountCents ?? 0;
   const paidLaborCents = paidLabor._sum.amountCents ?? 0;
   const byCat = new Map<string, number>();
@@ -335,13 +366,39 @@ export async function dashboard(
       revenueCents: inProgressRevenue,
       estimatedMarginCents: inProgressMargin,
     },
-    expensesByCategory: EXPENSE_CATEGORIES.filter((c) => byCat.has(c)).map((c) => ({
-      category: c as ExpenseCategory,
-      amountCents: byCat.get(c)!,
-    })),
+    // Fixas na ordem da lista; depois as cadastradas pela empresa (maior valor primeiro).
+    expensesByCategory: [
+      ...EXPENSE_CATEGORIES.filter((c) => byCat.has(c)).map((c) => ({
+        category: c as string,
+        amountCents: byCat.get(c)!,
+      })),
+      ...[...byCat.entries()]
+        .filter(([c]) => !(EXPENSE_CATEGORIES as readonly string[]).includes(c))
+        .sort((a, b) => b[1] - a[1])
+        .map(([category, amountCents]) => ({ category, amountCents })),
+    ],
+    paidByCategory: (() => {
+      const m = new Map<string, number>();
+      for (const r of paidRows)
+        m.set(r.payable.category, (m.get(r.payable.category) ?? 0) + r.amountCents);
+      const out = [...m.entries()]
+        .map(([category, amountCents]) => ({ category, amountCents }))
+        .sort((a, b) => b.amountCents - a.amountCents);
+      if (paidLaborCents) out.push({ category: 'EQUIPE', amountCents: paidLaborCents });
+      return out;
+    })(),
+    bills: { ...(await billsDue(tx, today)), upcomingDays: BILL_UPCOMING_DAYS },
     topServices: [...services.entries()]
       .map(([serviceType, v]) => ({ serviceType, ...v }))
       .sort((a, b) => b.marginCents - a.marginCents),
+    reworks: {
+      count: rw.count,
+      costCents: rw.cost?.totalCents ?? 0,
+      materialsCents: rw.cost?.materialsCents ?? 0,
+      laborCents: rw.cost?.laborCents ?? 0,
+      logisticsCents: rw.cost?.logisticsCents ?? 0,
+      extraCents: rw.cost?.extraCents ?? 0,
+    },
     notes: [
       'Competência: contratado pela data do pedido; margem das OS concluídas (todas as peças entregues) no período; despesas pelo mês de competência.',
       'Caixa: recebimentos e pagamentos registrados no período (estornos descontados).',
@@ -363,10 +420,14 @@ export async function productivity(
 ): Promise<ProductivityDto> {
   const p = period(q, await shopTimezone(db));
   const rows: ProductivityRowDto[] = [];
-  for (const w of await workers(db)) {
-    const tasks = await db.productionTask.findMany({
+  // Reformulação, Fase 4: a mesma regra, em consultas agrupadas (antes: várias consultas por
+  // funcionário e uma por tarefa concluída — lento com o histórico crescendo).
+  const people = await workers(db);
+  const ids = people.map((w) => w.userId);
+  const [allTasks, issuesBy] = await Promise.all([
+    db.productionTask.findMany({
       where: {
-        assigneeUserId: w.userId,
+        assigneeUserId: { in: ids },
         status: 'CONCLUIDA',
         completedAt: { gte: p.fromTs, lt: p.toExclusive },
       },
@@ -374,7 +435,50 @@ export async function productivity(
         events: { select: { kind: true, createdAt: true } },
         issues: { select: { id: true } },
       },
-    });
+    }),
+    db.productionIssue.groupBy({
+      by: ['reporterUserId'],
+      where: { reporterUserId: { in: ids }, createdAt: { gte: p.fromTs, lt: p.toExclusive } },
+      _count: true,
+    }),
+  ]);
+  const impByTask = new Map(
+    (allTasks.length
+      ? await db.productionTaskEvent.groupBy({
+          by: ['taskId'],
+          where: {
+            taskId: { in: allTasks.map((t) => t.id) },
+            kind: 'PAUSADA',
+            changes: { path: ['impediment'], equals: true },
+          },
+          _count: true,
+        })
+      : []
+    ).map((g) => [g.taskId, g._count]),
+  );
+  // Peças reprovadas no período em que o funcionário é o principal (mesma regra de antes).
+  const rejected = await db.qualityInspection.findMany({
+    where: { status: 'REPROVADA', decidedAt: { gte: p.fromTs, lt: p.toExclusive } },
+    select: { serviceOrderItemId: true },
+  });
+  const principals = rejected.length
+    ? await db.productionTask.findMany({
+        where: {
+          serviceOrderItemId: { in: [...new Set(rejected.map((r) => r.serviceOrderItemId))] },
+          assigneeUserId: { in: ids },
+          role: 'PRINCIPAL',
+        },
+        select: { serviceOrderItemId: true, assigneeUserId: true },
+      })
+    : [];
+  const principalOf = new Map<string, Set<string>>();
+  for (const t of principals) {
+    const set = principalOf.get(t.serviceOrderItemId!) ?? new Set<string>();
+    set.add(t.assigneeUserId!);
+    principalOf.set(t.serviceOrderItemId!, set);
+  }
+  for (const w of people) {
+    const tasks = allTasks.filter((t) => t.assigneeUserId === w.userId);
     let exec = 0;
     let waiting = 0;
     let waitingCount = 0;
@@ -390,9 +494,7 @@ export async function productivity(
         waiting += tm.waitingMinutes;
         waitingCount += 1;
       }
-      const impPauses = await db.productionTaskEvent.count({
-        where: { taskId: t.id, kind: 'PAUSADA', changes: { path: ['impediment'], equals: true } },
-      });
+      const impPauses = impByTask.get(t.id) ?? 0;
       if (impPauses || t.issues.length) impediments += 1;
       // Prazo: data-limite da tarefa ou, sem ela, o dia em que foi programada.
       const deadline = t.dueDate
@@ -410,19 +512,11 @@ export async function productivity(
         }
       }
     }
-    const issuesReported = await db.productionIssue.count({
-      where: { reporterUserId: w.userId, createdAt: { gte: p.fromTs, lt: p.toExclusive } },
-    });
+    const issuesReported = issuesBy.find((g) => g.reporterUserId === w.userId)?._count ?? 0;
     const main = tasks.filter((t) => !t.supportForTaskId && t.activity !== 'CORRECAO');
-    const rejectedPieces = await db.qualityInspection.count({
-      where: {
-        status: 'REPROVADA',
-        decidedAt: { gte: p.fromTs, lt: p.toExclusive },
-        serviceOrderItem: {
-          productionTasks: { some: { assigneeUserId: w.userId, role: 'PRINCIPAL' } },
-        },
-      },
-    });
+    const rejectedPieces = rejected.filter((r) =>
+      principalOf.get(r.serviceOrderItemId)?.has(w.userId),
+    ).length;
     rows.push({
       userId: w.userId,
       displayName: w.displayName,

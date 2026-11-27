@@ -3,12 +3,13 @@
 import type { LogisticsRouteStopDto } from '@cenario/shared';
 import {
   DELIVERY_STATUS_LABEL,
-  PICKUP_STATUS_LABEL,
+  pickupStatusLabel,
   PICKUP_TEAM_LABEL,
   type DeliveryStatus,
   type PickupStatus,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { MapsLinks, googleRouteUrl } from '@/components/improvements/maps-links';
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -34,7 +35,7 @@ const key = (s: LogisticsRouteStopDto) => `${s.job.kind}:${s.job.id}`;
 const statusLabel = (s: LogisticsRouteStopDto) =>
   s.job.kind === 'ENTREGA'
     ? DELIVERY_STATUS_LABEL[s.job.status as DeliveryStatus]
-    : PICKUP_STATUS_LABEL[s.job.status as PickupStatus];
+    : pickupStatusLabel(s.job.status as PickupStatus, s.job.onSite ? 'NO_LOCAL' : 'RETIRADA');
 
 export function LogisticsRoutePage() {
   const params = useSearchParams();
@@ -106,7 +107,8 @@ export function LogisticsRoutePage() {
     <>
       <PageHeader
         title="Roteiro do dia"
-        description="Retiradas e entregas do dia na ordem de execução. A ordem é operacional: mudá-la não altera o horário de chegada combinado com o cliente."
+        description="Retiradas, serviços no local e entregas do dia, na ordem da rota."
+        help="Retiradas e entregas do dia na ordem de execução. A ordem é operacional: mudá-la não altera o horário de chegada combinado com o cliente."
       />
       <Card className="mb-5 p-4 sm:p-5">
         <FormGrid>
@@ -157,6 +159,21 @@ export function LogisticsRoutePage() {
               {w}
             </Alert>
           ))}
+          {(() => {
+            const url = googleRouteUrl(
+              stops.flatMap((st) => (st.job.address ? [st.job.address] : [])),
+            );
+            return url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-line-strong bg-surface px-4 text-sm font-semibold hover:bg-subtle"
+              >
+                Abrir o roteiro inteiro no Google Maps
+              </a>
+            ) : null;
+          })()}
           <ol className="space-y-3" data-testid="route-stops" aria-label="Paradas do roteiro">
             {stops.map((s, idx) => (
               <li key={key(s)} data-testid={`stop-${s.job.code}`} data-position={idx + 1}>
@@ -255,8 +272,8 @@ function StopCard({
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={j.kind === 'ENTREGA' ? 'brand' : 'bronze'}>
-            {j.kind === 'ENTREGA' ? 'Entrega' : 'Retirada'}
+          <Badge tone={j.kind === 'ENTREGA' ? 'brand' : j.onSite ? 'info' : 'bronze'}>
+            {j.kind === 'ENTREGA' ? 'Entrega' : j.onSite ? 'No local' : 'Retirada'}
           </Badge>
           {j.kind === 'ENTREGA' ? (
             <Link
@@ -291,6 +308,7 @@ function StopCard({
             </span>
           </p>
         )}
+        {a && <MapsLinks address={a} />}
         <p className="text-sm text-ink-muted">
           {s.serviceOrders.length ? `OS: ${s.serviceOrders.join(', ')} · ` : ''}
           {PICKUP_TEAM_LABEL[s.team]}

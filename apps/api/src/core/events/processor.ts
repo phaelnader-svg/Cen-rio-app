@@ -1,6 +1,7 @@
 import type { DomainEvent, PrismaClient, Tx } from '@cenario/db';
 import type { EventType } from '@cenario/shared';
 import type { FastifyBaseLogger } from 'fastify';
+import { runAsCompany } from '../tenant';
 
 /**
  * Consumidor de eventos (base para automações das próximas fases).
@@ -31,6 +32,7 @@ export class EventProcessor {
   private running = false;
   private rerun = false;
 
+  /** `prisma`: banco do SISTEMA (a fila atravessa empresas; cada evento roda na empresa dele). */
   constructor(
     private readonly prisma: PrismaClient,
     private readonly log: FastifyBaseLogger,
@@ -116,7 +118,15 @@ export class EventProcessor {
           if (!event) return false;
           current = event;
           const interested = !consumer.types || consumer.types.includes(event.type as EventType);
-          if (interested) await consumer.handle(event, tx);
+          if (interested) {
+            // Multi-empresa: o efeito do evento acontece DENTRO da empresa dele — a partir daqui a
+            // transação deixa de atravessar empresas (Row-Level Security volta a valer).
+            const companyId = event.companyId;
+            await tx.$executeRaw`SELECT set_config('app.company_id', ${String(companyId)}, true),
+              set_config('app.bypass_rls', 'off', true)`;
+            await runAsCompany(companyId, () => consumer.handle(event!, tx));
+            await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
+          }
           await tx.eventConsumer.update({
             where: { name: consumer.name },
             data: { lastSeq: event.seq, failedAttempts: 0, lastError: null, nextAttemptAt: null },

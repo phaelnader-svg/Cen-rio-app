@@ -1,13 +1,13 @@
+import type { NextStep } from './shop-floor';
+import type { OperationalState } from './operational-state';
 import type { OrderDeadlineState, ServiceDeadline } from './deadline-domain';
-import type { MaterialReadiness } from './purchasing-domain';
 import type {
   AttachmentEntity,
   CustomerKind,
-  MaterialKind,
-  MaterialSourcing,
   MeasurementKind,
   OrderServiceState,
   OrderStatus,
+  PickupKind,
   PickupStatus,
   PickupTeam,
   PieceCondition,
@@ -50,6 +50,9 @@ export interface CustomerDto extends CustomerSummaryDto {
   whatsapp: string | null;
   email: string | null;
   notes: string | null;
+  birthDay: number | null;
+  birthMonth: number | null;
+  referredBy: { id: string; name: string } | null;
   active: boolean;
   addresses: CustomerAddressDto[];
   orderCount: number;
@@ -77,6 +80,8 @@ export interface OrderItemDto {
   receivedQuantity: number;
   /** Quantidade em retiradas ativas (ainda não recebidas). */
   inActivePickups: number;
+  /** 2026-11-25: peças com serviço "No local" agendado (a OS já pode ser gerada). */
+  inOnSiteVisits: number;
   /** Quantidade recebida já incluída em OS ativas. */
   inServiceOrders: number;
   /** Fase 12: quantidade devolvida ao cliente. */
@@ -107,6 +112,19 @@ export interface OrderSummaryDto {
   returnedPieces: number;
   serviceState: OrderServiceState;
   createdAt: string;
+  /** Fluxo da OS (2026-11-18): OS ativas (não canceladas) geradas deste pedido. */
+  serviceOrderCount: number;
+  /** Próxima retirada ainda não recebida (dia e horário), para os botões rápidos da lista. */
+  nextPickup: {
+    scheduledDate: string | null;
+    windowStart: string | null;
+    kind: PickupKind;
+  } | null;
+  /** 2026-11-25: o serviço é feito na casa do cliente ("No local" agendado, não cancelado). */
+  onSite: boolean;
+  /** 2026-11-18: pedido de um retrabalho (aparece em vermelho). */
+  rework?: { id: string; code: string } | null;
+  version: number;
 }
 
 export interface OrderDto extends OrderSummaryDto {
@@ -163,7 +181,12 @@ export interface PickupDto {
   number: number;
   code: string;
   status: PickupStatus;
-  order: { id: string; code: string; contractedService: string };
+  /** 2026-11-25: Retirada ou No local (serviço na casa do cliente). */
+  kind: PickupKind;
+  /** `agreedValueCents`: valor do serviço; ausente sem `pedidos.valores`, null sem valor combinado. */
+  order: { id: string; code: string; contractedService: string; agreedValueCents?: number | null };
+  /** 2026-11-18: retirada de um retrabalho (vermelha na agenda). */
+  rework?: { id: string; code: string } | null;
   customer: CustomerSummaryDto & { phone: string | null; whatsapp: string | null };
   address: AddressSnapshot | null;
   scheduledDate: string | null;
@@ -173,6 +196,14 @@ export interface PickupDto {
   teamNotes: string | null;
   instructions: string | null;
   externalReference: string | null;
+  /** O que levar ao cliente. */
+  bringSamples: boolean;
+  /** Qual mostruário (texto livre). */
+  samplesDescription: string | null;
+  bringCardMachine: boolean;
+  /** Quem vai retirar: responsável pela execução e quem vai junto. */
+  executor: { userId: string; displayName: string } | null;
+  participants: { userId: string; displayName: string }[];
   items: { orderItemId: string; pieceType: PieceType; description: string; quantity: number }[];
   events: PickupEventDto[];
   allowedTransitions: PickupStatus[];
@@ -239,39 +270,19 @@ export interface ServiceOrderItemDto {
   measuredAt: string | null;
   measuredBy: string | null;
   measurementKind: MeasurementKind | null;
-  /** Onde a peça foi guardada no recebimento. */
-  locations: string[];
+  /** Reformulação, Fase 2: localização ATUAL registrada (mapa da oficina); null = sem registro. */
+  currentLocation: { id: string; label: string } | null;
   version: number;
 }
 
-export interface MaterialRequirementDto {
-  id: string;
-  serviceOrderItemId: string | null;
-  kind: MaterialKind;
-  description: string;
-  quantity: number | null;
-  unit: string | null;
-  sourcing: MaterialSourcing;
-  notes: string | null;
-  createdAt: string;
-  /** PREVISAO_MANUAL (não conferida) ou SOLICITACAO_APROVADA (conferida na Fase 3). */
-  origin: 'PREVISAO_MANUAL' | 'SOLICITACAO_APROVADA' | 'PREVISAO_COMPRA';
-  /** Etapa 2: ATIVA (vale hoje), SUBSTITUIDA (por nova medição) ou CANCELADA (histórico). */
-  status: 'ATIVA' | 'SUBSTITUIDA' | 'CANCELADA';
-  closeReason: string | null;
-  color: string | null;
-  foamDensity: string | null;
-  thicknessCm: number | null;
-}
-
-export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA';
+/** INFORMATIVO (etapa E1): mostrado só como aviso; não impede o início da produção. */
+export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA' | 'INFORMATIVO';
 
 export interface ServiceOrderReadinessDto {
   measurements: ReadinessState;
   technicalLead: ReadinessState;
-  materials: ReadinessState;
-  /** Prontidão detalhada de materiais (Fase 4). */
-  materialsState: MaterialReadiness;
+  /** Etapa E1: linhas da lista simples da OS ainda não disponíveis na oficina (só aviso). */
+  simpleMaterialsPending: number;
   scheduling: ReadinessState;
   /** Sempre false nesta fase: a produção só começa pela programação (fases futuras). */
   canStartProduction: false;
@@ -292,18 +303,38 @@ export interface ServiceOrderSummaryDto {
   itemCount: number;
   pieceCount: number;
   createdAt: string;
+  /**
+   * Fluxo da OS (2026-11-18): quando o material foi marcado como comprado (null = aguardando
+   * material; a OS ainda não entra na programação da semana).
+   */
+  materialPurchasedAt: string | null;
+  /** Versão da OS (para o botão rápido da lista). */
+  version: number;
+  /**
+   * Reformulação Fase 3: estado geral (o mesmo do cabeçalho da OS, regra da Fase 0). Só na
+   * lista; o detalhe usa a rota própria.
+   */
+  operationalState?: OperationalState;
+  /** 2026-11-24 (oficina sem tablet): próxima etapa para o botão verde (só na lista). */
+  nextStep?: NextStep | null;
+  /** 2026-11-18: OS de um retrabalho (vermelha na lista e no detalhe). */
+  rework?: { id: string; code: string } | null;
 }
 
 export interface ServiceOrderDto extends ServiceOrderSummaryDto {
+  /**
+   * 2026-11-25: serviço "No local" (feito na casa do cliente): dia, horário de chegada e
+   * endereço do agendamento. null = a peça vem para a tapeçaria.
+   */
+  onSite?: { date: string | null; windowStart: string | null; address: string | null } | null;
   technicalInstructions: string | null;
   notes: string | null;
   items: ServiceOrderItemDto[];
-  materials: MaterialRequirementDto[];
   readiness: ServiceOrderReadinessDto;
   cancelledAt: string | null;
   cancelReason: string | null;
   createdBy: string | null;
-  version: number;
+  materialPurchasedBy: string | null;
   updatedAt: string;
 }
 
@@ -323,6 +354,11 @@ export interface AttachmentDto {
   entityType: AttachmentEntity;
   entityId: string;
   url: string;
+  /** Reformulação, Fase 2: miniatura (gerada no envio; para fotos antigas, na leitura). */
+  thumbUrl: string;
+  /** Dimensões da foto tratada (null nas fotos anteriores à Fase 2). */
+  width: number | null;
+  height: number | null;
   caption: string | null;
   mimeType: string;
   createdBy: string | null;
@@ -358,6 +394,8 @@ export interface NewServiceDefaultsDto {
   };
   /** Valor sugerido (Fase 6). Só com permissão financeira; senão null. */
   suggestedPickupCostCents: number | null;
+  /** 2026-11-18: dias de expediente da empresa (0 = domingo), para a prévia do prazo em dias úteis. */
+  workingDays?: number[];
   canSetValues: boolean;
   canSetTripCost: boolean;
   canCreateCustomer: boolean;
@@ -367,6 +405,11 @@ export interface NewServiceDefaultsDto {
   canPlanUpholsterer: boolean;
   /** Definir a mão de obra prevista (`financeiro.ver` + `financeiro.gerenciar`). */
   canPlanLabor: boolean;
+  /**
+   * 2026-11-18: taxas da maquininha da Base de dados do orçamento (só com pedidos.valores), para
+   * o parcelado do Novo serviço: valor parcelado = à vista ÷ (1 − taxa).
+   */
+  cardFees?: { installments: number; rateBps: number }[];
 }
 
 export interface NewServiceResultDto {
@@ -481,4 +524,77 @@ export interface MaterialArrivalDto {
   receivedAt: string;
   conferredBy: string | null;
   conferredAt: string | null;
+}
+
+/**
+ * 2026-11-18: página da OS para a oficina (Abrir OS no tablet e no painel). Só detalhes do
+ * serviço: nada de valores.
+ */
+/**
+ * 2026-11-19 (Raphael): o que o orçamento aprovado diz sobre a execução, em partes separadas
+ * (sem texto repetido): o serviço do tapeceiro, o tecido, o que fazer na peça e os materiais
+ * com as medidas. Usado na tela de gerar OS e na página da OS do tapeceiro.
+ */
+export interface QuoteWorkDto {
+  number: number;
+  /** Serviço do tapeceiro escolhido no orçamento (ex.: "Poltrona simples"). */
+  upholsteryService: string | null;
+  fabricName: string;
+  fabricMeters: number | null;
+  /** Quantidade de peças orçadas (1 quando não informada). */
+  pieces: number;
+  /** O que fazer: Trocar tecido, Trocar espuma, Reparar estrutura, Manter o original. */
+  checks: { label: string; value: string }[];
+  /** Observação escrita no orçamento para a execução. */
+  notes: string;
+  materials: {
+    category: string;
+    name: string;
+    quantity: number;
+    unit: string;
+    /** Medidas da espuma ("190 × 60 × 10 cm"), quando houver. */
+    size: string | null;
+  }[];
+}
+
+export interface ServiceOrderSheetDto {
+  id: string;
+  code: string;
+  status: ServiceOrderStatus;
+  companyName: string;
+  customerName: string;
+  orderCode: string;
+  rework: { code: string; reason: string } | null;
+  promisedDate: string | null;
+  priority: Priority;
+  technicalLead: string | null;
+  createdAt: string;
+  technicalInstructions: string | null;
+  notes: string | null;
+  /** 2026-11-19: o que o orçamento aprovado diz sobre a execução (null = OS sem orçamento). */
+  work: QuoteWorkDto | null;
+  items: {
+    id: string;
+    code: string;
+    pieceType: PieceType;
+    serviceType: ServiceType;
+    description: string;
+    quantity: number;
+    fabricName: string | null;
+    fabricColor: string | null;
+    fabricReference: string | null;
+    foamSpecs: string | null;
+    technicalNotes: string | null;
+    measurements: MeasurementDto[];
+    measurementNotes: string | null;
+    upholsterer: string | null;
+  }[];
+  materials: {
+    description: string;
+    quantity: string | null;
+    unit: string | null;
+    available: boolean;
+  }[];
+  tasks: { title: string; assignee: string | null; status: string }[];
+  photos: { url: string; thumbUrl: string; caption: string | null; itemCode: string | null }[];
 }

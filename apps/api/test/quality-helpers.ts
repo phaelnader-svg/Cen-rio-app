@@ -125,20 +125,12 @@ export function qualityKit(getApp: () => App) {
     if (r.status !== 200) throw new Error(`approve: ${JSON.stringify(r.body)}`);
     return r.body as Insp;
   }
-  async function pack(s: S, itemId: string) {
-    const p = (await db().packagingRecord.findFirst({
-      where: { serviceOrderItemId: itemId },
-      orderBy: { createdAt: 'desc' },
-    }))!;
-    const loc = await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } });
-    const r = await post(s.admin, `/api/v1/packaging/${p.id}/complete`, {
-      protection: 'PLASTICO_BOLHA',
-      locationId: loc.id,
-      version: p.version,
-    });
-    if (r.status !== 200) throw new Error(`pack: ${JSON.stringify(r.body)}`);
+  /** Reformulação S1: não há embalagem — a aprovação não cria registro nem tarefa de embalagem. */
+  async function pack(_s: S, itemId: string) {
+    const n = await db().packagingRecord.count({ where: { serviceOrderItemId: itemId } });
+    if (n !== 0) throw new Error(`embalagem criada após a remoção (S1): ${n}`);
   }
-  /** Peça produzida, aprovada e embalada → pronta para entrega. */
+  /** Peça produzida e aprovada → pronta para entrega (S1: sem embalagem). */
   async function ready(s: S, which: 'sofa' | 'poltronas') {
     const item = which === 'sofa' ? s.sofa : s.poltronas;
     const t = which === 'sofa' ? s.sofaTask : s.poltronaTask;

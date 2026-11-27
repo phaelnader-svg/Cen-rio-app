@@ -1,0 +1,13 @@
+• health {} → job f40a81df-1b37-4441-9b49-e86cb1aa0401 (mensagem 22599062387990467)
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}} {{.State}} {{.Health}}
+api running healthy
+backup running 
+caddy running 
+postgres running healthy
+web running healthy
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ /api/ready pelo proxy: HTTP 200

@@ -1,19 +1,34 @@
 'use client';
 
-import type { CompanySettingsDto, OwnTeamSettingsDto } from '@cenario/shared';
+import type { CompanySettingsDto, ModuleSettingDto, OwnTeamSettingsDto } from '@cenario/shared';
 import { WEEKDAYS, companySettingsSchema } from '@cenario/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Field, Input, Select } from '@/components/ui/field';
+import { Checkbox, Field, Input, Select } from '@/components/ui/field';
+import { MoneyField } from '@/components/ui/form';
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
-import { ApiError, api, errorMessage, fieldErrors } from '@/lib/api';
+import { ApiError, api, errorMessage, fieldErrors, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
-import { useCan } from '@/lib/hooks';
+import { useCan, useMe } from '@/lib/hooks';
 import { useCompany } from '@/lib/queries';
 import { useOwnTeamSettings } from '@/lib/commercial';
+import { ExportDataCard, SupportAccessCard } from '@/components/improvements/company-extras';
+import { PrivacyRequestCard } from '@/components/improvements/privacy-extras';
+
+const TIMEZONES = [
+  { value: 'America/Sao_Paulo', label: 'Horário de Brasília' },
+  { value: 'America/Bahia', label: 'Bahia' },
+  { value: 'America/Fortaleza', label: 'Nordeste (Fortaleza, Recife)' },
+  { value: 'America/Belem', label: 'Pará e Amapá' },
+  { value: 'America/Manaus', label: 'Amazonas (Manaus)' },
+  { value: 'America/Cuiaba', label: 'Mato Grosso e Mato Grosso do Sul' },
+  { value: 'America/Porto_Velho', label: 'Rondônia' },
+  { value: 'America/Rio_Branco', label: 'Acre' },
+  { value: 'America/Noronha', label: 'Fernando de Noronha' },
+];
 
 type Form = Omit<
   CompanySettingsDto,
@@ -39,6 +54,7 @@ function toForm(c: CompanySettingsDto): Form {
 
 export function CompanyPage() {
   const can = useCan();
+  const me = useMe();
   const company = useCompany();
   const qc = useQueryClient();
   const toast = useToast();
@@ -114,7 +130,8 @@ export function CompanyPage() {
     <>
       <PageHeader
         title="Empresa"
-        description="Dados da empresa e parâmetros operacionais usados pelos próximos módulos."
+        description="Dados da empresa e horários da oficina."
+        help="Os dados que saem na proposta e na OS (nome, telefone, endereço) e o horário da oficina. O horário de trabalho é usado para calcular os prazos e a semana da oficina."
         actions={
           editable && (
             <Button
@@ -234,29 +251,61 @@ export function CompanyPage() {
                 </Select>
               )}
             </Field>
-            <Field label="Dia habitual de medição" hint="Tecidos e espumas.">
+          </div>
+          <div className="mt-5">
+            {/* Melhoria 166: fuso com nome de gente, não o código técnico. */}
+            <Field label="Fuso horário">
               {(p) => (
                 <Select
                   {...p}
                   disabled={!editable}
-                  value={form.measurementWeekday}
-                  onChange={(e) => set('measurementWeekday', Number(e.target.value))}
+                  value={form.timezone}
+                  onChange={(e) => set('timezone', e.target.value)}
                 >
-                  {WEEKDAYS.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
+                  {[
+                    ...TIMEZONES,
+                    ...(TIMEZONES.some((t) => t.value === form.timezone)
+                      ? []
+                      : [{ value: form.timezone, label: form.timezone }]),
+                  ].map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
           </div>
-          <div className="mt-5">
-            {text('timezone', 'Fuso horário', { hint: 'Padrão: America/Sao_Paulo' })}
+          {/* Perguntas do começo (26/11/2026): dá para mudar a resposta aqui depois. */}
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Checkbox
+              label="Faço serviço na casa do cliente"
+              description="Desligado, a opção “No local” some do fechamento do serviço."
+              disabled={!editable}
+              checked={form.servesOnSite}
+              onChange={(e) => set('servesOnSite', e.target.checked)}
+              data-testid="company-serves-on-site"
+            />
+            <MoneyField
+              label="Meta de faturamento do mês"
+              hint="Aparece no Financeiro. Deixe em branco para não usar."
+              disabled={!editable}
+              cents={form.monthlyGoalCents}
+              onCents={(v) => set('monthlyGoalCents', v)}
+              data-testid="company-monthly-goal"
+            />
           </div>
         </Card>
       </div>
       <OwnTeamCard />
+      <ModulesCard />
+      {can('empresa.configurar') && (
+        <>
+          <SupportAccessCard />
+          <ExportDataCard />
+          {!me.data?.company.platformOwner && <PrivacyRequestCard scope="EMPRESA" />}
+        </>
+      )}
       <p className="mt-4 text-xs text-ink-muted">
         Última alteração: {formatDateTime(company.data.updatedAt)} · versão {company.data.version}
       </p>
@@ -349,6 +398,68 @@ function OwnTeamCard() {
             </Button>
           </div>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Reformulação, Fase 0: funcionalidades que podem ser desligadas sem apagar nada. Quem decide é o
+ * servidor (recusa o que estiver desligado); aqui só o gestor com `empresa.configurar` altera.
+ */
+function ModulesCard() {
+  const can = useCan();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const editable = can('empresa.configurar');
+  const list = useQuery({
+    queryKey: ['company', 'modules', 'list'],
+    queryFn: () => api<ModuleSettingDto[]>('/api/company/modules'),
+  });
+  const save = useMutation({
+    mutationFn: (m: ModuleSettingDto) =>
+      api<ModuleSettingDto>(`/api/company/modules/${m.key}`, {
+        method: 'PUT',
+        body: { enabled: !m.enabled, version: m.version },
+        idempotencyKey: newIdempotencyKey(),
+      }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ['company', 'modules'] });
+      toast('ok', `${r.label}: ${r.enabled ? 'ativada' : 'desativada'}.`);
+    },
+    onError: (e) => {
+      void qc.invalidateQueries({ queryKey: ['company', 'modules'] });
+      toast('danger', errorMessage(e));
+    },
+  });
+  if (list.isPending) return <Spinner />;
+  if (!list.data) return null;
+  return (
+    <Card className="mt-6 p-6" data-testid="modules-card">
+      <h2 className="font-semibold">Funcionalidades</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        Desligar não apaga nada: o histórico continua disponível para consulta e religar volta ao
+        funcionamento anterior.
+      </p>
+      <div className="mt-4 grid gap-4">
+        {list.data.map((m) => (
+          <div key={m.key} data-testid={`module-${m.key}`}>
+            <Checkbox
+              label={`${m.label}${m.configurable ? '' : ' (segue o plano em Assinatura)'}`}
+              description={m.description}
+              checked={m.enabled}
+              disabled={!editable || !m.configurable || save.isPending}
+              onChange={() => save.mutate(m)}
+              data-testid={`module-${m.key}-toggle`}
+            />
+            {m.updatedAt && (
+              <p className="mt-1 pl-8 text-xs text-ink-muted">
+                {m.enabled ? 'Ativada' : 'Desativada'} por {m.updatedBy?.displayName ?? '—'} em{' '}
+                {formatDateTime(m.updatedAt)}
+              </p>
+            )}
+          </div>
+        ))}
       </div>
     </Card>
   );

@@ -2,7 +2,9 @@
 
 import clsx from 'clsx';
 import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 import { initials } from '@/lib/format';
+import { tipKeyFor, useMarkTipSeen, useSeenTips } from '@/lib/onboarding';
 
 export function Card({ className, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={clsx('card', className)} {...rest} />;
@@ -67,11 +69,13 @@ export function Alert({
   title,
   children,
   className,
+  'data-testid': testId,
 }: {
   tone?: 'info' | 'ok' | 'warn' | 'danger';
   title?: string;
   children?: React.ReactNode;
   className?: string;
+  'data-testid'?: string;
 }) {
   const Icon = { info: Info, ok: CheckCircle2, warn: AlertTriangle, danger: XCircle }[tone];
   const style = {
@@ -83,6 +87,7 @@ export function Alert({
   return (
     <div
       role={tone === 'danger' ? 'alert' : 'status'}
+      data-testid={testId}
       className={clsx('flex gap-3 rounded-xl border px-4 py-3 text-sm', style, className)}
     >
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -158,10 +163,13 @@ export function EmptyState({
 export function PageHeader({
   title,
   description,
+  help,
   actions,
 }: {
   title: string;
   description?: string;
+  /** Melhoria 158: a explicação longa da tela fica fechada em "Como usar". */
+  help?: string;
   actions?: React.ReactNode;
 }) {
   return (
@@ -169,8 +177,51 @@ export function PageHeader({
       <div className="min-w-0">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-[15px] text-ink-muted">{description}</p>}
+        {help && <PageHelp text={help} />}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+      {/* Sem shrink-0: com muitos botões (ex.: pedido no tablet), a linha quebra em vez de vazar. */}
+      {actions && <div className="flex flex-wrap gap-2 sm:justify-end">{actions}</div>}
     </div>
+  );
+}
+
+/**
+ * Item 5 (26/11/2026): na primeira vez que a pessoa abre a tela, a explicação já vem aberta,
+ * com "Entendi". Depois fica fechada em "Como usar", como antes.
+ */
+function PageHelp({ text }: { text: string }) {
+  const pathname = usePathname();
+  const key = tipKeyFor(pathname ?? '');
+  const tips = useSeenTips(key !== null);
+  const mark = useMarkTipSeen();
+  const first = key !== null && tips.data !== undefined && !tips.data.seen.includes(key);
+  if (first) {
+    return (
+      <div
+        className="mt-3 max-w-2xl rounded-xl border border-brand-200 bg-brand-50 p-4 text-[15px] text-ink-soft"
+        data-testid="page-tip"
+      >
+        <p className="flex gap-2">
+          <Info className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden />
+          <span>{text}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => mark.mutate(key)}
+          className="mt-2 ml-6 text-sm font-semibold text-brand-700 hover:underline"
+          data-testid="page-tip-ok"
+        >
+          Entendi
+        </button>
+      </div>
+    );
+  }
+  return (
+    <details className="group mt-1 max-w-2xl text-sm text-ink-muted">
+      <summary className="w-fit cursor-pointer list-none font-medium text-brand-700 hover:underline">
+        Como usar
+      </summary>
+      <p className="mt-1">{text}</p>
+    </details>
   );
 }

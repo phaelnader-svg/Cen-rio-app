@@ -2,7 +2,6 @@ import { zonedDateTime } from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
-import { processHelpQueue } from '../src/modules/help/queue';
 import { processIssueRisks } from '../src/modules/issues/service';
 import type { Client } from './helpers';
 import {
@@ -12,7 +11,8 @@ import {
   employeeByName,
   idemKey,
   loginAdmin,
-  resetDatabase,
+  resetDatabaseWithMaterialsGate,
+  naEmpresa1,
 } from './helpers';
 import {
   act,
@@ -28,14 +28,6 @@ import {
   uploadPhoto,
   userIdOf,
 } from './production-helpers';
-import {
-  createMeasurement,
-  fabric,
-  fillAndSubmit,
-  gestorUserId,
-  nextFriday,
-} from './measurement-helpers';
-import { confirmedFabricPurchase, createSupplier, ok, receive } from './purchasing-helpers';
 
 /**
  * Fase 9 — central de atenção, ocorrências, delegação de soluções e integração com a
@@ -58,7 +50,7 @@ afterAll(async () => {
   await app.close();
 });
 beforeEach(async () => {
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   (app.ctx.hub as unknown as { feed: { lastSeq: bigint } }).feed.lastSeq = 0n;
   await db().companySettings.update({
     where: { id: 1 },
@@ -222,79 +214,6 @@ async function machineIssue(s: Awaited<ReturnType<typeof scenario>>, impact = 'I
 }
 
 describe('Abertura pelo tablet', () => {
-  it('1. falta de material: material, quantidade e unidade; sem compra automática; só resolve com material reservado', async () => {
-    const s = await scenario({ materials: 'missing' });
-    const corte = s.t('CORTE_TECIDO');
-    expect((await s.reload(corte.id)).status).toBe('BLOQUEADA');
-    const detail = (await s.tablets.Márcio!.get(`/api/v1/production-tasks/${corte.id}`)).body as T;
-    const requirementId = detail.materials![0]!.requirementId;
-    const purchasesBefore = await db().purchaseOrder.count();
-    const r = await openIssue(s.tablets.Márcio!, {
-      taskId: corte.id,
-      kind: 'MATERIAL',
-      impact: 'IMPEDIDO',
-      material: { requirementId, quantity: 12, unit: 'METRO' },
-      description: 'Linho ainda não chegou',
-    });
-    expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({
-      kind: 'MATERIAL',
-      status: 'ABERTA',
-      blocksTask: true,
-      material: { requirementId, quantity: 12, unit: 'METRO' },
-      reporter: { displayName: 'Márcio' },
-      task: { id: corte.id },
-    });
-    // Dispositivo e horário registrados automaticamente.
-    const row = await db().productionIssue.findUniqueOrThrow({ where: { id: r.body.id } });
-    expect(row.reporterDeviceId).not.toBeNull();
-    expect(row.createdAt.toISOString()).toBe(at('09:00').toISOString());
-    expect(await db().purchaseOrder.count()).toBe(purchasesBefore);
-    expect(await notices(await gestorId(s.admin), 'OCORRENCIA_ABERTA')).toHaveLength(1);
-    // Gestor registra a decisão (comprar) e pede verificação: ainda falta → não resolve.
-    await post(s.admin, `/api/v1/issues/${r.body.id}/request-verification`, {
-      note: 'Compra do linho com o fornecedor',
-    });
-    const early = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
-      resolved: true,
-      note: 'Material comprado',
-    });
-    expect(early.status).toBe(422);
-    expect(early.body.error.message).toMatch(/ainda não está disponível/);
-    // Material recebido e reservado para a OS: agora confirma e a tarefa é liberada.
-    const supplier = await createSupplier(s.admin, 'Fornecedor OC');
-    const po = await confirmedFabricPurchase(s.admin, supplier.id, s.reqs[0]!);
-    await receive(s.admin, po.id, [ok(po.items[0].id, 12)]);
-    const done = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
-      resolved: true,
-      note: 'Linho recebido e reservado',
-    });
-    expect(done.status).toBe(200);
-    expect(done.body.status).toBe('RESOLVIDA');
-    expect((await s.reload(corte.id)).status).toBe('LIBERADA');
-  });
-
-  it('1b. material recebido com a ocorrência aberta: vai para verificação (não se encerra sozinha)', async () => {
-    const s = await scenario({ materials: 'missing' });
-    const corte = s.t('CORTE_TECIDO');
-    const detail = (await s.tablets.Márcio!.get(`/api/v1/production-tasks/${corte.id}`)).body as T;
-    const r = await openIssue(s.tablets.Márcio!, {
-      taskId: corte.id,
-      kind: 'MATERIAL',
-      impact: 'OUTRA_ATIVIDADE',
-      material: { requirementId: detail.materials![0]!.requirementId, quantity: 12, unit: 'METRO' },
-    });
-    expect(r.body.description).toMatch(/Falta de .*12 metro/);
-    const supplier = await createSupplier(s.admin, 'Fornecedor OC2');
-    const po = await confirmedFabricPurchase(s.admin, supplier.id, s.reqs[0]!);
-    await receive(s.admin, po.id, [ok(po.items[0].id, 12)]);
-    const issue = (await s.admin.get(`/api/v1/issues/${r.body.id}`)).body;
-    expect(issue.status).toBe('AGUARDANDO_VERIFICACAO');
-    expect(issue.events.map((e: { kind: string }) => e.kind)).toContain('MATERIAL_DISPONIVEL');
-    // A tarefa continua impedida até a confirmação.
-    expect((await s.reload(corte.id)).status).toBe('BLOQUEADA');
-  });
-
   it('2. problema técnico e 4. bloqueio total: pausa preservando o andamento, sem retomar antes da solução', async () => {
     const s = await scenario();
     const issue = await machineIssue(s);
@@ -588,7 +507,7 @@ describe('Impactos, propostas e reprogramação', () => {
     const proposals = await db().rescheduleProposal.findMany({ where: { kind: 'BLOQUEIO' } });
     expect(proposals).toHaveLength(1);
     expect(proposals[0]).toMatchObject({ issueId: r.body.id, status: 'PENDENTE' });
-    await processIssueRisks(db());
+    await naEmpresa1(() => processIssueRisks(db()));
     expect(await db().rescheduleProposal.count({ where: { kind: 'BLOQUEIO' } })).toBe(1);
     // Dependentes continuam bloqueadas (não liberadas indevidamente).
     expect((await s.reload(s.t('PREPARACAO').id)).status).toBe('BLOQUEADA');
@@ -601,35 +520,6 @@ describe('Impactos, propostas e reprogramação', () => {
     });
     const after = await db().rescheduleProposal.findFirstOrThrow({ where: { kind: 'BLOQUEIO' } });
     expect(after.status).toBe('OBSOLETA');
-  });
-
-  it('17. proposta de conflito: falta de ajudante com risco de atraso (pedido segue na fila)', async () => {
-    const s = await scenario();
-    await act(s.tablets.João!, s.t('DESMONTAGEM').id, 'start');
-    await act(s.tablets.Thiago!, s.cabeceira.id, 'start');
-    await act(s.tablets.Márcio!, s.revestimento.id, 'start');
-    const h = await post(s.tablets.Márcio!, '/api/v1/help-requests', {
-      taskId: s.revestimento.id,
-      kind: 'MOVIMENTAR',
-    });
-    expect(h.body.status).toBe('PENDENTE');
-    setClock('09:25');
-    await processHelpQueue(db());
-    await processHelpQueue(db());
-    const conflict = await db().rescheduleProposal.findMany({ where: { kind: 'CONFLITO' } });
-    expect(conflict).toHaveLength(1);
-    expect(conflict[0]!.problem).toMatch(/Falta de ajudante com risco de atraso/);
-    expect((await db().helpRequest.findUniqueOrThrow({ where: { id: h.body.id } })).status).toBe(
-      'PENDENTE',
-    );
-    // Thiago termina: atribuição automática e a proposta perde o efeito.
-    await act(s.tablets.Thiago!, s.cabeceira.id, 'complete');
-    expect((await db().helpRequest.findUniqueOrThrow({ where: { id: h.body.id } })).status).toBe(
-      'ATRIBUIDA',
-    );
-    expect(
-      (await db().rescheduleProposal.findFirstOrThrow({ where: { kind: 'CONFLITO' } })).status,
-    ).toBe('OBSOLETA');
   });
 
   it('18. reprogramação simples durante o impedimento: alternativa indicada, nada iniciado', async () => {
@@ -663,49 +553,6 @@ describe('Impactos, propostas e reprogramação', () => {
     expect(ap.body.status).toBe('APROVADA');
     expect((await s.reload(s.revestimento.id)).scheduledDate).not.toBe(day(-1));
     expect(r.status).toBe(201);
-  });
-
-  it('20. escolha manual de ajudante: impossível recusada, conflito com aprovação explícita', async () => {
-    const s = await scenario({ arrive: ['Márcio', 'Thiago'] });
-    await act(s.tablets.Thiago!, s.cabeceira.id, 'start');
-    await act(s.tablets.Márcio!, s.revestimento.id, 'start');
-    const h = await post(s.tablets.Márcio!, '/api/v1/help-requests', {
-      taskId: s.revestimento.id,
-      kind: 'PARAFUSAR',
-    });
-    expect(h.body.status).toBe('PENDENTE');
-    const cands = (await s.admin.get(`/api/v1/help-requests/${h.body.id}/candidates`)).body;
-    expect(cands.candidates.map((c: { name: string }) => c.name)).toEqual(
-      expect.arrayContaining(['João', 'Thiago']),
-    );
-    const joao = await post(s.admin, `/api/v1/help-requests/${h.body.id}/assign`, {
-      helperUserId: s.ids.joao,
-    });
-    expect(joao.status).toBe(422); // não confirmou chegada: impossível
-    const thiago = await post(s.admin, `/api/v1/help-requests/${h.body.id}/assign`, {
-      helperUserId: s.ids.thiago,
-    });
-    expect(thiago.status).toBe(409);
-    const confirmed = await post(s.admin, `/api/v1/help-requests/${h.body.id}/assign`, {
-      helperUserId: s.ids.thiago,
-      confirmConflict: true,
-      note: 'Cabeceira pode esperar 20 min',
-    });
-    expect(confirmed.status).toBe(200);
-    expect(confirmed.body).toMatchObject({
-      status: 'ATRIBUIDA',
-      helper: { displayName: 'Thiago' },
-    });
-    const ev = confirmed.body.events.at(-1);
-    expect(ev.note).toMatch(/Manual: gestor escolheu Thiago\. Conflito aprovado/);
-    expect(ev.candidates).not.toBeNull();
-    const action = await db().planningAction.findFirstOrThrow({
-      where: { kind: 'AJUDA_ATRIBUIDA' },
-    });
-    expect(action.automatic).toBe(false);
-    // Apoio entra na programação publicada como revisão (Fase 9).
-    const plan = (await s.admin.get(`/api/v1/production-plans/${s.plan.id}`)).body;
-    expect(plan.revisions[0].reason).toMatch(/Apoio AJ-00001 de Thiago para Márcio/);
   });
 });
 
@@ -741,8 +588,8 @@ describe('Central de atenção', () => {
     ).toHaveLength(1);
     // Prazo de resolução vencido: crítico e um único aviso.
     setClock('12:00');
-    await processIssueRisks(db());
-    await processIssueRisks(db());
+    await naEmpresa1(() => processIssueRisks(db()));
+    await naEmpresa1(() => processIssueRisks(db()));
     expect(await notices(await gestorId(s.admin), 'OCORRENCIA_PRAZO_RISCO')).toHaveLength(1);
     expect(await notices(s.ids.thiago, 'OCORRENCIA_PRAZO_RISCO')).toHaveLength(1);
     c = (await s.admin.get('/api/v1/attention?type=OCORRENCIA')).body;
@@ -864,98 +711,5 @@ describe('Permissões, concorrência, idempotência e tempo real', () => {
         .some((e: { payload: { kind: string } }) => e.payload.kind === 'OCORRENCIA_ATRIBUIDA'),
     ).toBe(true);
     await wAdmin.waitFor((m) => m.kind === 'event' && m.event.type === 'issue.assigned');
-  });
-});
-
-describe('Etapa 2 — ocorrência de material segue a cadeia da necessidade', () => {
-  /** Remedição aprovada substituindo a necessidade do tecido (mesma especificação, 10 m). */
-  async function remeasureLinen(s: Awaited<ReturnType<typeof scenario>>, color = 'Bege') {
-    const m = await createMeasurement(s.admin, {
-      serviceOrderId: s.so.id,
-      kind: 'EXTRAORDINARIA',
-      reason: 'Nova medição',
-      assigneeUserId: await gestorUserId(),
-      dueDate: nextFriday(),
-    });
-    const sub = await fillAndSubmit(s.admin, m.body, {
-      items: [fabric({ serviceOrderItemId: s.so.items[0].id, color, quantity: 10 })],
-    });
-    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
-    const d = (await s.admin.get(`/api/v1/measurements/${m.body.id}`)).body;
-    const r = await s.admin.post(
-      `/api/v1/measurements/${m.body.id}/request/approve`,
-      {
-        version: d.request.version,
-        substitutions: [{ requestItemId: d.items[0].id, replacesRequirementId: s.reqs[0]!.id }],
-      },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(r.status, JSON.stringify(r.body)).toBe(200);
-    return db().materialRequirement.findFirstOrThrow({
-      where: { serviceOrderId: s.so.id, status: 'ATIVA' },
-    });
-  }
-
-  it('tela antiga cita a necessidade substituída: a ocorrência fica na ATIVA e resolve com ela', async () => {
-    const s = await scenario({ materials: 'missing' });
-    const corte = s.t('CORTE_TECIDO');
-    const head = await remeasureLinen(s);
-    const r = await openIssue(s.tablets.Márcio!, {
-      taskId: corte.id,
-      kind: 'MATERIAL',
-      impact: 'IMPEDIDO',
-      material: { requirementId: s.reqs[0]!.id, quantity: 10, unit: 'METRO' },
-    });
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect(r.body.material.requirementId).toBe(head.id);
-    const supplier = await createSupplier(s.admin, 'Fornecedor Cadeia');
-    const po = await confirmedFabricPurchase(s.admin, supplier.id, head);
-    await receive(s.admin, po.id, [ok(po.items[0].id, 10)]);
-    expect((await s.admin.get(`/api/v1/issues/${r.body.id}`)).body.status).toBe(
-      'AGUARDANDO_VERIFICACAO',
-    );
-    const done = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
-      resolved: true,
-      note: 'Recebido para a necessidade atual',
-    });
-    expect(done.status, JSON.stringify(done.body)).toBe(200);
-  });
-
-  it('necessidade cancelada: a causa deixou de existir (verificação aceita); nova ocorrência nela → 409', async () => {
-    const s = await scenario({ materials: 'missing' });
-    const corte = s.t('CORTE_TECIDO');
-    const r = await openIssue(s.tablets.Márcio!, {
-      taskId: corte.id,
-      kind: 'MATERIAL',
-      impact: 'IMPEDIDO',
-      material: { requirementId: s.reqs[0]!.id, quantity: 12, unit: 'METRO' },
-    });
-    expect(r.status).toBe(201);
-    await post(s.admin, `/api/v1/issues/${r.body.id}/request-verification`, {
-      note: 'Conferir o tecido',
-    });
-    const early = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
-      resolved: true,
-      note: 'Ainda falta',
-    });
-    expect(early.status).toBe(422);
-    const c = await s.admin.post(
-      `/api/v1/material-requirements/${s.reqs[0]!.id}/cancel`,
-      { reason: 'Cliente trouxe o tecido' },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(c.status, JSON.stringify(c.body)).toBe(200);
-    const done = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
-      resolved: true,
-      note: 'Tecido do cliente',
-    });
-    expect(done.status, JSON.stringify(done.body)).toBe(200);
-    const again = await openIssue(s.tablets.Márcio!, {
-      taskId: corte.id,
-      kind: 'MATERIAL',
-      impact: 'IMPEDIDO',
-      material: { requirementId: s.reqs[0]!.id, quantity: 12, unit: 'METRO' },
-    });
-    expect(again.status).toBe(409);
   });
 });

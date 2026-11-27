@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCents, plural, type QuoteCustomerLookupDto } from '@cenario/shared';
 import {
   CUSTOMER_KIND_LABEL,
   SERVICE_ORDER_STATUS_LABEL,
@@ -9,7 +10,7 @@ import {
   type CustomerAddressDto,
   type OrderStatus,
 } from '@cenario/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, MapPin, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -30,6 +31,7 @@ import {
   type AddressState,
 } from './address-form';
 import { OrderStatusBadge } from './badges';
+import { OsStateBadge } from './os-state';
 import { CustomerForm } from './customer-form';
 import { BackLink, Detail, Section } from './section';
 
@@ -75,12 +77,14 @@ export function CustomerDetail({ id }: { id: string }) {
         description={`${CUSTOMER_KIND_LABEL[c.kind]}${c.tradeName ? ` · ${c.tradeName}` : ''}`}
         actions={
           <>
-            {can('pedidos.gerenciar') && c.active && (
+            {/* Revisão geral (itens 4 e 5): orçamento já com este cliente preenchido. */}
+            {can('orcamentos.gerenciar') && c.active && (
               <Link
-                href={`/painel/pedidos/novo?cliente=${c.id}`}
+                href={`/painel/orcamentos?cliente=${c.id}`}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-semibold text-white hover:bg-brand-800"
+                data-testid="customer-new-quote"
               >
-                <Plus className="size-4" aria-hidden /> Novo pedido
+                <Plus className="size-4" aria-hidden /> Novo orçamento
               </Link>
             )}
             {manage && (
@@ -111,6 +115,7 @@ export function CustomerDetail({ id }: { id: string }) {
           </>
         }
       />
+      <CustomerStats id={id} />
       {!c.active && (
         <Alert tone="warn" className="mb-4">
           Cliente arquivado: não aparece na seleção de novos pedidos.
@@ -144,6 +149,21 @@ export function CustomerDetail({ id }: { id: string }) {
                 <Detail label="Telefone">{formatPhone(c.phone)}</Detail>
                 <Detail label="WhatsApp">{formatPhone(c.whatsapp)}</Detail>
                 <Detail label="E-mail">{c.email}</Detail>
+                {c.birthDay && c.birthMonth && (
+                  <Detail label="Aniversário">
+                    {String(c.birthDay).padStart(2, '0')}/{String(c.birthMonth).padStart(2, '0')}
+                  </Detail>
+                )}
+                {c.referredBy && (
+                  <Detail label="Indicado por">
+                    <Link
+                      href={`/painel/clientes/${c.referredBy.id}`}
+                      className="text-brand-700 hover:underline"
+                    >
+                      {c.referredBy.name}
+                    </Link>
+                  </Detail>
+                )}
                 <Detail label="Observações">{c.notes}</Detail>
                 <Detail label="Cadastrado em">{formatDateTime(c.createdAt)}</Detail>
               </dl>
@@ -219,7 +239,7 @@ export function CustomerDetail({ id }: { id: string }) {
             <Spinner />
           ) : (
             <div className="grid gap-6 lg:grid-cols-2">
-              <Section title="Pedidos comerciais">
+              <Section title="Pedidos">
                 {!can('pedidos.ver') ? (
                   <p className="text-sm text-ink-muted">Sem permissão para ver pedidos.</p>
                 ) : history.data?.orders.length ? (
@@ -257,9 +277,12 @@ export function CustomerDetail({ id }: { id: string }) {
                         >
                           {s.code}
                         </Link>{' '}
+                        {s.operationalState && <OsStateBadge state={s.operationalState} />}{' '}
                         <span className="text-sm text-ink-muted">
-                          {SERVICE_ORDER_STATUS_LABEL[s.status as 'ABERTA']} · {s.pieceCount}{' '}
-                          peça(s) · {formatDateTime(s.createdAt)}
+                          {s.operationalState
+                            ? ''
+                            : `${SERVICE_ORDER_STATUS_LABEL[s.status as 'ABERTA']} · `}
+                          {plural(s.pieceCount, 'peça', 'peças')} · {formatDateTime(s.createdAt)}
                         </span>
                       </li>
                     ))}
@@ -373,5 +396,39 @@ function AddressDialog({
       )}
       <AddressFields value={value} onChange={setValue} errors={errors} showPrimary />
     </Dialog>
+  );
+}
+
+/**
+ * Revisão geral (item 5): o que o cliente já fez na tapeçaria, em números. Só para quem vê os
+ * orçamentos (é a mesma consulta que sugere o cliente no orçamento).
+ */
+function CustomerStats({ id }: { id: string }) {
+  const can = useCan();
+  const q = useQuery({
+    queryKey: ['quote-customer-lookup', 'id', id],
+    queryFn: () => api<QuoteCustomerLookupDto[]>(`/api/v1/quotes/customer-lookup?id=${id}`),
+    enabled: can('orcamentos.ver') || can('orcamentos.gerenciar'),
+  });
+  const c = q.data?.[0];
+  if (!c) return null;
+  const items: [string, string][] = [
+    ['Serviços', String(c.services)],
+    ['Orçamentos', c.quotes ? `${c.quotesClosed} de ${c.quotes} fechados` : 'nenhum'],
+    ['Já fechou', formatCents(c.spentCents)],
+    [
+      'Último serviço',
+      c.lastServiceAt ? new Date(c.lastServiceAt).toLocaleDateString('pt-BR') : '—',
+    ],
+  ];
+  return (
+    <dl className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="customer-stats">
+      {items.map(([k, v]) => (
+        <div key={k} className="rounded-xl border border-line bg-surface px-4 py-3">
+          <dt className="text-xs text-ink-muted">{k}</dt>
+          <dd className="mt-0.5 font-semibold tabular-nums">{v}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin } from './helpers';
+import { generateOs } from './os-helpers';
 
 /**
  * Fase 10 (plano principal) — o gestor no navegador (dados fictícios):
@@ -53,14 +54,9 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
       },
     });
     const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
-    const rec = await call(page, 'POST', '/api/v1/receipts', {
-      orderId: order.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: [
-        { orderItemId: order.items[0].id, quantity: 1, condition: 'BOA', location: 'Recepção' },
-      ],
-    });
+    // Fluxo da OS (2026-11-18): a peça chega e a OS é gerada no pedido.
+    await call(page, 'POST', `/api/v1/orders/${order.id}/arrived`, { version: order.version });
+    const rec = { generatedServiceOrder: await generateOs(page, order.id) };
     const soId = rec.generatedServiceOrder.id as string;
     const overview = await call(page, 'GET', '/api/v1/management/overview');
 
@@ -99,7 +95,8 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     await expect(page.getByTestId('deadline-state')).toHaveCount(0);
 
     // 4. A linha do tempo registra o motivo; a pendência saiu da Central e o Início acompanha.
-    await page.getByRole('tab', { name: 'Linha do tempo' }).click();
+    // Fase 2 (OS unificada): a linha do tempo fica dentro da aba "Histórico".
+    await page.getByRole('tab', { name: /Histórico/ }).click();
     await expect(page.getByTestId('service-timeline')).toContainText('Cliente pediu mais prazo');
     const after = (await call(page, 'GET', '/api/v1/attention?type=PRAZO_OS')) as Attention;
     expect(after.items.some((i) => i.serviceOrder?.id === soId)).toBe(false);
@@ -115,7 +112,7 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
    * bloqueios pela mesma fonte da API; o menu leva a "Materiais aprovados"; a aba Recebimentos
    * de Compras lista por situação; "Bloqueios" abre o quadro já filtrado.
    */
-  test('Início: total da Central, a planejar e bloqueios; menu e Recebimentos', async ({
+  test('Início: total da Central, a planejar e bloqueios; menu sem os módulos removidos', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -134,15 +131,11 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     );
     await page.getByTestId('ops-blocked-tasks').click();
     await expect(page).toHaveURL(/\/painel\/producao\?status=BLOQUEADA$/);
-    // Menu: "Materiais aprovados" no grupo Compras.
+    // Removidos (16/11/2026): Materiais aprovados, Compras e Recebimentos saem do menu.
     await page.goto('/painel');
-    await page.getByRole('navigation').getByRole('link', { name: 'Materiais aprovados' }).click();
-    await expect(page).toHaveURL(/\/painel\/materiais$/);
-    // Compras → Recebimentos: filtro por situação.
-    await page.goto('/painel/compras');
-    await page.getByRole('tab', { name: 'Recebimentos' }).click();
-    await expect(page.getByTestId('receiving-situation')).toBeVisible();
-    await page.getByTestId('receiving-situation').selectOption('CANCELADO');
-    await expect(page.getByTestId('receiving-situation')).toHaveValue('CANCELADO');
+    const nav = page.getByRole('navigation');
+    await expect(nav.getByRole('link', { name: 'Pedidos', exact: true }).first()).toBeVisible();
+    for (const gone of ['Materiais aprovados', 'Compras', 'Recebimentos'])
+      await expect(nav.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
   });
 });

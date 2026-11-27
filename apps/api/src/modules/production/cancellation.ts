@@ -1,16 +1,8 @@
+import { plural } from '@cenario/shared';
 import { EVENT_TYPES } from '@cenario/shared';
 import type { Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
-import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
-import {
-  MANAGEMENT_AUDIENCE,
-  changeStock,
-  lockStockItem,
-  num,
-  refreshReadiness,
-} from '../purchasing/common';
-import { cancelRequirements } from '../purchasing/requirements';
 import { notify, taskNotice } from '../notifications/notify';
 import { domainTaskEvent, lockTasks, taskEvent } from './common';
 
@@ -71,43 +63,13 @@ export async function protectCancelledServiceOrder(
   await tx.productionPlanItem.deleteMany({
     where: { serviceOrderId, plan: { status: 'RASCUNHO' } },
   });
-  const reservations = await tx.stockReservation.findMany({
-    where: { serviceOrderId, status: 'ATIVA' },
-  });
-  for (const r of reservations) {
-    const stock = await lockStockItem(tx, r.stockItemId);
-    await tx.stockReservation.update({
-      where: { id: r.id },
-      data: {
-        status: 'LIBERADA',
-        closedAt: new Date(),
-        closedById: actor.userId,
-        closeReason: 'OS cancelada',
-        version: { increment: 1 },
-      },
-    });
-    await changeStock(tx, actor, stock, { reserved: -num(r.quantity) });
-    await appendEvent(tx, actor, {
-      type: EVENT_TYPES.STOCK_RELEASED,
-      aggregateType: 'stock_reservation',
-      aggregateId: r.id,
-      payload: { id: r.id, serviceOrderId, stockItemId: r.stockItemId, quantity: num(r.quantity) },
-      audience: MANAGEMENT_AUDIENCE,
-    });
-  }
-  if (tasks.length || reservations.length) {
+  if (tasks.length) {
     await audit(tx, actor, {
       action: 'service_order.cancel_protection',
       entityType: 'service_order',
       entityId: serviceOrderId,
-      summary: `OS cancelada: ${tasks.length} tarefa(s) cancelada(s) e ${reservations.length} reserva(s) liberada(s).`,
+      summary: `OS cancelada: ${plural(tasks.length, 'tarefa cancelada', 'tarefas canceladas')}.`,
     });
   }
-  // Etapa 2 (V5): as necessidades ATIVAS da OS cancelada são encerradas (CANCELADA, com motivo);
-  // compras, recebimentos, reservas históricas, movimentos e custos ficam como estão.
-  await cancelRequirements(tx, actor, { serviceOrderId }, `OS cancelada: ${reason}`, {
-    refresh: false,
-  });
-  await refreshReadiness(tx, actor, [serviceOrderId]);
   for (const l of cancelListeners) await l(tx, actor, serviceOrderId, reason);
 }

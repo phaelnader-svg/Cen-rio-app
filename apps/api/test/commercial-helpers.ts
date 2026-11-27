@@ -1,5 +1,6 @@
 import type { App } from '../src/app';
-import { type Client, idemKey, loginAdmin } from './helpers';
+import { refreshOrderStatus } from '../src/modules/commercial/status';
+import { type Client, db, idemKey, loginAdmin } from './helpers';
 
 /** CPFs/CNPJs fictícios com dígitos verificadores válidos (gerados para teste). */
 export const FAKE_CPF = ['52998224725', '11144477735', '39053344705'];
@@ -76,17 +77,23 @@ export async function createPickup(
   return r.body;
 }
 
-export function receiptBody(
+/**
+ * Recebimentos removidos: a chegada à oficina é só uma marcação opcional ("Peças na oficina" no
+ * pedido ou "chegaram na oficina" na retirada). Nos testes, marca direto as quantidades chegadas.
+ */
+export async function markArrived(
   orderId: string,
   lines: { orderItemId: string; quantity: number }[],
-  pickupId: string | null = null,
 ) {
-  return {
-    orderId,
-    pickupId,
-    origin: pickupId ? 'RETIRADA' : 'ENTREGUE_PELO_CLIENTE',
-    lines: lines.map((l) => ({ ...l, condition: 'BOA', location: 'Área de recebimento' })),
-  };
+  await db().$transaction(async (tx) => {
+    for (const l of lines)
+      await tx.commercialOrderItem.update({
+        where: { id: l.orderItemId },
+        data: { receivedQuantity: { increment: l.quantity } },
+      });
+    await refreshOrderStatus(tx, orderId);
+  });
+  return { status: 201 as const, body: null as unknown };
 }
 
 /** Usuário de painel com uma função contendo só as permissões indicadas. */
@@ -113,4 +120,77 @@ export async function panelUserWith(app: App, admin: Client, tag: string, permis
   );
   if (emp.status !== 201) throw new Error(`emp: ${JSON.stringify(emp.body)}`);
   return loginAdmin(app, { email, password: 'SenhaSegura123' });
+}
+
+/**
+ * Fluxo da OS (2026-11-18): o fechamento do serviço não gera mais a OS. Para os testes que
+ * precisam dela, gera a OS à mão a partir do pedido como a tela "Gerar ordem de serviço" faz:
+ * todas as peças livres, com os dados do pedido (tecido, notas, titular e mão de obra previstos)
+ * e, por padrão, "Material já comprado" (a OS fica disponível para a programação).
+ */
+export async function generateOsFromOrder(
+  admin: Client,
+  orderId: string,
+  opts: { materialPurchased?: boolean } = {},
+) {
+  const a = await admin.get(`/api/v1/service-orders/available?orderId=${orderId}`);
+  if (a.status !== 200) throw new Error(`available: ${a.status} ${JSON.stringify(a.body)}`);
+  const data = a.body as {
+    order: { technicalNotes: string | null; promisedDate: string | null };
+    items: {
+      orderItemId: string;
+      description: string;
+      available: number;
+      serviceType: string | null;
+      fabricName: string | null;
+      fabricColor: string | null;
+      fabricReference: string | null;
+      technicalNotes: string | null;
+      plannedUpholstererUserId: string | null;
+      plannedLaborUnitCents: number | null;
+    }[];
+  };
+  const r = await admin.post(
+    '/api/v1/service-orders',
+    {
+      orderId,
+      materialPurchased: opts.materialPurchased ?? true,
+      technicalInstructions: data.order.technicalNotes,
+      promisedDate: data.order.promisedDate,
+      items: data.items
+        .filter((i) => i.available > 0)
+        .map((i) => ({
+          orderItemId: i.orderItemId,
+          quantity: i.available,
+          description: i.description,
+          serviceType: i.serviceType ?? 'OUTRO',
+          fabricName: i.fabricName,
+          fabricColor: i.fabricColor,
+          fabricReference: i.fabricReference,
+          technicalNotes: i.technicalNotes,
+          ...(i.plannedUpholstererUserId
+            ? {
+                upholstererUserId: i.plannedUpholstererUserId,
+                ...(i.plannedLaborUnitCents
+                  ? {
+                      labor: {
+                        agreedCents: i.plannedLaborUnitCents * i.available,
+                        eligibility: 'QUALIDADE_APROVADA',
+                      },
+                    }
+                  : {}),
+              }
+            : {}),
+        })),
+    },
+    { 'idempotency-key': idemKey() },
+  );
+  if (r.status !== 201) throw new Error(`OS: ${r.status} ${JSON.stringify(r.body)}`);
+  return r.body as {
+    id: string;
+    code: string;
+    number: number;
+    version: number;
+    items: { id: string; orderItemId: string; quantity: number; position: number }[];
+  };
 }

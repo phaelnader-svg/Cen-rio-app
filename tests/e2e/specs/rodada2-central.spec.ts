@@ -150,7 +150,7 @@ test.describe.serial('Rodada 2 — Central derivada, Meus Ganhos ao vivo e indic
     await at.getByTestId('week-confirm-check').check();
     await at.getByTestId('week-confirm-submit').click();
     await expect(at.getByTestId('week-confirmation-state')).toHaveText(
-      'Confirmada pelo profissional',
+      'Confirmada pelo funcionário',
     );
     await a.context.close();
 
@@ -161,7 +161,7 @@ test.describe.serial('Rodada 2 — Central derivada, Meus Ganhos ao vivo e indic
     );
     const payCard = page.getByTestId(`attention-FINANCEIRO:pagamento:${ANDRE.userId}`);
     await expect(payCard).toBeVisible();
-    await expect(payCard).toContainText('liberado(s) para pagar');
+    await expect(payCard).toContainText('para pagar');
     await expect(payCard).not.toContainText('R$');
     await payCard.getByRole('link', { name: /Abrir/ }).click();
     await expect(page).toHaveURL(new RegExp(`semana=${WEEK}&profissional=${ANDRE.userId}`));

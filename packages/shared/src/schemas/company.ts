@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { optionalText, trimmed } from './common';
+import { optionalText, trimmed, whatsappSchema } from './common';
 
 const timeSchema = z
   .string()
@@ -70,6 +70,10 @@ export const companySettingsSchema = z
     workingDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
     planningWeekday: z.number().int().min(0).max(6),
     measurementWeekday: z.number().int().min(0).max(6),
+    /** 26/11/2026: atende na casa do cliente ("No local" nas retiradas). */
+    servesOnSite: z.boolean().optional(),
+    /** 26/11/2026: quanto quer faturar por mês (centavos). Vazio = sem meta. */
+    monthlyGoalCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
     version: z.number().int().min(1),
   })
   .refine((v) => toMinutes(v.arrivalWindowStart) <= toMinutes(v.workdayStart), {
@@ -84,4 +88,23 @@ export const companySettingsSchema = z
     message: 'O fim do expediente deve ser posterior ao limite de alerta de chegada.',
     path: ['workdayEnd'],
   });
+/** Nome provisório de toda empresa criada pelo Criar conta (as boas-vindas pedem o nome real). */
+export const PROVISIONAL_TRADE_NAME = 'Minha empresa';
+
+/** Boas-vindas do primeiro acesso: nome da empresa e de quem criou a conta. */
+export const companyWelcomeSchema = z
+  .object({
+    tradeName: trimmed(2, 120, 'Nome da empresa').refine((v) => v !== PROVISIONAL_TRADE_NAME, {
+      message: 'Escreva o nome da sua empresa.',
+    }),
+    displayName: trimmed(2, 40, 'Seu nome'),
+    whatsapp: whatsappSchema.optional(),
+  })
+  .strict();
+/** Empresa antiga sem WhatsApp: o gestor informa ao entrar (uma vez). */
+export const companyContactSchema = z.object({ whatsapp: whatsappSchema }).strict();
+export type CompanyContactInput = z.input<typeof companyContactSchema>;
+
+export type CompanyWelcomeInput = z.input<typeof companyWelcomeSchema>;
+
 export type CompanySettingsInput = z.input<typeof companySettingsSchema>;

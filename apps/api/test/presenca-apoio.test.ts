@@ -3,12 +3,19 @@ import type { App } from '../src/app';
 import { detectAbsences, detectOpenShifts } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { WsClient, createTestApp, db, employeeByName, idemKey, resetDatabase } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  employeeByName,
+  idemKey,
+  resetDatabase,
+  naEmpresa1,
+} from './helpers';
 import { panelUserWith } from './commercial-helpers';
 import { day, today } from './production-helpers';
 import {
   arrive,
-  ask,
   attendanceAction,
   depart,
   notices,
@@ -71,8 +78,6 @@ const approve = (admin: Client, id: string, body: Record<string, unknown> = {}) 
   post(admin, `/api/v1/reschedule-proposals/${id}/approve`, body);
 const reject = (admin: Client, id: string, note = 'Agora não') =>
   post(admin, `/api/v1/reschedule-proposals/${id}/reject`, { note });
-const prolonged = (c: Client, body: Record<string, unknown>) =>
-  post(c, '/api/v1/help-requests/prolonged', body);
 const transfer = (c: Client, taskId: string, body: Record<string, unknown>) =>
   post(c, `/api/v1/production-tasks/${taskId}/transfer-request`, body);
 
@@ -124,50 +129,6 @@ describe('Contraprovas (defeitos da auditoria)', () => {
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ situation: 'PRESENTE', departedAt: null });
   });
-
-  it('F. reatribuir a tarefa de apoio mantém HelpRequest.helperUserId igual ao executor', async () => {
-    const s = await scenario(app);
-    const req = await ask(s.tablets.Ricardo!, { taskId: s.main.id, kind: 'PARAFUSAR' });
-    expect(req.body).toMatchObject({ status: 'ATRIBUIDA', helper: { displayName: 'João' } });
-    const support = await s.reload(req.body.supportTask.id);
-    const put = await s.admin.req(
-      'PUT',
-      `/api/v1/production-tasks/${support.id}`,
-      {
-        assigneeUserId: s.ids.thiago,
-        reason: 'João saiu para uma entrega',
-        version: support.version,
-      },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(put.status).toBe(200);
-    const after = await db().helpRequest.findUniqueOrThrow({ where: { id: req.body.id } });
-    expect(after.helperUserId).toBe(s.ids.thiago);
-    expect((await s.tablets.Thiago!.get(`/api/v1/help-requests/${req.body.id}`)).status).toBe(200);
-  });
-
-  it('G. aviso acionável só para quem pode agir (decidir exige producao.planejar)', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo'] });
-    const presenceOnly = await panelUserWith(app, s.admin, 'so-presenca', [
-      'presenca.ver',
-      'presenca.gerenciar',
-    ]);
-    const planner = await panelUserWith(app, s.admin, 'so-planejar', [
-      'producao.ver',
-      'producao.planejar',
-    ]);
-    const pid = (await presenceOnly.get('/api/auth/me')).body.user.id as string;
-    const plid = (await planner.get('/api/auth/me')).body.user.id as string;
-    const r = await ask(s.tablets.Ricardo!, {
-      taskId: s.main.id,
-      kind: 'MOVIMENTAR',
-      urgent: true,
-      justification: 'Sofá pesado caindo',
-    });
-    expect(r.status).toBe(201);
-    expect((await notices(pid)).map((n) => n.kind)).not.toContain('AJUDA_SOLICITADA');
-    expect((await notices(plid)).map((n) => n.kind)).toContain('AJUDA_SOLICITADA');
-  });
 });
 
 describe('Presença (1–19)', () => {
@@ -216,14 +177,14 @@ describe('Presença (1–19)', () => {
   it('9–11. ausência presumida continua; feriado não gera ausência nem atraso', async () => {
     const s = await scenario(app, { arrive: ['Ricardo'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(3);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(3);
     expect((await row('Márcio'))?.situation).toBe('AUSENCIA_PRESUMIDA');
     // Amanhã é feriado: ninguém é presumido ausente e a chegada tardia não é atraso.
     const h = await holiday(s.admin, day(1), 'Recesso da oficina');
     expect(h.status).toBe(201);
     expect((await holiday(s.admin, day(1))).status).toBe(409);
     setClock('10:30', day(1));
-    expect(await detectAbsences(app.ctx.prisma)).toBe(0);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(0);
     expect(
       await db().operationalAttendance.count({
         where: { date: new Date(`${day(1)}T00:00:00.000Z`) },
@@ -297,7 +258,7 @@ describe('Presença (1–19)', () => {
       ).status,
     ).toBe(422);
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(2); // Ricardo e Thiago; Márcio e João não
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(2); // Ricardo e Thiago; Márcio e João não
     expect(await teamDay(s.admin, 'Márcio')).toMatchObject({
       situation: 'FERIAS',
       availability: 'AUSENTE',
@@ -349,7 +310,7 @@ describe('Presença (1–19)', () => {
   it('férias que cobrem hoje convertem a ausência presumida (mesmo registro do gestor)', async () => {
     const s = await scenario(app, { arrive: [] });
     setClock('09:31');
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     expect((await row('Thiago'))?.situation).toBe('AUSENCIA_PRESUMIDA');
     const thiago = await employeeByName('Thiago');
     await leave(s.admin, {
@@ -374,8 +335,8 @@ describe('Presença (1–19)', () => {
     expect((await arrive(s.tablets.João!)).status).toBe(200);
     expect((await arrive(s.tablets.Thiago!)).status).toBe(200);
     setClock('08:00');
-    expect(await detectOpenShifts(app.ctx.prisma)).toBe(2);
-    expect(await detectOpenShifts(app.ctx.prisma)).toBe(0); // idempotente
+    expect(await naEmpresa1(() => detectOpenShifts(app.ctx.prisma))).toBe(2);
+    expect(await naEmpresa1(() => detectOpenShifts(app.ctx.prisma))).toBe(0); // idempotente
     const alerts = await notices(await me(s.admin), 'EXPEDIENTE_ABERTO');
     expect(alerts).toHaveLength(2);
     expect(alerts.map((n) => n.body).join(' ')).toMatch(
@@ -466,70 +427,6 @@ describe('Presença (1–19)', () => {
 });
 
 describe('Ajuda e apoio (20–28)', () => {
-  it('20–23. pedido normal e urgente, atribuição automática e manual continuam', async () => {
-    const s = await scenario(app);
-    const normal = await ask(s.tablets.Ricardo!, { taskId: s.main.id, kind: 'PARAFUSAR' });
-    expect(normal.body).toMatchObject({ status: 'ATRIBUIDA', helper: { displayName: 'João' } });
-    const urgent = await ask(s.tablets.Thiago!, {
-      taskId: s.thiagoTask.id,
-      kind: 'MOVIMENTAR',
-      urgent: true,
-      justification: 'Cabeceira tombando',
-    });
-    expect(urgent.status).toBe(201);
-    expect(urgent.body.urgent).toBe(true);
-    // Manual: o gestor escolhe para um pedido em espera.
-    const helped = await db().helpRequest.findMany({ orderBy: { number: 'asc' } });
-    expect(helped).toHaveLength(2);
-    if (urgent.body.status !== 'ATRIBUIDA') {
-      const m = await post(s.admin, `/api/v1/help-requests/${urgent.body.id}/assign`, {
-        helperUserId: s.ids.joao,
-        confirmConflict: true,
-        note: 'João termina o apoio do Ricardo e vem',
-      });
-      expect(m.status).toBe(200);
-    }
-  });
-
-  it('24–27. reatribuição pela proposta (changeTask) e pelo planejamento: ajudante atual em tudo', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo', 'Márcio', 'João', 'Thiago'] });
-    const req = await ask(s.tablets.Ricardo!, { taskId: s.main.id, kind: 'PARAFUSAR' });
-    expect(req.body.helper.displayName).toBe('João');
-    // O próprio ajudante pede para passar o apoio (transferência com aprovação → changeTask).
-    const tr = await transfer(s.tablets.João!, req.body.supportTask.id, {
-      toUserId: s.ids.thiago,
-      reason: 'Vou descarregar o caminhão',
-    });
-    expect(tr.status).toBe(201);
-    expect((await approve(s.admin, tr.body.id)).status).toBe(200);
-    const after = await db().helpRequest.findUniqueOrThrow({ where: { id: req.body.id } });
-    const task = await db().productionTask.findUniqueOrThrow({
-      where: { id: req.body.supportTask.id },
-    });
-    expect(after.helperUserId).toBe(s.ids.thiago);
-    expect(task.assigneeUserId).toBe(s.ids.thiago);
-    // 25/27. O novo ajudante abre o pedido; o detalhe mostra o ajudante atual.
-    const detail = await s.tablets.Thiago!.get(`/api/v1/help-requests/${req.body.id}`);
-    expect(detail.status).toBe(200);
-    expect(detail.body.helper.displayName).toBe('Thiago');
-    expect(detail.body.events.map((e: { kind: string }) => e.kind)).toContain('AJUDANTE_ALTERADO');
-    // 26. O ajudante antigo deixa de contar como "ocupado com apoio": recebe o próximo pedido.
-    const next = await ask(s.tablets.Márcio!, { taskId: s.marcioTask.id, kind: 'POSICIONAR' });
-    expect(next.body.helper.displayName).toBe('João');
-    // Quem pediu nunca vira o próprio ajudante.
-    const sup = await s.reload(req.body.supportTask.id);
-    const self = await s.admin.req(
-      'PUT',
-      `/api/v1/production-tasks/${sup.id}`,
-      { assigneeUserId: s.ids.ricardo, reason: 'Teste', version: sup.version },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(self.status).toBe(422);
-    expect(
-      (await db().helpRequest.findUniqueOrThrow({ where: { id: req.body.id } })).helperUserId,
-    ).toBe(s.ids.thiago);
-  });
-
   it('28. funções personalizadas: aviso de proposta só para quem decide (producao.planejar)', async () => {
     const s = await scenario(app, { arrive: ['Ricardo', 'João', 'Thiago'] });
     const presenceOnly = await panelUserWith(app, s.admin, 'pres', [
@@ -554,99 +451,13 @@ describe('Ajuda e apoio (20–28)', () => {
     expect((await approve(presenceOnly, tr.body.id)).status).toBe(403);
     // Presença continua com quem gerencia a presença.
     setClock('09:31');
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     expect((await notices(await me(presenceOnly))).map((n) => n.kind)).toContain(
       'AUSENCIA_PRESUMIDA',
     );
     expect((await notices(await me(planner))).map((n) => n.kind)).not.toContain(
       'AUSENCIA_PRESUMIDA',
     );
-  });
-});
-
-describe('Apoio prolongado (29–32)', () => {
-  it('29–31. proposto ao gestor (fora da fila automática); aprovado cria o vínculo; recusado encerra', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo', 'Márcio', 'João', 'Thiago'] });
-    const r = await prolonged(s.tablets.Ricardo!, {
-      taskId: s.main.id,
-      helperUserId: s.ids.thiago,
-      estimatedMinutes: 480,
-      justification: 'Sofá de canto: preciso de apoio o dia todo',
-    });
-    expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({
-      kind: 'APOIO_PROLONGADO',
-      status: 'ESCALADA',
-      helper: null,
-      supportTask: null,
-    });
-    // A fila automática não atribui.
-    await post(s.admin, '/api/test/attendance/check');
-    expect((await db().helpRequest.findUniqueOrThrow({ where: { id: r.body.id } })).status).toBe(
-      'ESCALADA',
-    );
-    const p = await db().rescheduleProposal.findFirstOrThrow({
-      where: { helpRequestId: r.body.id },
-    });
-    expect(p).toMatchObject({
-      kind: 'APOIO_PROLONGADO',
-      requestedById: s.ids.ricardo,
-      status: 'PENDENTE',
-    });
-    const alts = p.alternatives as { title: string }[];
-    expect(alts[0]!.title).toMatch(/Thiago apoia Ricardo/);
-    const ok = await approve(s.admin, p.id);
-    expect(ok.status).toBe(200);
-    const linked = await db().helpRequest.findUniqueOrThrow({
-      where: { id: r.body.id },
-      include: { supportTask: true },
-    });
-    expect(linked).toMatchObject({ status: 'ATRIBUIDA', helperUserId: s.ids.thiago });
-    expect(linked.supportTask).toMatchObject({
-      assigneeUserId: s.ids.thiago,
-      role: 'APOIO',
-      estimatedMinutes: 480,
-    });
-    expect((await notices(s.ids.ricardo, 'PEDIDO_DECIDIDO'))[0]!.body).toMatch(/aprovado/);
-    // Recusa: outro pedido, o gestor recusa com motivo — nada é criado.
-    const r2 = await prolonged(s.tablets.Márcio!, {
-      taskId: s.marcioTask.id,
-      estimatedMinutes: 120,
-      justification: 'Revestimento grande',
-    });
-    const p2 = await db().rescheduleProposal.findFirstOrThrow({
-      where: { helpRequestId: r2.body.id },
-    });
-    expect((await reject(s.admin, p2.id, 'Sem gente sobrando hoje')).status).toBe(200);
-    const refused = await db().helpRequest.findUniqueOrThrow({ where: { id: r2.body.id } });
-    expect(refused).toMatchObject({ status: 'CANCELADA', supportTaskId: null });
-    expect(refused.cancelReason).toMatch(/Recusado pelo gestor: Sem gente sobrando hoje/);
-    expect((await notices(s.ids.marcio, 'PEDIDO_DECIDIDO'))[0]!.body).toMatch(/recusado/);
-    // Histórico imutável do pedido.
-    const ev = await db().helpRequestEvent.findMany({
-      where: { helpRequestId: r2.body.id },
-      orderBy: { createdAt: 'asc' },
-    });
-    expect(ev.map((e) => e.kind)).toEqual(['SOLICITADA', 'RECUSADA']);
-  });
-
-  it('32. apoio prolongado não cria mão de obra (D14) nem altera titular', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo', 'Márcio', 'João', 'Thiago'] });
-    const item = await db().serviceOrderItem.findUniqueOrThrow({ where: { id: s.so.items[0].id } });
-    const payables = await db().productionPayable.count();
-    const r = await prolonged(s.tablets.Ricardo!, {
-      taskId: s.main.id,
-      estimatedMinutes: 240,
-      justification: 'Peça pesada',
-    });
-    const p = await db().rescheduleProposal.findFirstOrThrow({
-      where: { helpRequestId: r.body.id },
-    });
-    await approve(s.admin, p.id);
-    expect(await db().productionPayable.count()).toBe(payables);
-    expect(
-      (await db().serviceOrderItem.findUniqueOrThrow({ where: { id: item.id } })).upholstererUserId,
-    ).toBe(item.upholstererUserId);
   });
 });
 
@@ -776,7 +587,7 @@ describe('Ausência, reprogramação e regras R1/R2 (38–43)', () => {
     setClock('10:15');
     await arrive(s.tablets.Ricardo!);
     setClock('09:31', day(1));
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     const marcio = await employeeByName('Márcio');
     await leave(s.admin, {
       employeeId: marcio.id,
@@ -799,49 +610,6 @@ describe('Ausência, reprogramação e regras R1/R2 (38–43)', () => {
 });
 
 describe('Concorrência (44–46)', () => {
-  it('44. duas reatribuições simultâneas do mesmo apoio: uma vence, pedido e tarefa coerentes', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo', 'Márcio', 'João', 'Thiago'] });
-    const req = await ask(s.tablets.Ricardo!, { taskId: s.main.id, kind: 'PARAFUSAR' });
-    const sup = await s.reload(req.body.supportTask.id);
-    const put = (to: string) =>
-      s.admin.req(
-        'PUT',
-        `/api/v1/production-tasks/${sup.id}`,
-        { assigneeUserId: to, reason: 'Troca', version: sup.version },
-        { 'idempotency-key': idemKey() },
-      );
-    const res = await Promise.all([put(s.ids.thiago), put(s.ids.marcio)]);
-    expect(res.map((r) => r.status).sort()).toEqual([200, 409]);
-    const task = await db().productionTask.findUniqueOrThrow({ where: { id: sup.id } });
-    const hr = await db().helpRequest.findUniqueOrThrow({ where: { id: req.body.id } });
-    expect(hr.helperUserId).toBe(task.assigneeUserId);
-  });
-
-  it('45. aprovar × recusar ao mesmo tempo: uma decisão só, estado coerente', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo', 'Márcio', 'João', 'Thiago'] });
-    const r = await prolonged(s.tablets.Ricardo!, {
-      taskId: s.main.id,
-      estimatedMinutes: 240,
-      justification: 'Peça grande',
-    });
-    const p = await db().rescheduleProposal.findFirstOrThrow({
-      where: { helpRequestId: r.body.id },
-    });
-    const [a, b] = await Promise.all([approve(s.admin, p.id), reject(s.admin, p.id, 'Não')]);
-    expect([a.status, b.status].sort()).toEqual([200, 422]);
-    const hr = await db().helpRequest.findUniqueOrThrow({ where: { id: r.body.id } });
-    const after = await db().rescheduleProposal.findUniqueOrThrow({ where: { id: p.id } });
-    if (after.status === 'APROVADA') expect(hr.status).toBe('ATRIBUIDA');
-    else expect(hr.status).toBe('CANCELADA');
-    // Transferência: aprovar × recusar.
-    const tr = await transfer(s.tablets.João!, s.t('DESMONTAGEM').id, { reason: 'Troca de turno' });
-    const [c, d] = await Promise.all([
-      approve(s.admin, tr.body.id),
-      reject(s.admin, tr.body.id, 'Não'),
-    ]);
-    expect([c.status, d.status].sort()).toEqual([200, 422]);
-  });
-
   it('46. chegada × correção, saída × correção, alerta × correção, feriado × ausência, transferência × titular: sem deadlock', async () => {
     const s = await scenario(app, { arrive: ['Ricardo', 'Márcio', 'Thiago'] });
     const joao = await employeeByName('João');
@@ -892,7 +660,7 @@ describe('Concorrência (44–46)', () => {
     const m = (await row('Márcio'))!;
     const marcio = await employeeByName('Márcio');
     const [, fix] = await Promise.all([
-      detectOpenShifts(app.ctx.prisma),
+      naEmpresa1(() => detectOpenShifts(app.ctx.prisma)),
       attendanceAction(s.admin, {
         employeeId: marcio.id,
         date: today(),
@@ -905,7 +673,10 @@ describe('Concorrência (44–46)', () => {
     expect(fix.status).toBe(200);
     // Feriado × verificação de ausência.
     setClock('09:31', day(1));
-    const [h, n] = await Promise.all([holiday(s.admin, day(1)), detectAbsences(app.ctx.prisma)]);
+    const [h, n] = await Promise.all([
+      holiday(s.admin, day(1)),
+      naEmpresa1(() => detectAbsences(app.ctx.prisma)),
+    ]);
     expect(h.status).toBe(201);
     expect(n).toBeGreaterThanOrEqual(0);
     // Transferência × troca de titular: CAS — nunca os dois.

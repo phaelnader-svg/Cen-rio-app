@@ -15,9 +15,9 @@
  * Onde cada OS está (A planejar, Planejado, Aguardando condição, Em produção, Concluído) é
  * calculado dos vínculos reais (item de plano e tarefas) — nunca de uma marcação visual.
  */
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
-  MATERIAL_READINESS_LABEL,
   PIPELINE_STAGE_LABEL,
   RELEASE_BLOCKER_LABEL,
   formatServiceOrderItemCode,
@@ -25,16 +25,17 @@ import {
   planServicesSchema,
   reschedulePlannedSchema,
   selectProductionTemplate,
-  type MaterialReadiness,
   type PipelineServiceDto,
   type PipelineStage,
   type PlanServicesResultDto,
   type ProductionPipelineDto,
   type PublicationPreviewDto,
   type ReleaseBlocker,
+  FREE_HELPER_TASK_LABEL,
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
+import type { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { now as clockNow } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
@@ -43,7 +44,6 @@ import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { notify, taskNotice } from '../notifications/notify';
 import { idParams } from '../presenters';
-import { readinessOf } from '../purchasing/common';
 import {
   MANAGEMENT,
   PLAN,
@@ -56,7 +56,8 @@ import {
 } from './common';
 import { distributeServiceOrder } from './distribution';
 import { placeServiceInQueue } from './queue-placement';
-import { reviseIfPublishedBy } from './plans';
+import { materialPendingMessage, publishPlanTx, reviseIfPublishedBy } from './plans';
+import { moduleEnabled } from '../../core/modules';
 import { applyServicePriority } from './service-priority';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA', 'CONCLUIDA'];
@@ -68,7 +69,7 @@ async function todayIn(db: Tx | PrismaClient) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(clockNow());
 }
 
-async function activeTemplates(db: Tx | PrismaClient) {
+export async function activeTemplates(db: Tx | PrismaClient) {
   return db.productionTemplate.findMany({
     where: { active: true },
     include: { steps: { select: { stepClass: true } } },
@@ -77,7 +78,7 @@ async function activeTemplates(db: Tx | PrismaClient) {
 }
 type Templates = Awaited<ReturnType<typeof activeTemplates>>;
 /** Simplificação Fase 5: mesma regra da geração (tipo de peça + tipo de serviço). */
-const templateOf = (all: Templates, piece: { pieceType: string; serviceType: string }) =>
+export const templateOf = (all: Templates, piece: { pieceType: string; serviceType: string }) =>
   selectProductionTemplate(all, piece);
 
 /** Trava por OS (dois gestores planejando a mesma OS) e por semana (criação do plano). */
@@ -88,7 +89,7 @@ async function advisory(tx: Tx, keys: string[]) {
 
 /** Plano da semana em fila semanal: encontra ou cria (rascunho). Plano por horário = recusa. */
 async function weekPlan(tx: Tx, actor: ActorContext, weekStart: string) {
-  let plan = await tx.productionPlan.findUnique({
+  let plan = await tx.productionPlan.findFirst({
     where: { weekStart: parseDateOnly(weekStart)! },
   });
   if (!plan) {
@@ -133,7 +134,6 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       items: {
         orderBy: { position: 'asc' },
         include: {
-          orderItem: { select: { receivedQuantity: true } },
           upholsterer: { select: { id: true, displayName: true } },
         },
       },
@@ -151,32 +151,25 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
           completedAt: true,
           blockers: true,
           assigneeUserId: true,
+          stepClass: true,
           planId: true,
         },
       },
     },
     orderBy: [{ promisedDate: 'asc' }, { number: 'asc' }],
   });
-  // Chegadas físicas de material aguardando conferência, por OS de destino.
-  const conference = new Set(
-    (
-      await db.purchaseAllocation.findMany({
-        where: {
-          serviceOrderId: { in: sos.map((s) => s.id) },
-          item: { purchaseOrder: { arrivals: { some: { status: 'PENDENTE_CONFERENCIA' } } } },
-        },
-        select: { serviceOrderId: true },
-      })
-    ).map((r) => r.serviceOrderId),
-  );
-
   const items: PipelineServiceDto[] = [];
+  let awaitingMaterial = 0;
   for (const so of sos) {
-    // Só OS com as peças fisicamente recebidas entram na produção.
-    if (!so.items.length || so.items.some((i) => i.orderItem.receivedQuantity <= 0)) continue;
+    if (!so.items.length) continue;
     const tasks = so.productionTasks;
     const planItem =
       [...so.productionPlanItems].sort((a, b) => +b.plan.weekStart - +a.plan.weekStart)[0] ?? null;
+    // Fluxo da OS (2026-11-18): sem "Material comprado", a OS ainda não entra na programação.
+    if (!tasks.length && !planItem && !so.materialPurchasedAt) {
+      awaitingMaterial++;
+      continue;
+    }
     let stage: PipelineStage;
     if (!tasks.length && !planItem) stage = 'A_PLANEJAR';
     else if (tasks.length && tasks.every((t) => t.status === 'CONCLUIDA')) {
@@ -199,7 +192,6 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       stage = 'AGUARDANDO_CONDICAO';
     else stage = 'PLANEJADO_PUBLICADO';
 
-    const readiness = await readinessOf(db, so.id);
     const blockers = [
       ...new Set(
         tasks
@@ -235,10 +227,12 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       else if (p.needsUpholsterer && !p.upholsterer && stage !== 'A_PLANEJAR')
         pendencies.push(`${p.code}: sem tapeceiro titular.`);
     }
+    // Preparação sem responsável é de propósito: fica livre para o ajudante disponível pegar.
     const unassigned = tasks.filter(
-      (t) => !t.assigneeUserId && !['CONCLUIDA'].includes(t.status),
+      (t) => !t.assigneeUserId && t.stepClass !== 'PREPARACAO' && !['CONCLUIDA'].includes(t.status),
     ).length;
-    if (unassigned) pendencies.push(`${unassigned} tarefa(s) sem responsável elegível.`);
+    if (unassigned)
+      pendencies.push(`${plural(unassigned, 'tarefa', 'tarefas')} sem responsável elegível.`);
     if (planItem && !tasks.length) pendencies.push('Nenhuma tarefa gerada para esta OS.');
     items.push({
       serviceOrder: {
@@ -250,11 +244,6 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       customerName: so.customer.name,
       receivedAt: (so.sourceReceipt?.receivedAt ?? so.createdAt).toISOString(),
       pieces,
-      materials: {
-        state: readiness.state,
-        label: MATERIAL_READINESS_LABEL[readiness.state as MaterialReadiness] ?? readiness.state,
-        inConference: conference.has(so.id),
-      },
       stage,
       plan: planItem
         ? {
@@ -284,7 +273,7 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       items.filter((i) => i.stage === s).length,
     ]),
   ) as Record<PipelineStage, number>;
-  return { counts, items };
+  return { counts, items, awaitingMaterial };
 }
 
 /** O que "Publicar semana" vai liberar (só tarefas em rascunho do plano). */
@@ -310,10 +299,11 @@ export async function publicationPreview(
     { userId: string | null; displayName: string; tasks: number }
   >();
   for (const t of drafts) {
-    const k = t.assigneeUserId ?? '-';
+    const free = !t.assigneeUserId && t.stepClass === 'PREPARACAO';
+    const k = t.assigneeUserId ?? (free ? 'livre' : '-');
     const cur = byAssignee.get(k) ?? {
       userId: t.assigneeUserId,
-      displayName: t.assignee?.displayName ?? 'Sem responsável',
+      displayName: t.assignee?.displayName ?? (free ? FREE_HELPER_TASK_LABEL : 'Sem responsável'),
       tasks: 0,
     };
     cur.tasks += 1;
@@ -322,23 +312,11 @@ export async function publicationPreview(
   const code = (id: string) =>
     serviceOrderCode(drafts.find((t) => t.serviceOrderId === id)!.serviceOrder.number);
   const pendencies: string[] = [];
-  const unassigned = drafts.filter((t) => !t.assigneeUserId).length;
+  const unassigned = drafts.filter((t) => !t.assigneeUserId && t.stepClass !== 'PREPARACAO').length;
   if (unassigned)
     pendencies.push(
-      `${unassigned} tarefa(s) sem responsável: ficarão bloqueadas até o gestor definir.`,
+      `${plural(unassigned, 'tarefa', 'tarefas')} sem responsável: ficarão bloqueadas até o gestor definir.`,
     );
-  const materialsBlocked: PublicationPreviewDto['materialsBlocked'] = [];
-  for (const id of soIds) {
-    const r = await readinessOf(db, id);
-    if (
-      r.state !== 'COMPLETO' &&
-      drafts.some((t) => t.serviceOrderId === id && t.requiresMaterials)
-    )
-      materialsBlocked.push({
-        code: code(id),
-        label: MATERIAL_READINESS_LABEL[r.state as MaterialReadiness] ?? r.state,
-      });
-  }
   const today = await todayIn(db);
   const startDates = soIds.map((id) => {
     const it = plan.items.find((i) => i.serviceOrderId === id);
@@ -361,13 +339,157 @@ export async function publicationPreview(
     byAssignee: [...byAssignee.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)),
     startDates,
     pendencies,
-    materialsBlocked,
     conflicts,
     publishable: drafts.length > 0,
   };
 }
 
 // ─────────────────────────── Rotas ───────────────────────────
+
+/**
+ * Planeja OS na semana (rascunho), tudo ou nada: usado pela tela e pelo Gerente do Escritório
+ * (2026-11-25), com as mesmas regras.
+ */
+type PlanServicesInput = z.infer<typeof planServicesSchema>;
+
+export async function planServicesTx(
+  tx: Tx,
+  actor: ActorContext,
+  input: PlanServicesInput,
+): Promise<PlanServicesResultDto> {
+  const today = await todayIn(tx);
+  const weeks = input.entries.map((e) => mondayOf(e.startDate));
+  await advisory(tx, [
+    ...input.entries.map((e) => `so-plan:${e.serviceOrderId}`),
+    ...weeks.map((w) => `plan:${w}`),
+  ]);
+  const templates = await activeTemplates(tx);
+  const out: PlanServicesResultDto['planned'] = [];
+  const touchedPlans = new Set<string>();
+  for (const entry of [...input.entries].sort((a, b) =>
+    a.serviceOrderId.localeCompare(b.serviceOrderId),
+  )) {
+    if (entry.startDate < today)
+      throw Errors.validation(
+        [{ path: 'startDate', message: 'A data de início não pode estar no passado.' }],
+        'A data de início não pode estar no passado.',
+      );
+    const so = await tx.serviceOrder.findUnique({
+      where: { id: entry.serviceOrderId },
+      include: {
+        items: { orderBy: { position: 'asc' } },
+        productionPlanItems: { include: { plan: { select: { weekStart: true } } } },
+      },
+    });
+    if (!so) throw Errors.notFound('Ordem de serviço');
+    const code = serviceOrderCode(so.number);
+    if (so.status !== 'ABERTA') throw Errors.business(`${code}: a OS não está aberta.`);
+    if (!so.materialPurchasedAt) throw Errors.business(materialPendingMessage(code));
+    if (so.productionPlanItems.length) {
+      const w = dateOnly(so.productionPlanItems[0]!.plan.weekStart)!;
+      throw Errors.conflict(
+        `${code} já foi planejada (semana de ${w.split('-').reverse().join('/')}). Atualize a lista.`,
+      );
+    }
+    if (
+      await tx.productionTask.count({
+        where: { serviceOrderId: so.id, status: { not: 'CANCELADA' } },
+      })
+    )
+      throw Errors.conflict(`${code} já tem tarefas de produção. Atualize a lista.`);
+    // Titular obrigatório para cada peça com tapeçaria (escolha nova ou já definido).
+    for (const p of entry.pieces)
+      if (!so.items.some((i) => i.id === p.serviceOrderItemId))
+        throw Errors.validation(undefined, `${code}: peça não pertence à OS.`);
+    for (const i of so.items) {
+      const tpl = templateOf(templates, i);
+      const needs = Boolean(tpl?.steps.some((s) => s.stepClass === 'TAPECARIA'));
+      const chosen = entry.pieces.find((p) => p.serviceOrderItemId === i.id);
+      if (needs && !chosen && !i.upholstererUserId)
+        throw Errors.validation(
+          [{ path: 'pieces', message: 'Escolha o tapeceiro responsável.' }],
+          `${formatServiceOrderItemCode(so.number, i.position)}: escolha o tapeceiro responsável.`,
+        );
+    }
+    const weekStart = mondayOf(entry.startDate);
+    const plan = await weekPlan(tx, actor, weekStart);
+    const priority = entry.priority ?? so.priority;
+    // Saneamento: a prioridade é do serviço — escolhida no planejamento, vale também na OS.
+    if (priority !== so.priority)
+      await tx.serviceOrder.update({
+        where: { id: so.id },
+        data: { priority, version: { increment: 1 } },
+      });
+    await tx.productionPlanItem.create({
+      data: {
+        planId: plan.id,
+        serviceOrderId: so.id,
+        priority,
+        startDate: parseDateOnly(entry.startDate)!,
+        plannedById: actor.userId,
+      },
+    });
+    const { created } = await distributeServiceOrder(tx, actor, {
+      planId: plan.id,
+      serviceOrderId: so.id,
+      priority,
+      proposedUpholsterer: null,
+      pieces: entry.pieces.map((p) => ({
+        serviceOrderItemId: p.serviceOrderItemId,
+        upholstererUserId: p.upholstererUserId,
+      })),
+      draft: true,
+    });
+    // D9 (decisão C): a data de início define a posição inicial na fila de cada pessoa.
+    await placeServiceInQueue(tx, plan.id, so.id);
+    const owners = await tx.serviceOrderItem.findMany({
+      where: { serviceOrderId: so.id },
+      include: { upholsterer: { select: { displayName: true } } },
+      orderBy: { position: 'asc' },
+    });
+    await audit(tx, actor, {
+      action: 'production.service_planned',
+      entityType: 'service_order',
+      entityId: so.id,
+      summary: `${code} planejada para ${entry.startDate.split('-').reverse().join('/')} (semana de ${weekStart.split('-').reverse().join('/')}, rascunho): ${plural(created.length, 'tarefa', 'tarefas')}.`,
+      changes: {
+        planId: plan.id,
+        startDate: entry.startDate,
+        owners: owners.map((o) => ({
+          piece: formatServiceOrderItemCode(so.number, o.position),
+          upholsterer: o.upholsterer?.displayName ?? null,
+        })),
+      },
+    });
+    touchedPlans.add(plan.id);
+    out.push({
+      serviceOrderId: so.id,
+      code,
+      planId: plan.id,
+      weekStart,
+      startDate: entry.startDate,
+      tasksCreated: created.length,
+    });
+  }
+  // Oficina sem tablet (2026-11-24): a semana planejada já vale, sem o passo de publicar.
+  if (await moduleEnabled(tx, 'oficina_sem_tablet'))
+    for (const id of [...touchedPlans].sort())
+      await publishPlanTx(
+        tx,
+        actor,
+        await lockPlan(tx, id),
+        'Oficina sem tablet: a semana vale sem publicar',
+      );
+  for (const id of touchedPlans)
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.PRODUCTION_PLAN_UPDATED,
+      aggregateType: 'production_plan',
+      aggregateId: id,
+      payload: { id },
+      audience: MANAGEMENT,
+    });
+  return { planned: out } satisfies PlanServicesResultDto;
+}
 
 export async function preplanningRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
@@ -391,132 +513,7 @@ export async function preplanningRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const input = planServicesSchema.parse(request.body);
       const actor = actorFrom(request);
-      const result = await prisma.$transaction(async (tx) => {
-        const today = await todayIn(tx);
-        const weeks = input.entries.map((e) => mondayOf(e.startDate));
-        await advisory(tx, [
-          ...input.entries.map((e) => `so-plan:${e.serviceOrderId}`),
-          ...weeks.map((w) => `plan:${w}`),
-        ]);
-        const templates = await activeTemplates(tx);
-        const out: PlanServicesResultDto['planned'] = [];
-        const touchedPlans = new Set<string>();
-        for (const entry of [...input.entries].sort((a, b) =>
-          a.serviceOrderId.localeCompare(b.serviceOrderId),
-        )) {
-          if (entry.startDate < today)
-            throw Errors.validation(
-              [{ path: 'startDate', message: 'A data de início não pode estar no passado.' }],
-              'A data de início não pode estar no passado.',
-            );
-          const so = await tx.serviceOrder.findUnique({
-            where: { id: entry.serviceOrderId },
-            include: {
-              items: { orderBy: { position: 'asc' }, include: { orderItem: true } },
-              productionPlanItems: { include: { plan: { select: { weekStart: true } } } },
-            },
-          });
-          if (!so) throw Errors.notFound('Ordem de serviço');
-          const code = serviceOrderCode(so.number);
-          if (so.status !== 'ABERTA') throw Errors.business(`${code}: a OS não está aberta.`);
-          if (so.items.some((i) => i.orderItem.receivedQuantity <= 0))
-            throw Errors.business(`${code}: as peças ainda não chegaram à oficina.`);
-          if (so.productionPlanItems.length) {
-            const w = dateOnly(so.productionPlanItems[0]!.plan.weekStart)!;
-            throw Errors.conflict(
-              `${code} já foi planejada (semana de ${w.split('-').reverse().join('/')}). Atualize a lista.`,
-            );
-          }
-          if (
-            await tx.productionTask.count({
-              where: { serviceOrderId: so.id, status: { not: 'CANCELADA' } },
-            })
-          )
-            throw Errors.conflict(`${code} já tem tarefas de produção. Atualize a lista.`);
-          // Titular obrigatório para cada peça com tapeçaria (escolha nova ou já definido).
-          for (const p of entry.pieces)
-            if (!so.items.some((i) => i.id === p.serviceOrderItemId))
-              throw Errors.validation(undefined, `${code}: peça não pertence à OS.`);
-          for (const i of so.items) {
-            const tpl = templateOf(templates, i);
-            const needs = Boolean(tpl?.steps.some((s) => s.stepClass === 'TAPECARIA'));
-            const chosen = entry.pieces.find((p) => p.serviceOrderItemId === i.id);
-            if (needs && !chosen && !i.upholstererUserId)
-              throw Errors.validation(
-                [{ path: 'pieces', message: 'Escolha o tapeceiro responsável.' }],
-                `${formatServiceOrderItemCode(so.number, i.position)}: escolha o tapeceiro responsável.`,
-              );
-          }
-          const weekStart = mondayOf(entry.startDate);
-          const plan = await weekPlan(tx, actor, weekStart);
-          const priority = entry.priority ?? so.priority;
-          // Saneamento: a prioridade é do serviço — escolhida no planejamento, vale também na OS.
-          if (priority !== so.priority)
-            await tx.serviceOrder.update({
-              where: { id: so.id },
-              data: { priority, version: { increment: 1 } },
-            });
-          await tx.productionPlanItem.create({
-            data: {
-              planId: plan.id,
-              serviceOrderId: so.id,
-              priority,
-              startDate: parseDateOnly(entry.startDate)!,
-              plannedById: actor.userId,
-            },
-          });
-          const { created } = await distributeServiceOrder(tx, actor, {
-            planId: plan.id,
-            serviceOrderId: so.id,
-            priority,
-            proposedUpholsterer: null,
-            pieces: entry.pieces.map((p) => ({
-              serviceOrderItemId: p.serviceOrderItemId,
-              upholstererUserId: p.upholstererUserId,
-            })),
-            draft: true,
-          });
-          // D9 (decisão C): a data de início define a posição inicial na fila de cada pessoa.
-          await placeServiceInQueue(tx, plan.id, so.id);
-          const owners = await tx.serviceOrderItem.findMany({
-            where: { serviceOrderId: so.id },
-            include: { upholsterer: { select: { displayName: true } } },
-            orderBy: { position: 'asc' },
-          });
-          await audit(tx, actor, {
-            action: 'production.service_planned',
-            entityType: 'service_order',
-            entityId: so.id,
-            summary: `${code} planejada para ${entry.startDate.split('-').reverse().join('/')} (semana de ${weekStart.split('-').reverse().join('/')}, rascunho): ${created.length} tarefa(s).`,
-            changes: {
-              planId: plan.id,
-              startDate: entry.startDate,
-              owners: owners.map((o) => ({
-                piece: formatServiceOrderItemCode(so.number, o.position),
-                upholsterer: o.upholsterer?.displayName ?? null,
-              })),
-            },
-          });
-          touchedPlans.add(plan.id);
-          out.push({
-            serviceOrderId: so.id,
-            code,
-            planId: plan.id,
-            weekStart,
-            startDate: entry.startDate,
-            tasksCreated: created.length,
-          });
-        }
-        for (const id of touchedPlans)
-          await appendEvent(tx, actor, {
-            type: EVENT_TYPES.PRODUCTION_PLAN_UPDATED,
-            aggregateType: 'production_plan',
-            aggregateId: id,
-            payload: { id },
-            audience: MANAGEMENT,
-          });
-        return { planned: out } satisfies PlanServicesResultDto;
-      });
+      const result = await prisma.$transaction((tx) => planServicesTx(tx, actor, input));
       return reply.status(201).send(result);
     },
   );

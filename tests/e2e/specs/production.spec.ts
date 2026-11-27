@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -15,6 +15,10 @@ const evidence = (page: Page, name: string) =>
     : Promise.resolve();
 
 test.describe.serial('Fase 5 — motor de produção e planejamento semanal', () => {
+  // Etapa E1: restaura o padrão (trava de materiais desligada) mesmo se o teste falhar.
+  test.afterEach(async ({ page }) => {
+    await setMaterialsGate(page, false).catch(() => undefined);
+  });
   test('gestor planeja e publica; João conclui a preparação e libera a tarefa do Márcio em tempo real', async ({
     page,
     browser,
@@ -22,6 +26,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     test.setTimeout(150_000);
     await page.setViewportSize({ width: 1680, height: 1000 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     const so = await openServiceOrder(page, 'Cliente Produção E2E');
     const sofa = so.items[0]!.code;
     const prep = `Preparação — ${sofa}`;
@@ -102,7 +108,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await expect(page.getByTestId('plan-editor')).toContainText('Publicado');
     await expect(page.getByTestId(`plan-task-${prep}`)).toContainText('Liberada');
     await expect(rev).toContainText('Bloqueada');
-    await expect(page.getByTestId(`plan-task-Corte de tecido — ${sofa}`)).toContainText(
+    // A trava formal de materiais saiu (16/11/2026): o corte fica programado, sem bloqueio.
+    await expect(page.getByTestId(`plan-task-Corte de tecido — ${sofa}`)).not.toContainText(
       'Materiais',
     );
     await evidence(page, '02-planejamento-publicado');
@@ -167,6 +174,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     // 8. Quadro de produção e detalhe da tarefa no painel.
     await page.goto('/painel/producao');
     await expect(page.getByTestId('production-board')).toContainText(prep);
+    // Revisão geral: "Agrupar por" fica em "Mais filtros".
+    await page.getByText('Mais filtros').click();
     await page.getByLabel('Agrupar por').selectOption({ label: 'Status' });
     await expect(page.getByTestId('production-board')).toContainText('Concluída');
     await expect(page.getByTestId('production-board')).toContainText('Em execução');

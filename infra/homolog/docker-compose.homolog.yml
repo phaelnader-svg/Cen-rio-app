@@ -90,6 +90,27 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-}
+      # Cobrança, e-mails e anti-robô (docs/COBRANCA.md). Homologação usa o sandbox do Asaas.
+      PUBLIC_WEB_URL: https://${HOMOLOG_DOMAIN}
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
+      ASAAS_API_KEY: ${ASAAS_API_KEY:-}
+      ASAAS_BASE_URL: ${ASAAS_BASE_URL:-https://api-sandbox.asaas.com/v3}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SPEECH_API_KEY: ${SPEECH_API_KEY:-}
+      # IA dos agentes (Secret Manager <ambiente>-anthropic-api-key). Vazio = regras, sem IA.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GAME_AI_PROVIDER: ${GAME_AI_PROVIDER:-regras}
+      GAME_AI_MODEL: ${GAME_AI_MODEL:-}
+      # WhatsApp/Meta de cada empresa (Secret Manager homolog-meta-*). Vazios = botão Conectar espera.
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      META_WA_CONFIG_ID: ${META_WA_CONFIG_ID:-}
+      META_REDIRECT_URI: https://${HOMOLOG_DOMAIN}/api/v1/connections/meta/callback
+      EMAIL_FROM: ${EMAIL_FROM:-Cenário Gestão (teste) <nao-responda@cenariogestao.com.br>}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
     volumes:
       - storage:/data/storage
     mem_limit: 512m
@@ -109,6 +130,9 @@ services:
     environment:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=256
+      # Página comercial (/ e /conheca), como em produção (infra/prod/docker-compose.prod.yml). O
+      # Caddyfile.homolog continua mandando noindex em tudo: a homologação nunca é indexada.
+      SITE_COMERCIAL: '1'
     mem_limit: 448m
     networks: [interna]
     logging: *logging

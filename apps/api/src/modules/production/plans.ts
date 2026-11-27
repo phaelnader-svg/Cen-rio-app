@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   addPlanItemSchema,
@@ -20,6 +21,7 @@ import {
   type ProductionPlanDto,
   type ProductionTemplateDto,
   type WorkerDto,
+  isFreeHelperTask,
 } from '@cenario/shared';
 import { applyServicePriority, lockServicePlanning } from './service-priority';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
@@ -27,7 +29,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
-import { loadUserPermissions } from '../../core/permissions';
+import { loadUsersPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { now as clockNow } from '../../core/clock';
@@ -35,7 +37,6 @@ import { distributeServiceOrder } from './distribution';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notify, taskNotice } from '../notifications/notify';
-import { readinessOf } from '../purchasing/common';
 import {
   MANAGEMENT,
   PLAN,
@@ -46,11 +47,13 @@ import {
   reevaluateTasks,
   taskEvent,
   taskInclude,
-  taskMaterialsReady,
   toTaskDto,
 } from './common';
 import { placeServiceInQueue } from './queue-placement';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
+
+/** Fluxo da OS (2026-11-18): a OS só entra na programação depois de "Material comprado". */
+export const materialPendingMessage = (code: string) =>
+  `${code}: marque "Material comprado" em Ordens de serviço antes de programar.`;
 
 // ─────────────────────────── Pessoas ───────────────────────────
 
@@ -62,10 +65,13 @@ export async function workers(db: Tx | PrismaClient): Promise<WorkerDto[]> {
     orderBy: { displayName: 'asc' },
   });
   const out: WorkerDto[] = [];
+  const permsOf = await loadUsersPermissions(
+    db,
+    users.filter((u) => u.employee?.active).map((u) => u.id),
+  );
   for (const u of users) {
     if (!u.employee?.active) continue;
-    const perms = await loadUserPermissions(db, u.id);
-    if (!perms.has('producao.executar')) continue;
+    if (!permsOf.get(u.id)?.has('producao.executar')) continue;
     out.push({
       userId: u.id,
       displayName: u.displayName,
@@ -212,13 +218,6 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
     include: taskInclude,
     orderBy: [{ serviceOrderId: 'asc' }, { sequence: 'asc' }, { number: 'asc' }],
   });
-  const readinessCache = new Map<string, Awaited<ReturnType<typeof readinessOf>>>();
-  const states = new Map<string, Awaited<ReturnType<typeof readinessOf>>['state']>();
-  for (const it of plan.items) {
-    const r = await readinessOf(db, it.serviceOrderId);
-    readinessCache.set(it.serviceOrderId, r);
-    states.set(it.serviceOrderId, r.state);
-  }
   const weekStart = dateOnly(plan.weekStart)!;
   const weekEnd = addDays(weekStart, 6);
   const dtos = tasks.map((t) => toTaskDto(t, timezone));
@@ -226,11 +225,14 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
   // Conflitos (avisos para o gestor; as regras de integridade são impostas nas rotas).
   const conflicts: PlanConflictDto[] = [];
   const open = dtos.filter((t) => t.status !== 'CANCELADA' && t.status !== 'CONCLUIDA');
-  const noAssignee = open.filter((t) => !t.assignee);
+  // Preparação livre (fila semanal) não é falta de responsável: o ajudante disponível pega.
+  const noAssignee = open.filter(
+    (t) => !t.assignee && !isFreeHelperTask({ ...t, planMode: plan.mode }),
+  );
   if (noAssignee.length)
     conflicts.push({
       kind: 'SEM_RESPONSAVEL',
-      message: `${noAssignee.length} tarefa(s) sem responsável.`,
+      message: `${plural(noAssignee.length, 'tarefa', 'tarefas')} sem responsável.`,
       taskIds: noAssignee.map((t) => t.id),
     });
   // Fila semanal: sem horário por desenho — nenhum aviso baseado em horário.
@@ -239,7 +241,7 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
   if (noTime.length)
     conflicts.push({
       kind: 'SEM_HORARIO',
-      message: `${noTime.length} tarefa(s) sem data/horário.`,
+      message: `${plural(noTime.length, 'tarefa', 'tarefas')} sem data/horário.`,
       taskIds: noTime.map((t) => t.id),
     });
   const slots = new Map<string, string[]>();
@@ -270,20 +272,6 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
       }
     }
     const it = plan.items.find((i) => i.serviceOrderId === t.serviceOrder.id);
-    if (
-      t.requiresMaterials &&
-      !(await taskMaterialsReady(
-        db,
-        { id: t.id, serviceOrderId: t.serviceOrder.id, requiresMaterials: true },
-        readinessCache,
-      ))
-    ) {
-      conflicts.push({
-        kind: 'MATERIAIS',
-        message: `${t.code} (${t.serviceOrder.code}) exige materiais, que ainda não estão completos — ficará bloqueada.`,
-        taskIds: [t.id],
-      });
-    }
     const promised = it ? dateOnly(it.serviceOrder.promisedDate) : null;
     if (promised && t.scheduledDate && t.scheduledDate > promised) {
       conflicts.push({
@@ -332,7 +320,6 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
         ? { userId: i.principal.id, displayName: i.principal.displayName }
         : null,
       priority: i.priority,
-      materialsState: states.get(i.serviceOrderId)!,
       hasSofa: i.serviceOrder.items.some((x) => x.pieceType === 'SOFA'),
     })),
     tasks: dtos,
@@ -459,7 +446,7 @@ export async function announceAssignments(
           userId,
           kind: 'TAREFA_ATRIBUIDA',
           dedupeKey: `${summary.key}:${userId}`,
-          body: `${summary.lead}: ${list.length} tarefa(s) para você${released ? `, ${released} liberada(s) para começar` : ''}.`,
+          body: `${summary.lead}: ${plural(list.length, 'tarefa', 'tarefas')} para você${released ? `, ${plural(released, 'liberada', 'liberadas')} para começar` : ''}.`,
           taskId: list.find((t) => t.status === 'LIBERADA')?.id ?? list[0]!.id,
           serviceOrderId: list[0]!.serviceOrderId,
         },
@@ -478,6 +465,92 @@ export async function announceAssignments(
       ),
     );
   }
+}
+
+/**
+ * Publica a programação da semana (as tarefas passam a valer e vão para os tablets). Semana já
+ * publicada com serviços pré-planejados: publica só o rascunho, como nova revisão. Também usada
+ * pela "Oficina sem tablet" (2026-11-24): a semana planejada já vale, sem o passo de publicar.
+ */
+export async function publishPlanTx(
+  tx: Tx,
+  actor: ActorContext,
+  plan: Awaited<ReturnType<typeof lockPlan>>,
+  notes: string | null,
+) {
+  if (plan.status === 'PUBLICADO') {
+    // Simplificação Fase 4: semana publicada com serviços pré-planejados (rascunho) —
+    // "Publicar semana" publica só o rascunho, como nova revisão.
+    if (!(await tx.productionTask.count({ where: { planId: plan.id, status: 'RASCUNHO' } })))
+      throw Errors.business('A programação já foi publicada; alterações geram revisões.');
+    await publishDrafts(tx, actor, plan, notes);
+    return;
+  }
+  const tasks = await tx.productionTask.findMany({
+    where: { planId: plan.id, status: 'RASCUNHO' },
+  });
+  if (tasks.length === 0) throw Errors.business('Inclua ao menos uma tarefa antes de publicar.');
+  const { planningWeekday, timezone } = await company(tx);
+  await tx.productionTask.updateMany({
+    where: { planId: plan.id, status: 'RASCUNHO' },
+    data: { status: 'BLOQUEADA' },
+  });
+  const now = clockNow();
+  await tx.productionPlan.update({
+    where: { id: plan.id },
+    data: {
+      status: 'PUBLICADO',
+      revision: 1,
+      publishedAt: now,
+      publishedById: actor.userId,
+      notes: notes ?? plan.notes,
+      version: { increment: 1 },
+    },
+  });
+  for (const t of tasks)
+    await taskEvent(tx, actor, null, t, {
+      kind: 'PUBLICADA',
+      from: 'RASCUNHO',
+      to: 'BLOQUEADA',
+    });
+  await tx.productionPlanRevision.create({
+    data: {
+      planId: plan.id,
+      revision: 1,
+      reason: notes ?? 'Publicação inicial',
+      offSchedule: weekdayIn(timezone) !== planningWeekday,
+      snapshot: (await snapshot(tx, plan.id)) as Prisma.InputJsonValue,
+      createdById: actor.userId,
+    },
+  });
+  await audit(tx, actor, {
+    action: 'production.plan_published',
+    entityType: 'production_plan',
+    entityId: plan.id,
+    summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada com ${plural(tasks.length, 'tarefa', 'tarefas')}.`,
+  });
+  await appendEvent(tx, actor, {
+    type: EVENT_TYPES.PRODUCTION_PLAN_PUBLISHED,
+    aggregateType: 'production_plan',
+    aggregateId: plan.id,
+    payload: { id: plan.id, weekStart: dateOnly(plan.weekStart), revision: 1 },
+    audience: 'all',
+  });
+  await reevaluateTasks(
+    tx,
+    actor,
+    tasks.map((t) => t.id),
+    now,
+  );
+  await announceAssignments(
+    tx,
+    actor,
+    tasks.map((t) => t.id),
+    {
+      key: `PUBLICACAO:${plan.id}`,
+      lead: `Programação da semana de ${dateOnly(plan.weekStart)!.split('-').reverse().join('/')} publicada`,
+    },
+  );
 }
 
 // ─────────────────────────── Rotas ───────────────────────────
@@ -522,7 +595,7 @@ async function publishDrafts(
   const revision = plan.revision + 1;
   const reason =
     notes ??
-    `Publicação de ${new Set(tasks.map((t) => t.serviceOrderId)).size} serviço(s) pré-planejado(s)`;
+    `Publicação de ${plural(new Set(tasks.map((t) => t.serviceOrderId)).size, 'serviço pré-planejado', 'serviços pré-planejados')}`;
   await tx.productionPlanRevision.create({
     data: {
       planId: plan.id,
@@ -541,7 +614,7 @@ async function publishDrafts(
     action: 'production.plan_published',
     entityType: 'production_plan',
     entityId: plan.id,
-    summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada (revisão ${revision}) com ${tasks.length} tarefa(s) pré-planejada(s).`,
+    summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada (revisão ${revision}) com ${plural(tasks.length, 'tarefa pré-planejada', 'tarefas pré-planejadas')}.`,
   });
   await appendEvent(tx, actor, {
     type: EVENT_TYPES.PRODUCTION_PLAN_REVISED,
@@ -569,7 +642,6 @@ async function publishDrafts(
 
 export async function productionPlanRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   // Modelos
   const templateInclude = {
@@ -655,6 +727,8 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           s.stepClass === undefined ? classifyStep(s.activity, s.role) : s.stepClass;
         // Simplificação Fase 5: responsável padrão da etapa — nunca em tapeçaria (titular) e
         // sempre alguém que executa tarefas de produção (a competência é conferida na geração).
+        // Preparação é livre para os ajudantes (2026-11-19): nunca guarda responsável padrão.
+        if (stepClass === 'PREPARACAO') s.defaultAssigneeUserId = null;
         if (s.defaultAssigneeUserId) {
           const problem = stepAssigneeProblem(stepClass);
           if (problem)
@@ -745,7 +819,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       const id = await prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'plan:' + weekStart}))`;
         if (
-          await tx.productionPlan.findUnique({ where: { weekStart: parseDateOnly(weekStart)! } })
+          await tx.productionPlan.findFirst({ where: { weekStart: parseDateOnly(weekStart)! } })
         ) {
           throw Errors.conflict('Já existe um planejamento para esta semana.');
         }
@@ -788,7 +862,14 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       });
       if (!plan) throw Errors.notFound('Planejamento');
       const sos = await prisma.serviceOrder.findMany({
-        where: { status: 'ABERTA' },
+        // Fluxo da OS (2026-11-18): só OS com "Material comprado" (ou já nesta semana).
+        where: {
+          status: 'ABERTA',
+          OR: [
+            { materialPurchasedAt: { not: null } },
+            { productionPlanItems: { some: { planId: id } } },
+          ],
+        },
         include: {
           customer: { select: { name: true } },
           items: { orderBy: { position: 'asc' } },
@@ -811,7 +892,6 @@ export async function productionPlanRoutes(app: FastifyInstance) {
             priority: so.priority,
           },
           customerName: so.customer.name,
-          materialsState: (await readinessOf(prisma, so.id)).state,
           items: so.items.map((i) => ({
             id: i.id,
             code: formatServiceOrderItemCode(so.number, i.position),
@@ -853,6 +933,8 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         });
         if (!so) throw Errors.notFound('Ordem de serviço');
         if (so.status !== 'ABERTA') throw Errors.business('A OS não está aberta.');
+        if (!so.materialPurchasedAt)
+          throw Errors.business(materialPendingMessage(serviceOrderCode(so.number)));
         if (
           await tx.productionPlanItem.findUnique({
             where: { planId_serviceOrderId: { planId: id, serviceOrderId: so.id } },
@@ -907,7 +989,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           action: 'production.plan_item_added',
           entityType: 'production_plan',
           entityId: id,
-          summary: `${serviceOrderCode(so.number)} incluída na semana ${dateOnly(plan.weekStart)} (${created.length} tarefa(s)).`,
+          summary: `${serviceOrderCode(so.number)} incluída na semana ${dateOnly(plan.weekStart)} (${plural(created.length, 'tarefa', 'tarefas')}).`,
         });
         if (plan.status === 'PUBLICADO') {
           // Programação já publicada: as novas tarefas entram valendo, com revisão.
@@ -954,9 +1036,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
     '/api/v1/production-plans/:id/items/:itemId',
     { config: { access: PLAN } },
     async (request) => {
-      const { id, itemId } = z
-        .object({ id: z.string().uuid(), itemId: z.string().uuid() })
-        .parse(request.params);
+      const { id, itemId } = z.object({ id: z.guid(), itemId: z.guid() }).parse(request.params);
       const input = updatePlanItemSchema.parse(request.body);
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
@@ -1069,80 +1149,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       await prisma.$transaction(async (tx) => {
         const plan = await lockPlan(tx, id);
         if (plan.version !== input.version) throw Errors.versionConflict(plan.version);
-        if (plan.status === 'PUBLICADO') {
-          // Simplificação Fase 4: semana publicada com serviços pré-planejados (rascunho) —
-          // "Publicar semana" publica só o rascunho, como nova revisão.
-          if (!(await tx.productionTask.count({ where: { planId: id, status: 'RASCUNHO' } })))
-            throw Errors.business('A programação já foi publicada; alterações geram revisões.');
-          await publishDrafts(tx, actor, plan, input.notes ?? null);
-          return;
-        }
-        const tasks = await tx.productionTask.findMany({
-          where: { planId: id, status: 'RASCUNHO' },
-        });
-        if (tasks.length === 0)
-          throw Errors.business('Inclua ao menos uma tarefa antes de publicar.');
-        const { planningWeekday, timezone } = await company(tx);
-        await tx.productionTask.updateMany({
-          where: { planId: id, status: 'RASCUNHO' },
-          data: { status: 'BLOQUEADA' },
-        });
-        const now = clockNow();
-        await tx.productionPlan.update({
-          where: { id },
-          data: {
-            status: 'PUBLICADO',
-            revision: 1,
-            publishedAt: now,
-            publishedById: actor.userId,
-            notes: input.notes ?? plan.notes,
-            version: { increment: 1 },
-          },
-        });
-        for (const t of tasks)
-          await taskEvent(tx, actor, null, t, {
-            kind: 'PUBLICADA',
-            from: 'RASCUNHO',
-            to: 'BLOQUEADA',
-          });
-        await tx.productionPlanRevision.create({
-          data: {
-            planId: id,
-            revision: 1,
-            reason: input.notes ?? 'Publicação inicial',
-            offSchedule: weekdayIn(timezone) !== planningWeekday,
-            snapshot: (await snapshot(tx, id)) as Prisma.InputJsonValue,
-            createdById: actor.userId,
-          },
-        });
-        await audit(tx, actor, {
-          action: 'production.plan_published',
-          entityType: 'production_plan',
-          entityId: id,
-          summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada com ${tasks.length} tarefa(s).`,
-        });
-        await appendEvent(tx, actor, {
-          type: EVENT_TYPES.PRODUCTION_PLAN_PUBLISHED,
-          aggregateType: 'production_plan',
-          aggregateId: id,
-          payload: { id, weekStart: dateOnly(plan.weekStart), revision: 1 },
-          audience: 'all',
-        });
-        await reevaluateTasks(
-          tx,
-          actor,
-          tasks.map((t) => t.id),
-          now,
-        );
-        await announceAssignments(
-          tx,
-          actor,
-          tasks.map((t) => t.id),
-          {
-            key: `PUBLICACAO:${id}`,
-            lead: `Programação da semana de ${dateOnly(plan.weekStart)!.split('-').reverse().join('/')} publicada`,
-          },
-        );
+        await publishPlanTx(tx, actor, plan, input.notes ?? null);
       });
       return loadPlan(prisma, id);
     },
@@ -1153,9 +1160,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
     '/api/v1/production-plans/:id/items/:itemId/remove',
     { config: { access: PLAN } },
     async (request) => {
-      const { id, itemId } = z
-        .object({ id: z.string().uuid(), itemId: z.string().uuid() })
-        .parse(request.params);
+      const { id, itemId } = z.object({ id: z.guid(), itemId: z.guid() }).parse(request.params);
       const { reason } = z
         .object({ reason: z.string().trim().max(500).optional() })
         .parse(request.body ?? {});

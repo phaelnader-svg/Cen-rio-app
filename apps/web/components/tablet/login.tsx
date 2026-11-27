@@ -7,14 +7,17 @@ import { ArrowLeft, Delete } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { Alert, Avatar, EmptyState } from '@/components/ui/misc';
+import { InstallBanner } from './install';
 import { ApiError, api } from '@/lib/api';
 
 export function TabletLogin({
   deviceName,
+  companyName,
   employees,
   notice,
 }: {
   deviceName: string;
+  companyName?: string | null;
   employees: EmployeeSummaryDto[];
   notice?: string | null;
 }) {
@@ -30,7 +33,7 @@ export function TabletLogin({
   return (
     <main className="flex min-h-dvh flex-col px-6 py-8 sm:px-10">
       <header className="flex items-center justify-between">
-        <BrandMark />
+        <BrandMark subtitle={companyName ?? undefined} />
         <p className="text-sm text-ink-muted">{deviceName}</p>
       </header>
       <div className="flex flex-1 flex-col items-center justify-center py-8">
@@ -72,6 +75,9 @@ export function TabletLogin({
             </ul>
           </div>
         )}
+        <div className="mt-10 flex w-full justify-center">
+          <InstallBanner />
+        </div>
       </div>
     </main>
   );

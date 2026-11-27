@@ -24,7 +24,7 @@ import {
   STEP_CLASS_ROLE,
 } from '@cenario/shared';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Section } from '@/components/commercial/section';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Input, Select } from '@/components/ui/field';
@@ -76,25 +76,40 @@ const fromDto = (t: ProductionTemplateDto): Draft => ({
 
 /** Modelos de produção (sugestões de etapas por tipo de peça; o gestor adapta em cada OS). */
 export function ProductionTemplatesPage() {
+  return (
+    <>
+      <PageHeader title="Modelos de produção" />
+      <ProductionTemplatesPanel />
+    </>
+  );
+}
+
+/**
+ * Reformulação, Fase 2: o mesmo editor de etapas, agora uma aba de "Modelos de serviço".
+ * `focusId` rola até o modelo escolhido na visão por serviço.
+ */
+export function ProductionTemplatesPanel({ focusId }: { focusId?: string | null } = {}) {
   const q = useTemplates();
   const can = useCan();
   const [creating, setCreating] = useState(false);
+  useEffect(() => {
+    if (!focusId || !q.data) return;
+    document.getElementById(`modelo-producao-${focusId}`)?.scrollIntoView({ block: 'start' });
+  }, [focusId, q.data]);
   return (
     <>
-      <PageHeader
-        title="Modelos de produção"
-        description="Etapas sugeridas por tipo de peça e de serviço ao incluir uma OS na semana. Modelo com tipos de serviço vale só para eles; sem tipo de serviço, vale para os demais. Etapas opcionais não são geradas para peças de fabricação."
-        actions={
-          can('producao.planejar') && !creating ? (
-            <Button
-              icon={<Plus className="size-4" aria-hidden />}
-              onClick={() => setCreating(true)}
-            >
-              Novo modelo
-            </Button>
-          ) : undefined
-        }
-      />
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-3xl text-sm text-ink-muted">
+          Etapas sugeridas por tipo de peça e de serviço ao incluir uma OS na semana. Modelo com
+          tipos de serviço vale só para eles; sem tipo de serviço, vale para os demais. Etapas
+          opcionais não são geradas para peças de fabricação.
+        </p>
+        {can('producao.planejar') && !creating && (
+          <Button icon={<Plus className="size-4" aria-hidden />} onClick={() => setCreating(true)}>
+            Novo modelo
+          </Button>
+        )}
+      </div>
       {creating && (
         <TemplateEditor
           initial={{
@@ -126,12 +141,17 @@ export function ProductionTemplatesPage() {
       ) : (
         <div className="space-y-6">
           {q.data.map((t) => (
-            <TemplateEditor
+            <div
               key={`${t.id}-${t.version}`}
-              template={t}
-              initial={fromDto(t)}
-              readOnly={!can('producao.planejar')}
-            />
+              id={`modelo-producao-${t.id}`}
+              className="scroll-mt-4"
+            >
+              <TemplateEditor
+                template={t}
+                initial={fromDto(t)}
+                readOnly={!can('producao.planejar')}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -256,6 +276,12 @@ function TemplateEditor({
             />
           ))}
         </div>
+        {/* Melhoria 118: foto obrigatória nas etapas escolhidas. */}
+        <p className="mb-2 rounded-lg bg-subtle px-3 py-2 text-sm text-ink-soft">
+          Em <strong>Para concluir</strong>, escolha <strong>Foto da tarefa concluída</strong> nas
+          etapas em que a foto é obrigatória (por exemplo, acabamento e embalagem): o tablet só
+          conclui a etapa com a foto, e ela entra no álbum da OS que vai para o cliente.
+        </p>
         <div className="overflow-x-auto">
           <table className="data-table min-w-[1240px]">
             <thead>
@@ -312,7 +338,9 @@ function TemplateEditor({
                         setStep(i, {
                           stepClass: c,
                           ...(c ? { role: STEP_CLASS_ROLE[c] } : {}),
-                          ...(c === 'TAPECARIA' ? { defaultAssigneeUserId: null } : {}),
+                          ...(c === 'TAPECARIA' || c === 'PREPARACAO'
+                            ? { defaultAssigneeUserId: null }
+                            : {}),
                         });
                       }}
                     >
@@ -327,6 +355,9 @@ function TemplateEditor({
                   <td>
                     {s.stepClass === 'TAPECARIA' ? (
                       <span className="text-sm text-ink-muted">Titular da peça</span>
+                    ) : s.stepClass === 'PREPARACAO' ? (
+                      // O primeiro ajudante disponível pega no tablet (o dono não escolhe).
+                      <span className="text-sm text-ink-muted">Ajudante que estiver livre</span>
                     ) : (
                       <Select
                         className="input-sm"
@@ -336,7 +367,7 @@ function TemplateEditor({
                           setStep(i, { defaultAssigneeUserId: e.target.value || null })
                         }
                       >
-                        <option value="">Padrão da preparação</option>
+                        <option value="">Gestor define</option>
                         {s.defaultAssigneeUserId &&
                           !team.data?.some((w) => w.userId === s.defaultAssigneeUserId) && (
                             <option value={s.defaultAssigneeUserId}>

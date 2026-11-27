@@ -3,7 +3,7 @@ import type { App } from '../src/app';
 import { detectAbsences } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, employeeByName, resetDatabase } from './helpers';
+import { createTestApp, db, employeeByName, resetDatabase, naEmpresa1 } from './helpers';
 import { post, prepareCompany, scenario } from './labor-helpers';
 import { act, today } from './production-helpers';
 import { arrive, attendanceAction, setClock } from './presence-helpers';
@@ -42,7 +42,7 @@ describe('F10-19 — presença e ocorrências', () => {
   it('ausência presumida: a chegada resolve um aviso; a confirmação do gestor resolve o outro', async () => {
     const s = await scenario(app, { arrive: ['Ricardo'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(3);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(3);
     const gestor = await meId(s.admin);
     expect(await active(gestor, 'AUSENCIA_PRESUMIDA')).toHaveLength(3);
     const marcio = await employeeByName('Márcio');
@@ -97,25 +97,10 @@ describe('F10-19 — presença e ocorrências', () => {
     // A atribuição em si continua ativa para quem a recebeu.
     expect(await active(s.ids.joao, 'OCORRENCIA_ATRIBUIDA')).toHaveLength(1);
   });
-
-  it('pedido de ajuda: a atribuição resolve o "procurando ajudante"', async () => {
-    const s = await scenario(app);
-    expect((await act(s.tablets.Ricardo!, s.sofaTask.id, 'start')).status).toBe(200);
-    const r = await s.tablets.Ricardo!.post(
-      '/api/v1/help-requests',
-      { taskId: s.sofaTask.id, kind: 'PARAFUSAR' },
-      { 'idempotency-key': crypto.randomUUID() },
-    );
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect(r.body.status).toBe('ATRIBUIDA');
-    expect(await active(s.ids.ricardo, 'AJUDA_SOLICITADA')).toHaveLength(0);
-    const done = await resolved(s.ids.ricardo, 'AJUDA_SOLICITADA');
-    expect(done.map((n) => n.dedupeKey)).toEqual([`AJUDA_SOLICITADA:${r.body.id}`]);
-  });
 });
 
 describe('F10-19 — qualidade e entrega', () => {
-  it('inspeção, embalagem, pronto e entrega: cada etapa vencida resolve o próprio aviso', async () => {
+  it('inspeção, pronto e entrega: cada etapa vencida resolve o próprio aviso (S1: sem embalagem)', async () => {
     const s = await k.scenario();
     await k.finish(s.tablets.Ricardo!, s.sofaTask.id);
     const inspNotices = () =>
@@ -126,10 +111,8 @@ describe('F10-19 — qualidade e entrega', () => {
     await k.approveOpen(s, s.sofa.id);
     // Aprovada: nenhum aviso de inspeção da peça continua pedindo ação.
     expect((await inspNotices()).every((n) => n.resolvedAt !== null)).toBe(true);
-    const packNotices = () => db().notification.findMany({ where: { kind: 'EMBALAGEM_LIBERADA' } });
-    expect((await packNotices()).some((n) => n.resolvedAt === null)).toBe(true);
-    await k.pack(s, s.sofa.id);
-    expect((await packNotices()).every((n) => n.resolvedAt !== null)).toBe(true);
+    // Reformulação S1: nenhum aviso de embalagem nasce.
+    expect(await db().notification.count({ where: { kind: 'EMBALAGEM_LIBERADA' } })).toBe(0);
     expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
     const ready = () =>
       db().notification.findMany({

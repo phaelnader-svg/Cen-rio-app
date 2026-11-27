@@ -3,24 +3,46 @@
 import { normalizePairingCode, pairDeviceSchema } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
+import { InstallBanner } from './install';
 
-export function PairingScreen({ notice }: { notice?: string | null }) {
+export function PairingScreen({
+  notice,
+  initialCode,
+  onPaired,
+}: {
+  notice?: string | null;
+  /** App instalado (2026-11-25): código que veio do código QR — vincula sozinho, sem digitar. */
+  initialCode?: string | null;
+  onPaired?: () => void;
+}) {
   const qc = useQueryClient();
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(initialCode ?? '');
   const [error, setError] = useState<string | null>(null);
   const m = useMutation({
     mutationFn: () => api('/api/tablet/pair', { method: 'POST', body: { code } }),
     onSuccess: async () => {
+      onPaired?.();
       qc.removeQueries({ queryKey: ['me'] });
       await qc.refetchQueries({ queryKey: ['tablet-status'] });
     },
-    onError: (e) => setError(errorMessage(e)),
+    onError: (e) =>
+      setError(
+        initialCode
+          ? 'Este código QR já foi usado ou passou da hora. Peça ao gestor um novo em Dispositivos.'
+          : errorMessage(e),
+      ),
   });
+  const auto = useRef(false);
+  useEffect(() => {
+    if (!initialCode || auto.current) return;
+    auto.current = true;
+    m.mutate();
+  }, [initialCode, m]);
 
   const normalized = normalizePairingCode(code);
   const display =
@@ -33,9 +55,10 @@ export function PairingScreen({ notice }: { notice?: string | null }) {
         <span className="mx-auto mb-5 grid size-16 place-items-center rounded-2xl bg-brand-50 text-brand-700">
           <Link2 className="size-8" aria-hidden />
         </span>
-        <h1 className="text-3xl font-semibold tracking-tight">Vincular este tablet</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Ligar este aparelho à empresa</h1>
         <p className="mt-2 text-lg text-ink-muted">
-          Digite o código de vinculação gerado pelo gestor no painel, em Dispositivos.
+          Aponte a câmera para o código QR que o gestor mostra em Dispositivos, ou digite o código
+          aqui.
         </p>
         {notice && (
           <Alert tone="warn" className="mt-6 text-left">
@@ -75,9 +98,13 @@ export function PairingScreen({ notice }: { notice?: string | null }) {
             </p>
           )}
           <Button type="submit" size="xl" className="mt-6 w-full" loading={m.isPending}>
-            Vincular tablet
+            Ligar aparelho
           </Button>
         </form>
+        {/* O app da equipe se instala por aqui (tablet e celular); o do dono, pelo site. */}
+        <div className="mt-8 flex w-full justify-center">
+          <InstallBanner />
+        </div>
       </div>
     </main>
   );

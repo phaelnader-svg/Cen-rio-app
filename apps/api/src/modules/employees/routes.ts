@@ -14,6 +14,7 @@ import { appendEvent } from '../../core/events/append';
 import { lockRow } from '../../core/locking';
 import { revokeSessions } from '../../core/sessions';
 import { sniffImageType } from '../../core/storage/storage';
+import { processImage } from '../../core/storage/image';
 import { diffObjects } from '../../lib/diff';
 import { hashSecret, sha256Hex } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
@@ -25,6 +26,8 @@ import {
   toEmployeeDto,
 } from '../presenters';
 import { assertActiveGestorRemains, lockGestorInvariant } from './guards';
+import type { ActorContext } from '../../core/types';
+import { emitPickupEvent } from '../pickups/routes';
 
 const VIEW = { session: 'WEB', permissions: ['funcionarios.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['funcionarios.gerenciar'] } as const;
@@ -251,6 +254,9 @@ export async function employeeRoutes(app: FastifyInstance) {
       if (!input.active) {
         await assertActiveGestorRemains(tx);
         await revokeSessions(tx, actor, { userId: before.userId }, 'user_deactivated');
+        // 2026-11-26: retiradas por fazer saem do desligado (ficam sem responsável e aparecem
+        // na Central para o gestor escolher outro); ele também sai de quem ia junto.
+        await releasePickupsOf(tx, actor, before.userId, updated.displayName);
       }
       await audit(tx, actor, {
         action: input.active ? 'employee.activated' : 'employee.deactivated',
@@ -412,9 +418,11 @@ export async function employeeRoutes(app: FastifyInstance) {
     if (!mime) throw Errors.unsupportedMedia('Formato não suportado. Envie JPEG, PNG ou WebP.');
 
     await getEmployeeOr404(prisma, id);
+    // Fase 2: foto de identificação também sai orientada, sem metadados (EXIF/GPS) e reduzida.
+    const image = await processImage(data, mime, 1024);
     const fileId = randomUUID();
     const storageKey = `employee-photo/${fileId}`;
-    await storage.put(storageKey, data);
+    await storage.put(storageKey, image.data);
 
     try {
       const { employee, oldFile } = await prisma.$transaction(async (tx) => {
@@ -426,10 +434,14 @@ export async function employeeRoutes(app: FastifyInstance) {
             storageKey,
             purpose: 'employee-photo',
             originalName: (file.filename || 'foto').slice(0, 200),
-            mimeType: mime,
-            sizeBytes: data.length,
-            sha256: sha256Hex(data),
+            mimeType: image.mime,
+            sizeBytes: image.data.length,
+            sha256: sha256Hex(image.data),
             uploadedById: actor.userId,
+            processedAt: new Date(),
+            width: image.width,
+            height: image.height,
+            originalSizeBytes: data.length,
           },
         });
         const updated = await tx.employee.update({
@@ -497,5 +509,32 @@ export async function employeeRoutes(app: FastifyInstance) {
     });
     if (oldFile) await storage.remove(oldFile.storageKey).catch(() => undefined);
     return toEmployeeDto(employee);
+  });
+}
+
+async function releasePickupsOf(tx: Tx, actor: ActorContext, userId: string, name: string) {
+  const open = ['AGUARDANDO_AGENDAMENTO', 'AGENDADA', 'EM_EXECUCAO', 'COM_OCORRENCIA'] as const;
+  const mine = await tx.pickupRequest.findMany({
+    where: { status: { in: [...open] }, logisticsUserId: userId },
+    select: { id: true },
+  });
+  for (const p of mine) {
+    await tx.pickupRequest.update({
+      where: { id: p.id },
+      data: { logisticsUserId: null, version: { increment: 1 } },
+    });
+    await tx.pickupEvent.create({
+      data: {
+        pickupId: p.id,
+        kind: 'RESPONSAVEL',
+        note: `Responsável removido: ${name} foi desligado`,
+        source: 'SISTEMA',
+        recordedById: actor.userId,
+      },
+    });
+    await emitPickupEvent(tx, actor, p.id, EVENT_TYPES.PICKUP_UPDATED);
+  }
+  await tx.logisticsTripParticipant.deleteMany({
+    where: { userId, pickup: { status: { in: [...open] } } },
   });
 }

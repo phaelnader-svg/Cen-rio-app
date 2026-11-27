@@ -1,6 +1,5 @@
 import type { IssueKind } from './issue-domain';
 import type { PieceType, Priority, ServiceType } from './domain';
-import type { MaterialReadiness } from './purchasing-domain';
 import type { DistributionPendency, OwnerChangeKind, StepClass } from './distribution-domain';
 import type {
   CompletionRequirement,
@@ -14,7 +13,6 @@ import type {
   TaskStatus,
 } from './production-domain';
 import type { MeasurementDto } from './types-commercial';
-import type { ReadinessLineDto } from './types-purchasing';
 
 export interface ProductionTemplateDto {
   id: string;
@@ -59,6 +57,11 @@ export interface TaskRefDto {
 
 export interface ProductionTaskDto {
   id: string;
+  /**
+   * Etapa E1: só em "Minhas tarefas" (tablet) e só com as travas de materiais desligadas — a OS
+   * tem material da lista simples ainda não disponível na oficina. Aviso; nunca impede iniciar.
+   */
+  osMaterialsMissing?: boolean;
   number: number;
   code: string;
   plan: { id: string; weekStart: string; status: PlanStatus; mode: PlanMode } | null;
@@ -120,17 +123,13 @@ export interface ProductionTaskDto {
     description: string;
     reporter: string;
   } | null;
-  /**
-   * Fase 10: correção (defeitos da inspeção reprovada) ou embalagem (após a aprovação).
-   * Embalagem conclui pela tela própria (proteção e localização), não pelo "Concluir".
-   */
+  /** Fase 10: correção (defeitos da inspeção reprovada). S1: não há mais tarefa de embalagem. */
   qualityFor?: {
     inspectionId: string;
     code: string;
-    kind: 'CORRECAO' | 'EMBALAGEM';
+    kind: 'CORRECAO';
     note: string | null;
     defects: { label: string; note: string | null }[];
-    packagingId: string | null;
   } | null;
   version: number;
 }
@@ -169,12 +168,18 @@ export interface ProductionTaskDetailDto extends ProductionTaskDto {
       measurements: MeasurementDto[];
     }[];
   };
-  /** Materiais aprovados da OS (sem preços). */
-  materials: ReadinessLineDto[];
-  /** Fase 6: materiais (requisitos) vinculados a esta tarefa; vazio = depende da OS inteira. */
-  materialIds: string[];
   /** Fase 6: situação dos materiais desta tarefa. */
   taskMaterials: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO';
+  /**
+   * Reformulação, Fase 1: lista simples de materiais da OS para a oficina (sem custos nem dados
+   * financeiros). Só informativo: nunca impede iniciar a tarefa.
+   */
+  osMaterials: {
+    description: string;
+    quantity: number | null;
+    unit: string | null;
+    available: boolean;
+  }[];
   /** Fase 6: histórico técnico da OS (campos alterados, sem valores comerciais). */
   technicalHistory: {
     revision: number;
@@ -185,7 +190,6 @@ export interface ProductionTaskDetailDto extends ProductionTaskDto {
     changedBy: string | null;
     createdAt: string;
   }[];
-  materialsState: MaterialReadiness;
   /** Histórico de produção da OS (todas as tarefas). */
   osTasks: TaskRefDto[];
   can: {
@@ -210,7 +214,6 @@ export interface PlanItemDto {
   customerName: string;
   principal: { userId: string; displayName: string } | null;
   priority: Priority;
-  materialsState: MaterialReadiness;
   hasSofa: boolean;
 }
 
@@ -286,7 +289,6 @@ export interface MyQueueDto {
 export interface PlanCandidateDto {
   serviceOrder: { id: string; code: string; promisedDate: string | null; priority: Priority };
   customerName: string;
-  materialsState: MaterialReadiness;
   items: { id: string; code: string; pieceType: PieceType; description: string }[];
   technicalLead: { userId: string; displayName: string } | null;
   openTasks: number;
@@ -391,7 +393,6 @@ export interface PipelineServiceDto {
   customerName: string;
   receivedAt: string | null;
   pieces: PipelinePieceDto[];
-  materials: { state: string; label: string; inConference: boolean };
   stage: PipelineStage;
   /** Item do plano (semana) — nulo em "A planejar". */
   plan: {
@@ -413,6 +414,8 @@ export interface PipelineServiceDto {
 export interface ProductionPipelineDto {
   counts: Record<PipelineStage, number>;
   items: PipelineServiceDto[];
+  /** Fluxo da OS (2026-11-18): OS abertas ainda sem "Material comprado" (fora da lista). */
+  awaitingMaterial: number;
 }
 
 export interface PlanServicesResultDto {
@@ -438,7 +441,6 @@ export interface PublicationPreviewDto {
   byAssignee: { userId: string | null; displayName: string; tasks: number }[];
   startDates: { code: string; startDate: string | null }[];
   pendencies: string[];
-  materialsBlocked: { code: string; label: string }[];
   conflicts: string[];
   publishable: boolean;
 }

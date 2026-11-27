@@ -1,5 +1,6 @@
 'use client';
 
+import { plural, taskAssigneeLabel } from '@cenario/shared';
 import type {
   MyQueueDto,
   NotificationDto,
@@ -8,7 +9,6 @@ import type {
   ProductionTaskDto,
 } from '@cenario/shared';
 import {
-  LINE_STAGE_LABEL,
   PAUSE_REASONS,
   PAUSE_REASON_LABEL,
   PIECE_TYPE_LABEL,
@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  FileText,
   Lock,
   MessageSquarePlus,
   Package,
@@ -38,11 +39,13 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
+import { ServiceOrderSheet } from '@/components/commercial/os-sheet';
+import { AudioNote } from './audio-note';
 import { TaskStatusBadge } from '@/components/production/badges';
 import { TaskHistory, TaskRefs } from '@/components/production/task-history';
 import { useSend } from '@/components/production/use-send';
 import { useMe } from '@/lib/hooks';
-import { qtyText, specText } from '@/components/purchasing/format';
+import { HouseStandardButton } from '@/components/production/house-standards';
 import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
@@ -50,9 +53,10 @@ import { formatDay } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useMyQueue, useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
-import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo, TransferPanel } from './help';
+import { uploadPhoto } from '@/lib/photos';
+import { AlternativeTasks, SupportInfo, TransferPanel } from './task-support';
 import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
-import { PackagingPanel, QualityInfo } from './quality';
+import { QualityInfo } from './quality';
 
 const DONE = ['CONCLUIDA', 'CANCELADA'];
 const isOpen = (t: ProductionTaskDto) => !DONE.includes(t.status);
@@ -65,7 +69,8 @@ export function useOnline() {
 /** Quantidade de tarefas de hoje ainda abertas (bloco da tela inicial). */
 export function useMyTodayCount(enabled: boolean) {
   const q = useMyTasks(enabled);
-  return q.data?.today.filter(isOpen).length;
+  // Inclui as tarefas livres que o ajudante disponível pode pegar agora.
+  return q.data ? q.data.today.filter(isOpen).length + (q.data.free?.length ?? 0) : undefined;
 }
 
 /** Aviso fixo quando a conexão cai: os dados ficam visíveis, as ações não. */
@@ -97,7 +102,7 @@ export function NotificationsButton({ onClick }: { onClick: () => void }) {
       size="lg"
       onClick={onClick}
       data-testid="notifications-button"
-      aria-label={`Avisos: ${unread} não lido(s)`}
+      aria-label={`Avisos: ${plural(unread, 'não lido', 'não lidos')}`}
       icon={<Bell className="size-5" aria-hidden />}
     >
       Avisos
@@ -121,11 +126,9 @@ export function NotificationsButton({ onClick }: { onClick: () => void }) {
  */
 export function MyDay({
   onOpen,
-  canAskHelp,
   reportUserId,
 }: {
   onOpen: (id: string) => void;
-  canAskHelp?: boolean;
   /** Fase 9: quem registra problemas (mostra os próprios ainda abertos). */
   reportUserId?: string | null;
 }) {
@@ -149,7 +152,7 @@ export function MyDay({
           label="Em execução"
           empty={
             paused.length
-              ? `${paused.length} tarefa(s) pausada(s) — retome quando puder.`
+              ? `${plural(paused.length, 'tarefa pausada', 'tarefas pausadas')} — retome quando puder.`
               : 'Nenhuma tarefa em execução agora.'
           }
           task={current ?? paused[0]}
@@ -165,7 +168,8 @@ export function MyDay({
         />
       </section>
 
-      {canAskHelp && <MyOpenHelp />}
+      <FreeTasks tasks={q.data.free ?? []} onOpen={onOpen} />
+
       {reportUserId && <MyOpenIssues userId={reportUserId} />}
 
       {fila && <QueueSection queue={fila} onOpen={onOpen} />}
@@ -225,6 +229,35 @@ export function MyDay({
 }
 
 /**
+ * Tarefas livres (preparação/desmontagem): aparecem para todos os ajudantes disponíveis. O
+ * primeiro que toca em Iniciar fica com a tarefa e ela some do tablet dos outros.
+ */
+export function FreeTasks({
+  tasks,
+  onOpen,
+}: {
+  tasks: ProductionTaskDto[];
+  onOpen: (id: string) => void;
+}) {
+  if (!tasks.length) return null;
+  return (
+    <section data-testid="free-tasks">
+      <h2 className="mb-1 text-xl font-semibold">Para quem estiver livre ({tasks.length})</h2>
+      <p className="mb-3 text-base text-ink-muted">
+        Quem tocar primeiro em Iniciar fica com a tarefa. Se forem fazer juntos, só um toca.
+      </p>
+      <ul className="grid gap-4 lg:grid-cols-2">
+        {tasks.map((t) => (
+          <li key={t.id}>
+            <TaskCard t={t} onOpen={onOpen} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
  * Evolução Fase 2 — fila semanal: ordem definida pelo gestor, sem horário. A posição não muda
  * quando uma tarefa fica bloqueada; a fila continua de um dia para o outro.
  */
@@ -235,7 +268,7 @@ function QueueSection({ queue, onOpen }: { queue: MyQueueDto; onOpen: (id: strin
       <p className="mb-3 text-base text-ink-muted">
         Siga a ordem: conclua uma e toque em Iniciar na próxima.
         {queue.blockedAhead > 0 &&
-          ` ${queue.blockedAhead} tarefa(s) à frente aguardando desbloqueio (mantêm o lugar).`}
+          ` ${plural(queue.blockedAhead, 'tarefa', 'tarefas')} à frente aguardando desbloqueio (mantêm o lugar).`}
       </p>
       <ol className="grid gap-4 lg:grid-cols-2">
         {queue.items.map((e) => {
@@ -275,7 +308,7 @@ function Highlight({
 }) {
   return (
     <div data-testid={testId}>
-      <p className="mb-2 text-sm font-semibold tracking-wide text-ink-muted uppercase">{label}</p>
+      <p className="mb-2 text-base font-semibold text-ink-soft">{label}</p>
       {task ? (
         <TaskCard t={task} onOpen={onOpen} highlight />
       ) : (
@@ -299,7 +332,8 @@ const ACCENT: Partial<Record<ProductionTaskDto['status'], string>> = {
 /** Situação dos materiais a partir do que a tarefa já informa (sem consulta extra). */
 function materialsOf(t: ProductionTaskDto): 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO' {
   if (!t.requiresMaterials) return 'NAO_EXIGE';
-  return t.blockers.includes('MATERIAIS') ? 'FALTANDO' : 'DISPONIVEIS';
+  // O servidor informa a lista simples da OS (só aviso; não trava a tarefa).
+  return t.osMaterialsMissing ? 'FALTANDO' : 'DISPONIVEIS';
 }
 
 function MaterialsIndicator({ state }: { state: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO' }) {
@@ -352,6 +386,8 @@ export function TaskCard({
   highlight?: boolean;
 }) {
   const why = waitingText(t);
+  const me = useMe();
+  const mine = !!t.assignee && t.assignee.userId === me.data?.user.id;
   return (
     <div
       data-testid={`my-task-${t.code}`}
@@ -369,10 +405,9 @@ export function TaskCard({
         className="flex flex-1 items-start gap-4 p-5 text-left active:scale-[0.99]"
       >
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2 text-sm text-ink-muted">
-            <span className="font-mono font-semibold text-ink-soft">{t.serviceOrder.code}</span>
-            {t.serviceOrderItem && <span>· {t.serviceOrderItem.code}</span>}
-            <span>· {t.code}</span>
+          {/* Melhoria 171: um código só, pequeno (o da peça); o resto fica na ficha da tarefa. */}
+          <span className="font-mono text-xs font-semibold text-ink-muted" title={t.code}>
+            {t.serviceOrderItem?.code ?? t.serviceOrder.code}
           </span>
           {/* Título gerado pelo modelo ("Etapa — OS-xxxxx/n"): mostra etapa e peça; título
               próprio dado pelo gestor vira o destaque, com a etapa abaixo. */}
@@ -381,6 +416,7 @@ export function TaskCard({
               ? `${PRODUCTION_ACTIVITY_LABEL[t.activity]}${t.serviceOrderItem ? ` — ${t.serviceOrderItem.description}` : ''}`
               : t.title}
           </span>
+          <span className="mt-0.5 block truncate text-base text-ink-soft">{t.customerName}</span>
           {!generatedTitle(t) && (
             <span className="mt-0.5 block truncate text-base text-ink-muted">
               {PRODUCTION_ACTIVITY_LABEL[t.activity]}
@@ -389,18 +425,17 @@ export function TaskCard({
           )}
           <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
             <TaskStatusBadge status={t.status} />
-            <span
-              className={clsx(
-                'rounded-full px-3 py-1 font-semibold',
-                t.priority === 'URGENTE'
-                  ? 'bg-danger-600 text-white'
-                  : t.priority === 'ALTA'
-                    ? 'bg-danger-50 text-danger-600'
-                    : 'bg-subtle text-ink-soft',
-              )}
-            >
-              {PRIORITY_LABEL[t.priority]}
-            </span>
+            {(t.priority === 'URGENTE' || t.priority === 'ALTA') && (
+              <span
+                className={clsx(
+                  'rounded-full px-3 py-1 font-semibold',
+                  // Revisão geral (item 7): prioridade é atenção (laranja); vermelho é atraso.
+                  t.priority === 'URGENTE' ? 'bg-warn-600 text-white' : 'bg-warn-50 text-warn-600',
+                )}
+              >
+                {PRIORITY_LABEL[t.priority]}
+              </span>
+            )}
             {t.dueDate && (
               <span className="inline-flex items-center gap-1 text-ink-muted">
                 <CalendarClock className="size-4" aria-hidden /> Prazo {formatDay(t.dueDate)}
@@ -411,7 +446,7 @@ export function TaskCard({
                 {formatDay(t.scheduledDate)} {t.scheduledTime}
               </span>
             )}
-            <span className="text-ink-muted">{t.assignee?.displayName ?? 'Sem responsável'}</span>
+            {!mine && <span className="text-ink-muted">{taskAssigneeLabel(t)}</span>}
             <MaterialsIndicator state={materialsOf(t)} />
           </span>
           {why && (
@@ -445,6 +480,8 @@ export function PieceOwnerInfo({ t }: { t: ProductionTaskDto }) {
   const owner = t.serviceOrderItem?.upholsterer;
   if (!owner) return null;
   const mine = t.assignee?.userId === owner.userId;
+  // Melhoria 171: quem executa é o próprio titular — não repete o nome dele no cartão.
+  if (mine && t.stepClass !== 'TAPECARIA') return null;
   return (
     <span className="mt-2 block text-sm text-ink-soft" data-testid="piece-owner">
       {mine && t.stepClass === 'TAPECARIA'
@@ -457,6 +494,7 @@ export function PieceOwnerInfo({ t }: { t: ProductionTaskDto }) {
 /** Ação rápida no próprio cartão: Iniciar (1 toque) ou Concluir (toque + confirmação). */
 function QuickAction({ t }: { t: ProductionTaskDto }) {
   const online = useOnline();
+  const qc = useQueryClient();
   const { m, error } = useSend();
   const [key, setKey] = useState(newIdempotencyKey);
   const [confirm, setConfirm] = useState(false);
@@ -465,10 +503,7 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
     const timer = window.setTimeout(() => setConfirm(false), 5000);
     return () => window.clearTimeout(timer);
   }, [confirm]);
-  const simpleComplete =
-    t.status === 'EM_EXECUCAO' &&
-    t.completionRequirement === 'NENHUM' &&
-    t.activity !== 'EMBALAGEM';
+  const simpleComplete = t.status === 'EM_EXECUCAO' && t.completionRequirement === 'NENHUM';
   if (t.status !== 'LIBERADA' && !simpleComplete) return null;
   const run = (path: 'start' | 'complete', ok: string) =>
     m.mutate(
@@ -481,7 +516,14 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
           }),
         ok,
       },
-      { onSuccess: () => setKey(newIdempotencyKey()) },
+      {
+        onSuccess: () => setKey(newIdempotencyKey()),
+        // Tarefa livre que outro ajudante pegou antes: a lista atualiza e ela some daqui.
+        onError: () => {
+          setKey(newIdempotencyKey());
+          void qc.invalidateQueries({ queryKey: ['my-tasks'] });
+        },
+      },
     );
   return (
     <div className="border-t border-line p-3">
@@ -520,12 +562,10 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
 export function MyTaskDetail({
   id,
   onOpen,
-  canAskHelp,
   reportUserId,
 }: {
   id: string;
   onOpen?: (id: string) => void;
-  canAskHelp?: boolean;
   /** Fase 9: usuário que pode registrar problemas nas próprias tarefas. */
   reportUserId?: string | null;
 }) {
@@ -534,6 +574,7 @@ export function MyTaskDetail({
   const online = useOnline();
   const { m, error } = useSend();
   const [panel, setPanel] = useState<'pause' | 'progress' | 'complete' | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [startKey, setStartKey] = useState(newIdempotencyKey);
   const [completeKey, setCompleteKey] = useState(newIdempotencyKey);
   if (q.isPending) return <Spinner />;
@@ -558,9 +599,6 @@ export function MyTaskDetail({
         },
       },
     );
-  const myMaterials = t.materialIds.length
-    ? t.materials.filter((l) => t.materialIds.includes(l.requirementId))
-    : t.materials;
 
   return (
     <div className="space-y-6" data-testid="my-task-detail">
@@ -572,7 +610,7 @@ export function MyTaskDetail({
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">{t.title}</h1>
         <p className="mt-1 text-lg text-ink-soft">
           {PRODUCTION_ACTIVITY_LABEL[t.activity]} · {TASK_ROLE_LABEL[t.role]} ·{' '}
-          {t.assignee?.displayName ?? 'Sem responsável'}
+          {taskAssigneeLabel(t)}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-base">
           <TaskStatusBadge status={t.status} />
@@ -590,6 +628,7 @@ export function MyTaskDetail({
         <SupportInfo t={t} large />
         <IssueInfo t={t} large />
         <QualityInfo t={t} large />
+        <HouseStandardButton activity={t.activity} />
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
@@ -669,10 +708,6 @@ export function MyTaskDetail({
           )}
       </div>
 
-      {t.qualityFor?.kind === 'EMBALAGEM' && t.qualityFor.packagingId && (
-        <PackagingPanel packagingId={t.qualityFor.packagingId} />
-      )}
-      {canAskHelp && (t.can.start || t.can.progress) && <HelpPanel t={t} />}
       <TransferPanel t={t} me={meQ.data?.user.id} />
       <AlternativeTasks t={t} onOpen={onOpen} />
       {reportUserId && t.assignee?.userId === reportUserId && !t.issueFor && <ProblemPanel t={t} />}
@@ -709,6 +744,39 @@ export function MyTaskDetail({
           {t.lastProgress.note && <p>{t.lastProgress.note}</p>}
           {t.lastProgress.step && <p>Etapa atual: {t.lastProgress.step}</p>}
           {t.lastProgress.nextStep && <p>Próximo passo: {t.lastProgress.nextStep}</p>}
+        </div>
+      )}
+
+      <Button
+        size="xl"
+        variant="secondary"
+        className="w-full"
+        icon={<FileText className="size-6" aria-hidden />}
+        onClick={() => setSheetOpen(true)}
+        data-testid="task-open-os"
+      >
+        Abrir OS {t.serviceOrder.code}
+      </Button>
+      {sheetOpen && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-canvas p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`OS ${t.serviceOrder.code}`}
+        >
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-3 flex justify-end">
+              <Button size="lg" variant="secondary" onClick={() => setSheetOpen(false)}>
+                Fechar
+              </Button>
+            </div>
+            <ServiceOrderSheet id={t.serviceOrder.id} />
+            <div className="mt-4 flex justify-center pb-6">
+              <Button size="xl" onClick={() => setSheetOpen(false)}>
+                Voltar para a tarefa
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -762,98 +830,127 @@ export function MyTaskDetail({
         </ul>
       </Block>
 
-      <Block title={t.materialIds.length ? 'Materiais desta tarefa' : 'Materiais da OS'}>
-        {myMaterials.length === 0 ? (
-          <p className="text-base text-ink-muted">Nenhum material aprovado.</p>
+      {/* Lista simples de materiais da OS (só situação; custo nunca aparece aqui). */}
+      <Block title="Materiais">
+        {(t.osMaterials ?? []).length === 0 ? (
+          <p className="text-base text-ink-muted">Nenhum material listado.</p>
         ) : (
-          <ul className="space-y-2 text-base" data-testid="task-materials">
-            {myMaterials.map((l) => (
-              <li key={l.requirementId} className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{specText(l)}</span>
-                <span className="text-ink-muted">· {qtyText(l.need, l.unit)}</span>
-                <span
-                  className={clsx(
-                    'rounded-full px-2.5 py-0.5 text-sm font-semibold',
-                    l.stage === 'DISPONIVEL' ? 'bg-ok-50 text-ok-600' : 'bg-warn-50 text-warn-600',
+          <div className="space-y-3">
+            {(t.osMaterials ?? []).length > 0 && (
+              <ul className="space-y-2 text-base" data-testid="task-os-materials">
+                {(t.osMaterials ?? []).map((m, i) => (
+                  <li key={i} className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{m.description}</span>
+                    {m.quantity !== null && (
+                      <span className="text-ink-muted">
+                        · {m.quantity.toLocaleString('pt-BR')}
+                        {m.unit ? ` ${m.unit}` : ''}
+                      </span>
+                    )}
+                    <span
+                      className={clsx(
+                        'rounded-full px-2.5 py-0.5 text-sm font-semibold',
+                        m.available ? 'bg-ok-50 text-ok-600' : 'bg-warn-50 text-warn-600',
+                      )}
+                    >
+                      {m.available ? 'Na oficina' : 'Ainda não chegou'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </Block>
+
+      {/* Reformulação, Fase 2: o essencial fica acima; o restante, a um toque. */}
+      <details className="group rounded-2xl border border-line" data-testid="task-more">
+        <summary className="flex cursor-pointer list-none flex-col gap-0.5 px-5 py-4 text-lg font-semibold text-ink-soft sm:flex-row sm:items-center sm:justify-between sm:gap-3 [&::-webkit-details-marker]:hidden">
+          Mais detalhes
+          <span className="text-base font-normal text-ink-muted">
+            dependências, etapas da OS, fotos e históricos
+          </span>
+        </summary>
+        <div className="space-y-6 border-t border-line px-5 py-5">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Block title="Depende de">
+              <TaskRefs large refs={t.dependsOn} empty="Nenhuma dependência." />
+            </Block>
+            <Block title="Ao concluir, libera">
+              <TaskRefs large refs={t.dependents} empty="Nenhuma tarefa depende desta." />
+            </Block>
+          </div>
+
+          <Block title="Etapas da OS">
+            <ul className="space-y-1.5" data-testid="os-steps">
+              {t.osTasks.map((x) => (
+                <li key={x.id} className="flex flex-wrap items-center gap-2 text-base">
+                  <span
+                    className={clsx(
+                      'rounded-full px-2 py-0.5 text-xs font-semibold',
+                      x.id === t.id ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-soft',
+                    )}
+                  >
+                    {x.id === t.id ? 'Esta' : x.code}
+                  </span>
+                  {onOpen && x.id !== t.id ? (
+                    <span>{x.title}</span>
+                  ) : (
+                    <span className="font-semibold">{x.title}</span>
                   )}
-                >
-                  {LINE_STAGE_LABEL[l.stage]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Block>
+                  <span className="text-ink-muted">· {x.assignee ?? 'sem responsável'}</span>
+                </li>
+              ))}
+            </ul>
+          </Block>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Block title="Depende de">
-          <TaskRefs large refs={t.dependsOn} empty="Nenhuma dependência." />
-        </Block>
-        <Block title="Ao concluir, libera">
-          <TaskRefs large refs={t.dependents} empty="Nenhuma tarefa depende desta." />
-        </Block>
-      </div>
+          <Block title="Recado por áudio">
+            <AudioNote entityType="PRODUCTION_TASK" entityId={t.id} />
+          </Block>
 
-      <Block title="Etapas da OS">
-        <ul className="space-y-1.5" data-testid="os-steps">
-          {t.osTasks.map((x) => (
-            <li key={x.id} className="flex flex-wrap items-center gap-2 text-base">
-              <span
-                className={clsx(
-                  'rounded-full px-2 py-0.5 text-xs font-semibold',
-                  x.id === t.id ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-soft',
-                )}
-              >
-                {x.id === t.id ? 'Esta' : x.code}
-              </span>
-              {onOpen && x.id !== t.id ? (
-                <span>{x.title}</span>
-              ) : (
-                <span className="font-semibold">{x.title}</span>
-              )}
-              <span className="text-ink-muted">· {x.assignee ?? 'sem responsável'}</span>
-            </li>
-          ))}
-        </ul>
-      </Block>
+          <Block title="Fotos e recados desta tarefa">
+            <PhotoGallery entityType="PRODUCTION_TASK" entityId={t.id} canManage={false} />
+          </Block>
 
-      <Block title="Fotos desta tarefa">
-        <PhotoGallery entityType="PRODUCTION_TASK" entityId={t.id} canManage={false} />
-      </Block>
+          <Block title="Fotos da OS">
+            <PhotoGallery
+              entityType="SERVICE_ORDER"
+              entityId={t.serviceOrder.id}
+              canManage={false}
+            />
+          </Block>
 
-      <Block title="Fotos da OS">
-        <PhotoGallery entityType="SERVICE_ORDER" entityId={t.serviceOrder.id} canManage={false} />
-      </Block>
+          <Block title="Histórico técnico da OS">
+            {t.technicalHistory.length === 0 ? (
+              <p className="text-base text-ink-muted">Sem alterações técnicas registradas.</p>
+            ) : (
+              <ol className="space-y-2 text-base" data-testid="technical-history">
+                {t.technicalHistory.map((r) => (
+                  <li key={r.revision} className="border-l-2 border-line pl-3">
+                    <p className="font-medium">
+                      Revisão {r.revision}
+                      {r.itemCode ? ` · ${r.itemCode}` : ''} · {SCOPE_LABEL[r.scope] ?? r.scope}
+                    </p>
+                    {r.fields.length > 0 && (
+                      <p className="text-ink-soft">
+                        Alterado: {r.fields.map((f) => FIELD_LABEL[f] ?? f).join(', ')}
+                      </p>
+                    )}
+                    {r.reason && <p className="text-ink-soft">Motivo: {r.reason}</p>}
+                    <p className="text-sm text-ink-muted">
+                      {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Block>
 
-      <Block title="Histórico técnico da OS">
-        {t.technicalHistory.length === 0 ? (
-          <p className="text-base text-ink-muted">Sem alterações técnicas registradas.</p>
-        ) : (
-          <ol className="space-y-2 text-base" data-testid="technical-history">
-            {t.technicalHistory.map((r) => (
-              <li key={r.revision} className="border-l-2 border-line pl-3">
-                <p className="font-medium">
-                  Revisão {r.revision}
-                  {r.itemCode ? ` · ${r.itemCode}` : ''} · {SCOPE_LABEL[r.scope] ?? r.scope}
-                </p>
-                {r.fields.length > 0 && (
-                  <p className="text-ink-soft">
-                    Alterado: {r.fields.map((f) => FIELD_LABEL[f] ?? f).join(', ')}
-                  </p>
-                )}
-                {r.reason && <p className="text-ink-soft">Motivo: {r.reason}</p>}
-                <p className="text-sm text-ink-muted">
-                  {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
-                </p>
-              </li>
-            ))}
-          </ol>
-        )}
-      </Block>
-
-      <Block title="Histórico da tarefa">
-        <TaskHistory large events={t.events} />
-      </Block>
+          <Block title="Histórico da tarefa">
+            <TaskHistory large events={t.events} />
+          </Block>
+        </div>
+      </details>
     </div>
   );
 }
@@ -907,11 +1004,6 @@ function WhyWaiting({ t }: { t: ProductionTaskDetailDto }) {
     );
   }
   if (t.status !== 'BLOQUEADA') return null;
-  const missing = (
-    t.materialIds.length
-      ? t.materials.filter((l) => t.materialIds.includes(l.requirementId))
-      : t.materials
-  ).filter((l) => l.stage !== 'DISPONIVEL');
   return (
     <Alert tone="warn" title="Ainda não liberada — por quê:">
       <ul className="mt-1 list-disc space-y-1 pl-5 text-base" data-testid="why-waiting">
@@ -925,9 +1017,7 @@ function WhyWaiting({ t }: { t: ProductionTaskDetailDto }) {
                     .filter((d) => !DONE.includes(d.status))
                     .map((d) => `${d.title} (${d.assignee ?? 'sem responsável'})`)
                     .join(', ')}`
-                : b === 'MATERIAIS' && missing.length
-                  ? `Falta material: ${missing.map((l) => `${specText(l)} — ${LINE_STAGE_LABEL[l.stage]}`).join('; ')}`
-                  : RELEASE_BLOCKER_LABEL[b]}
+                : RELEASE_BLOCKER_LABEL[b]}
             </li>
           ))}
       </ul>
@@ -955,12 +1045,9 @@ function useTaskPhotoUpload(taskId: string) {
     mutationFn: async (files: File[]) => {
       const created: string[] = [];
       for (const file of files) {
-        const fd = new FormData();
-        fd.append('entityType', 'PRODUCTION_TASK');
-        fd.append('entityId', taskId);
-        fd.append('file', file);
+        // Fase 2: reduzida no tablet antes de subir; o servidor trata (orientação, sem GPS).
         created.push(
-          (await api<{ id: string }>('/api/v1/attachments', { method: 'POST', body: fd })).id,
+          (await uploadPhoto({ entityType: 'PRODUCTION_TASK', entityId: taskId, file })).id,
         );
       }
       return created;
@@ -1013,7 +1100,7 @@ function PhotoPicker({
       </Button>
       {count > 0 && (
         <span className="text-base font-semibold text-ok-600" data-testid="photos-attached">
-          {count} foto(s) anexada(s)
+          {plural(count, 'foto anexada', 'fotos anexadas')}
         </span>
       )}
     </div>
@@ -1285,7 +1372,8 @@ export function NotificationsInbox({ onOpenTask }: { onOpenTask: (id: string) =>
       {error && <Alert tone="danger">{error}</Alert>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-base text-ink-muted">
-          {q.data.unread} não lido(s) · {q.data.items.length} aviso(s) recente(s)
+          {plural(q.data.unread, 'não lido', 'não lidos')} ·{' '}
+          {plural(q.data.items.length, 'aviso recente', 'avisos recentes')}
         </p>
         <Button
           size="lg"

@@ -1,7 +1,12 @@
 'use client';
 
 import type { DeviceDto, PairingCodeDto, SessionDto } from '@cenario/shared';
-import { DEVICE_KINDS, createDeviceSchema, updateDeviceSchema } from '@cenario/shared';
+import {
+  DEVICE_KINDS,
+  DEVICE_SHOWS,
+  createDeviceSchema,
+  updateDeviceSchema,
+} from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ban,
@@ -13,7 +18,8 @@ import {
   TabletSmartphone,
   Trash2,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import qrcode from 'qrcode-generator';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select } from '@/components/ui/field';
@@ -28,6 +34,13 @@ const KIND_LABEL: Record<(typeof DEVICE_KINDS)[number], string> = {
   TABLET: 'Tablet',
   COMPUTADOR: 'Computador',
   CELULAR: 'Celular',
+};
+
+/** O que a tela inicial do aparelho mostra (nunca mais do que o cargo da pessoa permite). */
+const SHOWS_LABEL: Record<(typeof DEVICE_SHOWS)[number], string> = {
+  TUDO: 'Tudo',
+  PRODUCAO: 'Só produção',
+  LOGISTICA: 'Só entregas e retiradas',
 };
 
 function statusBadge(d: DeviceDto) {
@@ -58,11 +71,25 @@ export function DevicesPage() {
   >(null);
   const close = () => setDialog(null);
 
+  // B5: aberta direto pelo endereço por quem não pode ver dispositivos nem sessões.
+  if (!can('dispositivos.ver') && !can('sessoes.ver'))
+    return (
+      <>
+        <PageHeader title="Dispositivos e sessões" />
+        <div data-testid="acesso-negado">
+          <Alert tone="warn" title="Acesso negado">
+            Você não tem permissão para ver dispositivos nem sessões. Peça acesso ao gestor.
+          </Alert>
+        </div>
+      </>
+    );
+
   return (
     <>
       <PageHeader
         title="Dispositivos e sessões"
-        description="Tablets da oficina com sessão permanente. Revogue a qualquer momento: o acesso é encerrado na hora."
+        description="Tablets da oficina ligados ao sistema."
+        help="Tablets da oficina com sessão permanente. Revogue a qualquer momento: o acesso é encerrado na hora."
         actions={
           manage && (
             <Button
@@ -113,6 +140,9 @@ export function DevicesPage() {
                         <p className="text-sm text-ink-muted">
                           {KIND_LABEL[d.kind]}
                           {d.location ? ` · ${d.location}` : ''}
+                          {d.shows !== 'TUDO' && (
+                            <span data-testid="device-shows"> · {SHOWS_LABEL[d.shows]}</span>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -300,6 +330,7 @@ function DeviceDialog({
   const [location, setLocation] = useState(device?.location ?? '');
   const [assigned, setAssigned] = useState(device?.assignedEmployee?.id ?? '');
   const [restrict, setRestrict] = useState(device?.restrictToAssigned ?? true);
+  const [shows, setShows] = useState<(typeof DEVICE_SHOWS)[number]>(device?.shows ?? 'TUDO');
   const [error, setError] = useState<string | null>(null);
   const idem = useRef(newIdempotencyKey());
 
@@ -311,6 +342,7 @@ function DeviceDialog({
           location,
           assignedEmployeeId: assigned || null,
           restrictToAssigned: restrict,
+          shows,
           version: device.version,
         });
         await api(`/api/devices/${device.id}`, { method: 'PUT', body });
@@ -322,6 +354,7 @@ function DeviceDialog({
         location,
         assignedEmployeeId: assigned || null,
         restrictToAssigned: restrict,
+        shows,
       });
       return api<{ device: DeviceDto; pairing: PairingCodeDto }>('/api/devices', {
         method: 'POST',
@@ -375,7 +408,7 @@ function DeviceDialog({
             {error}
           </Alert>
         )}
-        <Field label="Nome" required hint='Ex.: "Tablet Ricardo"'>
+        <Field label="Nome" required hint='Ex.: "Tablet da costura"'>
           {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} autoFocus />}
         </Field>
         {!device && (
@@ -394,7 +427,7 @@ function DeviceDialog({
         <Field label="Local" hint="Ex.: bancada de corte">
           {(p) => <Input {...p} value={location} onChange={(e) => setLocation(e.target.value)} />}
         </Field>
-        <Field label="Funcionário do tablet">
+        <Field label="Funcionário do aparelho">
           {(p) => (
             <Select {...p} value={assigned} onChange={(e) => setAssigned(e.target.value)}>
               <option value="">Nenhum (compartilhado)</option>
@@ -416,6 +449,26 @@ function DeviceDialog({
           disabled={!assigned}
           onChange={(e) => setRestrict(e.target.checked)}
         />
+        <Field
+          label="O que este aparelho mostra"
+          className="sm:col-span-2"
+          hint="Ex.: o celular só com entregas e retiradas e o tablet só com a produção. Nunca mostra mais do que o cargo da pessoa permite."
+        >
+          {(p) => (
+            <Select
+              {...p}
+              value={shows}
+              onChange={(e) => setShows(e.target.value as typeof shows)}
+              data-testid="device-shows-select"
+            >
+              {DEVICE_SHOWS.map((s) => (
+                <option key={s} value={s}>
+                  {SHOWS_LABEL[s]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
       </div>
     </Dialog>
   );
@@ -431,29 +484,61 @@ function PairingCodeDialog({
   onClose: () => void;
 }) {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  // App instalado (2026-11-25): o código QR abre o app já com o código; não precisa digitar.
+  const link = `${origin}/tablet?codigo=${pairing.code.replace('-', '')}`;
+  const svg = useMemo(() => {
+    const qr = qrcode(0, 'M');
+    qr.addData(link);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  }, [link]);
   return (
     <Dialog
       open
       onClose={onClose}
-      size="sm"
-      title={`Vincular "${deviceName}"`}
+      size="md"
+      title={`Instalar no aparelho "${deviceName}"`}
       footer={<Button onClick={onClose}>Concluído</Button>}
     >
-      <ol className="list-decimal space-y-2 pl-5 text-[15px] text-ink-soft">
-        <li>
-          No tablet, abra <strong className="text-ink">{origin}/tablet</strong>.
-        </li>
-        <li>Digite o código abaixo na tela de vinculação.</li>
-      </ol>
-      <p
-        data-testid="pairing-code"
-        className="my-6 rounded-2xl bg-subtle py-6 text-center font-mono text-4xl font-semibold tracking-[0.18em] text-ink select-all"
-      >
-        {pairing.code}
+      <p className="text-[15px] text-ink-soft">
+        Abra a câmera do celular ou do tablet e aponte para o código.
       </p>
-      <Alert tone="warn">
-        Código de uso único, válido até {formatDateTime(pairing.expiresAt)}. Ele não será exibido
-        novamente; se expirar, gere outro.
+      <div className="mt-5 flex flex-col items-center gap-6 sm:flex-row sm:items-start">
+        <div
+          data-testid="pairing-qr"
+          className="size-48 shrink-0 rounded-xl border border-line bg-white p-1"
+          // SVG gerado localmente pelo qrcode-generator (só o endereço do app e o código).
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+        <ol className="w-full space-y-3 text-[15px] text-ink">
+          <li className="border-b border-line pb-3">
+            <strong>1.</strong> Aponte a câmera e abra o link
+          </li>
+          <li className="border-b border-line pb-3">
+            <strong>2.</strong> Toque em <strong>Instalar Cenário</strong>
+          </li>
+          <li>
+            <strong>3.</strong> O funcionário entra com o PIN dele
+          </li>
+          <li className="pt-1 text-sm text-ink-muted">
+            O aparelho já fica ligado à sua empresa. Não precisa digitar código.
+          </li>
+        </ol>
+      </div>
+      <details className="mt-5 text-sm text-ink-soft">
+        <summary className="cursor-pointer select-none">Sem câmera? Digite o código</summary>
+        <p className="mt-2">
+          No aparelho, abra <strong className="text-ink">{origin}/tablet</strong> e digite:
+        </p>
+        <p
+          data-testid="pairing-code"
+          className="my-3 rounded-2xl bg-subtle py-4 text-center font-mono text-3xl font-semibold tracking-[0.18em] text-ink select-all"
+        >
+          {pairing.code}
+        </p>
+      </details>
+      <Alert tone="warn" className="mt-4">
+        Vale uma vez só, até {formatDateTime(pairing.expiresAt)}. Se passar da hora, gere outro.
       </Alert>
     </Dialog>
   );

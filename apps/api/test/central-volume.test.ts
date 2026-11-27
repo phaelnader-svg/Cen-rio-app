@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp, type App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import { loadEnv } from '../src/config/env';
-import { createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, loginAdmin, resetDatabaseWithMaterialsGate } from './helpers';
 import { today } from './production-helpers';
 import { qualityKit } from './quality-helpers';
 
@@ -29,7 +29,7 @@ const SIZES = process.env.CENTRAL_PERF ? [100, 1000, 3000, 10_000] : [100, 1000,
 
 beforeAll(async () => {
   app = await createTestApp();
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   await db().companySettings.update({
     where: { id: 1 },
     data: { workingDays: [0, 1, 2, 3, 4, 5, 6] },
@@ -88,6 +88,10 @@ describe('F10-15: Central sob volume (contagem exata, consultas constantes)', ()
       }
       made = n;
       await admin.get('/api/v1/attention'); // aquece (planos e conexões)
+      // A autenticação renova a sessão (um UPDATE) quando passam 60 s desde o último uso; se esse
+      // limite caísse entre o aquecimento e a medição, a consulta extra não teria relação com a
+      // Central. Marca a sessão como recém-usada por outro cliente (fora da contagem).
+      await db().session.updateMany({ data: { lastSeenAt: new Date() } });
       sql = 0;
       rows = 0;
       counting = true;
@@ -104,7 +108,11 @@ describe('F10-15: Central sob volume (contagem exata, consultas constantes)', ()
       results.push({ open: n, total: a.total, sql, rows, ms });
     }
     // (1) Sem N+1: o número de consultas não depende do volume.
-    expect(new Set(results.map((r) => r.sql)).size).toBe(1);
+    // Multi-empresa (etapa 3): cada consulta roda numa transação curta com o prelúdio da empresa;
+    // quando o pool abre uma conexão nova no meio da medição, aparece 1 comando a mais. Um N+1
+    // cresceria com o volume (centenas de consultas), não oscilaria em 1 ou 2.
+    const sqls = results.map((r) => r.sql);
+    expect(Math.max(...sqls) - Math.min(...sqls)).toBeLessThanOrEqual(2);
     // (2) Registros carregados = exceções abertas + uma parcela fixa (cenário e configuração).
     const fixed = results[0]!.rows - results[0]!.open;
     for (const r of results) expect(r.rows - r.open).toBe(fixed);

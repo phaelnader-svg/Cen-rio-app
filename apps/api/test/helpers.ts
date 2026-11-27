@@ -1,5 +1,8 @@
+import { hashSecret } from '../src/lib/crypto';
+import { resetPlatformConfigCache } from '../src/core/platform-config';
 import { runSeed } from '@cenario/db/seed';
-import { createPrismaClient, type PrismaClient } from '@cenario/db';
+import { createPrismaClient, scopedPrismaClient, type PrismaClient } from '@cenario/db';
+import { currentCompanyId, runAsCompany } from '../src/core/tenant';
 import WebSocket from 'ws';
 import { buildApp, type App } from '../src/app';
 import { loadEnv } from '../src/config/env';
@@ -8,14 +11,38 @@ export const ORIGIN = 'http://localhost:3000';
 export const ADMIN = { email: 'gestor@teste.local', password: 'SenhaDeTeste123' };
 
 let shared: PrismaClient | null = null;
-export function db(): PrismaClient {
+let sharedSystem: PrismaClient | null = null;
+/** Conexão direta (dona das tabelas): só para limpar o banco entre os testes. */
+export function rawDb(): PrismaClient {
   shared ??= createPrismaClient({ url: process.env.DATABASE_URL });
   return shared;
 }
+/**
+ * Banco "do sistema" para preparar e conferir dados nos testes: enxerga todas as empresas
+ * (multi-empresa). Linhas novas sem empresa explícita vão para a empresa definida em
+ * `asCompany` (padrão: 1, a Cenário Estofados).
+ */
+export function db(): PrismaClient {
+  sharedSystem ??= scopedPrismaClient(rawDb(), () => ({
+    companyId: currentCompanyId() ?? 1,
+    bypass: true,
+  }));
+  return sharedSystem;
+}
 
 /** Limpa todas as tabelas (exceto o controle de migrations) e recria os dados base. */
+/**
+ * Etapa E1: as travas de materiais vêm DESLIGADAS por padrão. As suítes que provam o controle
+ * formal de materiais (a produção esperando compra recebida ou reserva) usam este reset, que grava
+ * a trava LIGADA — o estado de uma instalação que escolheu esse controle em Empresa → Funcionalidades.
+ */
+export async function resetDatabaseWithMaterialsGate() {
+  await resetDatabase();
+  await db().moduleSetting.create({ data: { key: 'materiais', enabled: true } });
+}
+
 export async function resetDatabase() {
-  const prisma = db();
+  const prisma = rawDb();
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
   // Suítes com `startBackground()` mantêm tarefas periódicas gravando entre os testes; o TRUNCATE
@@ -32,11 +59,13 @@ export async function resetDatabase() {
     }
   }
   await runSeed({ withTeam: true, log: () => undefined });
+  // Painel da plataforma: a configuração (preços, bloqueio) volta aos valores de fábrica.
+  resetPlatformConfigCache();
 }
 
 export async function createTestApp(overrides: Record<string, string> = {}): Promise<App> {
   const env = loadEnv({ ...process.env, ...overrides });
-  const built = await buildApp({ env, prisma: db(), logger: false, feedPollIntervalMs: 100 });
+  const built = await buildApp({ env, prisma: rawDb(), logger: false, feedPollIntervalMs: 100 });
   return built;
 }
 
@@ -69,7 +98,7 @@ export class Client {
   }
 
   async req(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
     body?: unknown,
     headers: Record<string, string> = {},
@@ -251,3 +280,56 @@ export class WsClient {
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let sharedOwner: PrismaClient | null = null;
+/**
+ * Dono das tabelas, atravessando empresas: para testes que aplicam e revertem migrations (DDL)
+ * dentro de uma transação.
+ */
+export function ownerDb(): PrismaClient {
+  sharedOwner ??= scopedPrismaClient(rawDb(), () => ({
+    companyId: currentCompanyId() ?? 1,
+    bypass: true,
+    owner: true,
+  }));
+  return sharedOwner;
+}
+
+/**
+ * Multi-empresa: roda como trabalho da empresa 1 (Cenário Estofados) — para chamar direto as
+ * tarefas periódicas (ausência presumida, alertas, liberação), que em produção rodam uma vez por
+ * empresa (`forEachCompany`).
+ */
+export function naEmpresa1<T>(fn: () => Promise<T>): Promise<T> {
+  return runAsCompany(1, fn);
+}
+
+export const PLATFORM_ADMIN = { email: 'dono@plataforma.local', password: 'PainelDono123' };
+
+/**
+ * Painel da plataforma (/plataforma): cria o acesso do painel direto no banco (como o comando do
+ * suporte numa instalação nova; nenhuma conta de tapeçaria entra nisso) e devolve um cliente
+ * logado só no painel.
+ */
+export async function loginPlatform(app: App, creds = PLATFORM_ADMIN): Promise<Client> {
+  const c = new Client(app);
+  if (!(await rawDb().platformAdmin.findUnique({ where: { email: creds.email } })))
+    await rawDb().platformAdmin.create({
+      data: {
+        email: creds.email,
+        displayName: 'Dono da plataforma',
+        passwordHash: await hashSecret(creds.password),
+      },
+    });
+  const res = await c.post('/api/plataforma/entrar', creds);
+  if (res.status !== 200)
+    throw new Error(`login do painel falhou: ${res.status} ${JSON.stringify(res.body)}`);
+  return c;
+}
+
+/** Campos obrigatórios do Criar conta (26/11/2026): nome da empresa, de quem cria e WhatsApp. */
+export const EMPRESA_NOVA = {
+  companyName: 'Tapeçaria Teste',
+  ownerName: 'Ana Teste',
+  whatsapp: '(11) 98765-4321',
+};

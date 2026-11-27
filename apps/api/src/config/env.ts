@@ -38,6 +38,51 @@ const envSchema = z
     RATE_LIMIT_ANON_PER_MIN: z.coerce.number().int().min(1).default(120),
     RATE_LIMIT_UNKNOWN_ANON_PER_MIN: z.coerce.number().int().min(1).default(1200),
     COOKIE_SECURE: bool.default(false),
+    /**
+     * Endereço do jogo Firma Viva (aplicativo conectado). Usado para voltar ao jogo depois de
+     * conectar um canal (Meta) e nos links "abrir no jogo". Vazio = links relativos.
+     */
+    GAME_WEB_URL: z
+      .string()
+      .default('')
+      .transform((v) => v.replace(/\/$/, '')),
+    /**
+     * Endereço público do painel, usado nos links dos e-mails (confirmar e-mail, nova senha).
+     * Vazio = a primeira origem de ALLOWED_ORIGINS.
+     */
+    PUBLIC_WEB_URL: z
+      .string()
+      .default('')
+      .transform((v) => v.replace(/\/$/, '')),
+    /**
+     * Cobrança da assinatura (2026-11-17). Desligada, nenhuma empresa é bloqueada por falta de
+     * pagamento (comportamento anterior); a tela de assinatura continua mostrando o plano.
+     */
+    BILLING_ENABLED: bool.default(false),
+    /** Teste grátis das contas novas (decisão do dono: 7 dias). */
+    BILLING_TRIAL_DAYS: z.coerce.number().int().min(0).max(90).default(7),
+    /** Dias depois do vencimento até bloquear (decisão do dono: 5). */
+    BILLING_GRACE_DAYS: z.coerce.number().int().min(0).max(60).default(5),
+    /** Asaas da plataforma (a conta da Cenário). Mesma chave das cobranças do escritório. */
+    ASAAS_API_KEY: z.string().default(''),
+    ASAAS_BASE_URL: z
+      .string()
+      .default('https://api-sandbox.asaas.com/v3')
+      .transform((v) => v.replace(/\/$/, '')),
+    /** Token do webhook do Asaas (cabeçalho asaas-access-token). */
+    ASAAS_WEBHOOK_TOKEN: z.string().default(''),
+    /** E-mail pelo Resend (decisão do dono). Vazio = os e-mails ficam na fila sem enviar. */
+    RESEND_API_KEY: z.string().default(''),
+    /** Voz da Conversar (Google Speech-to-Text, infra/voz/ligar-voz.sh). Vazio = voz do navegador. */
+    SPEECH_API_KEY: z.string().default(''),
+    SPEECH_BASE_URL: z
+      .string()
+      .default('https://speech.googleapis.com')
+      .transform((v) => v.replace(/\/$/, '')),
+    EMAIL_FROM: z.string().default('Cenário Gestão <nao-responda@cenariogestao.com.br>'),
+    /** Anti-robô do Criar conta e do "esqueci minha senha" (Cloudflare Turnstile). Vazio = desligado. */
+    TURNSTILE_SITE_KEY: z.string().default(''),
+    TURNSTILE_SECRET_KEY: z.string().default(''),
     TOKEN_HASH_SECRET: z
       .string()
       .min(32, { message: 'TOKEN_HASH_SECRET deve ter ao menos 32 caracteres.' }),
@@ -59,6 +104,13 @@ const envSchema = z
     ENABLE_TEST_CLOCK: bool.default(false),
   })
   .superRefine((env, ctx) => {
+    if (env.BILLING_ENABLED && env.APP_ENV === 'production' && !env.ASAAS_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ASAAS_API_KEY'],
+        message: 'BILLING_ENABLED exige ASAAS_API_KEY em produção.',
+      });
+    }
     const strict = env.APP_ENV === 'production' || env.APP_ENV === 'staging';
     if (env.ENABLE_TEST_CLOCK && (env.APP_ENV !== 'test' || env.NODE_ENV === 'production')) {
       ctx.addIssue({

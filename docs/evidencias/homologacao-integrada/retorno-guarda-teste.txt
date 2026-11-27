@@ -1,0 +1,39 @@
+████ CASO 1 — peças aprovadas sem embalagem e não entregues: retorno BLOQUEADO
+▶ migrar com R2
+✘ RETORNO BLOQUEADO: 2 peça(s) aprovada(s) sem embalagem e ainda não entregue(s).
+   • OS-00001/1 · Sofá 3 lugares · PRONTA_ENTREGA · id 06c07219-6412-431b-9d47-8f671a8f7ff8
+   • OS-00001/2 · Poltronas · PRONTA_ENTREGA · id e07f37d6-42b8-4e53-91c4-140ed540a53e
+  Entregue essas peças na versão integrada antes de voltar para esta versão. Nada foi alterado.
+  código de saída: 3
+▶ iniciar API R2
+  estado: running=false exit=78
+✘ RETORNO BLOQUEADO: 2 peça(s) aprovada(s) sem embalagem e ainda não entregue(s).
+   • OS-00001/1 · Sofá 3 lugares · PRONTA_ENTREGA · id 06c07219-6412-431b-9d47-8f671a8f7ff8
+   • OS-00001/2 · Poltronas · PRONTA_ENTREGA · id e07f37d6-42b8-4e53-91c4-140ed540a53e
+✔ 22 tabelas idênticas
+  avisos: total 9 → 9 · F4 abertos 1 → 1
+  migrations: 37
+████ CASO 2 — peças entregues na versão integrada: retorno LIBERADO
+▶ F2: prontidão e entrega das peças pela API (sem SQL)
+  prontidão antes: 200 {"ready":false,"pecas":["OS-00001/1 06c07219-6412-431b-9d47-8f671a8f7ff8","OS-00001/2 e07f37d6-42b8-4e53-91c4-140ed540a53e"],"avisos":{"total":1,"byKind":{"PRAZO_EM_RISCO":1}}}
+  entrega direta: 200 a3ff79f7-0d8f-49f7-b5a8-94b8c0b6eb26
+  prontidão depois: 200 {"ready":true,"pecas":0,"avisos":{"total":1,"byKind":{"PRAZO_EM_RISCO":1}}}
+▶ migrar com R2
+✔ guarda do retorno: nenhuma peça incompatível; avisos da Fase 4 encerrados: 1 ({"PRAZO_EM_RISCO":1})
+No pending migrations to apply.
+Database schema is up to date!
+  código de saída: 0
+  avisos F4 abertos: 1 → 0 · auditoria: 1 · Retorno de versão: 1 aviso(s) interno(s) da Fase 4 encerrado(s)
+▶ migrar de novo (idempotência)
+✔ guarda do retorno: nenhuma peça incompatível; avisos da Fase 4 encerrados: 0
+Database schema is up to date!
+  auditorias: 1
+▶ iniciar API R2 e ler as telas
+  ready=200
+✔ guarda do retorno: nenhuma peça aprovada sem embalagem pendente de entrega.
+  rotas: {'today': 404} (demais 200)
+  peças: {'stage': 'ENTREGUE'} {'stage': 'ENTREGUE'}
+  mão de obra E: {'status': 'LIBERADO', 'paidCents': 0, 'eligibleAt': '2026-11-12T16:10:43.516Z'} · Q: {'status': 'PAGO_PARCIAL', 'paidCents': 10000, 'eligibleAt': '2026-11-12T14:57:59.546Z'}
+  cobrança: {'status': 'ABERTO', 'effectiveDueDate': '2026-11-12'}
+  aguardando 180 s com as rotinas periódicas ligadas…
+✔ 22 tabelas idênticas ao estado antes do retorno

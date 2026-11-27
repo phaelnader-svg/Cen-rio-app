@@ -11,7 +11,7 @@ import { MAX_COOKIE_AGE_SECONDS, cookieOptions } from '../../plugins/auth';
 import { buildMe, toEmployeeSummary } from '../presenters';
 
 export async function tabletRoutes(app: FastifyInstance) {
-  const { prisma, env, hashToken, cookies } = app.ctx;
+  const { prisma, system, env, hashToken, cookies } = app.ctx;
   const throttle = new AuthThrottle(prisma);
 
   /**
@@ -39,9 +39,15 @@ export async function tabletRoutes(app: FastifyInstance) {
       const perms = await loadUserPermissions(prisma, e.user.id);
       if (perms.has('producao.acessar')) allowed.push(toEmployeeSummary(e));
     }
+    // Melhoria 172: a tela de entrar do tablet mostra o nome da tapeçaria.
+    const company = await prisma.companySettings.findUnique({
+      where: { id: device.companyId },
+      select: { tradeName: true },
+    });
     return {
       paired: true as const,
       device: { id: device.id, name: device.name },
+      company: { tradeName: company?.tradeName ?? null },
       employees: allowed,
       authenticated: request.auth?.kind === 'DEVICE',
     };
@@ -60,6 +66,13 @@ export async function tabletRoutes(app: FastifyInstance) {
     }
     const codeHash = hashToken(`pairing:${parsed.data.code}`);
     const credential = randomToken();
+
+    // Multi-empresa: o código diz de qual empresa é o tablet; a partir daí, tudo na empresa dele.
+    const owner = await system.device.findUnique({
+      where: { pairingCodeHash: codeHash },
+      select: { companyId: true },
+    });
+    if (owner && request.tenant) request.tenant.companyId = owner.companyId;
 
     const device = await prisma.$transaction(async (tx) => {
       const found = await tx.device.findUnique({ where: { pairingCodeHash: codeHash } });

@@ -1,6 +1,9 @@
 'use client';
 
 import type { LogisticsJobDto, LogisticsKind, PaymentMethod } from '@cenario/shared';
+import { whatsappLink } from '@cenario/shared';
+import { MapsLinks } from '@/components/improvements/maps-links';
+import { AskReview } from '@/components/quality/review-link';
 import { addDays, arrivalText, todayIso } from '@/lib/commercial';
 import {
   DELIVERY_ITEM_STATUS_LABEL,
@@ -8,12 +11,12 @@ import {
   LOGISTICS_KINDS,
   LOGISTICS_KIND_LABEL,
   PAYMENT_METHOD_LABEL,
-  PICKUP_STATUS_LABEL,
+  pickupStatusLabel,
   type DeliveryStatus,
   type PickupStatus,
 } from '@cenario/shared';
 import clsx from 'clsx';
-import { MapPin, Phone, Truck } from 'lucide-react';
+import { House, MapPin, MessageCircle, Phone, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useSend } from '@/components/production/use-send';
 import { Button } from '@/components/ui/button';
@@ -149,8 +152,12 @@ const day = (iso: string | null) => (iso ? iso.split('-').reverse().join('/') : 
 function statusLabel(j: LogisticsJobDto) {
   return j.kind === 'ENTREGA'
     ? DELIVERY_STATUS_LABEL[j.status as DeliveryStatus]
-    : PICKUP_STATUS_LABEL[j.status as PickupStatus];
+    : pickupStatusLabel(j.status as PickupStatus, j.onSite ? 'NO_LOCAL' : 'RETIRADA');
 }
+
+/** 2026-11-25: "Entrega", "Retirada" ou "No local" (serviço feito na casa do cliente). */
+const jobKindLabel = (j: LogisticsJobDto) =>
+  j.kind === 'ENTREGA' ? 'Entrega' : j.onSite ? 'No local' : 'Retirada';
 
 export function LogisticsJobs() {
   const [day, setDay] = useState<'hoje' | 'amanha'>('hoje');
@@ -184,7 +191,7 @@ export function LogisticsJobs() {
       </div>
       {!route.data.stops.length ? (
         <p className="rounded-2xl bg-subtle p-6 text-lg text-ink-muted" data-testid="no-jobs">
-          Nenhuma retirada ou entrega sua {day === 'hoje' ? 'hoje' : 'amanhã'}.
+          Nada agendado para você {day === 'hoje' ? 'hoje' : 'amanhã'}.
         </p>
       ) : (
         <ol className="space-y-5" data-testid="logistics-jobs">
@@ -198,8 +205,7 @@ export function LogisticsJobs() {
                   {s.position}
                 </span>
                 <span className="font-semibold">
-                  {s.job.kind === 'ENTREGA' ? 'Entrega' : 'Retirada'} ·{' '}
-                  {arrivalText(s.job.windowStart, s.job.windowEnd)}
+                  {jobKindLabel(s.job)} · {arrivalText(s.job.windowStart, s.job.windowEnd)}
                 </span>
                 {s.serviceOrders.length > 0 && (
                   <span className="text-base text-ink-muted">OS {s.serviceOrders.join(', ')}</span>
@@ -266,9 +272,13 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
       data-status={j.status}
     >
       <p className="flex flex-wrap items-center gap-2 text-base text-ink-muted">
-        <Truck className="size-5" aria-hidden />
-        <span className="font-semibold text-ink-soft">
-          {j.kind === 'ENTREGA' ? 'Entrega' : 'Retirada'} {j.code}
+        {j.onSite ? (
+          <House className="size-5 text-brand-700" aria-hidden />
+        ) : (
+          <Truck className="size-5" aria-hidden />
+        )}
+        <span className={j.onSite ? 'font-semibold text-brand-700' : 'font-semibold text-ink-soft'}>
+          {jobKindLabel(j)} {j.code}
         </span>
         <span>
           · {day(j.scheduledDate)}
@@ -289,6 +299,11 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
             {a.reference ? ` · ${a.reference}` : ''}
           </span>
         </p>
+      )}
+      {a && (
+        <div className="mt-3">
+          <MapsLinks address={a} large />
+        </div>
       )}
       {(j.contactName || j.contactPhone) && (
         <p className="mt-1 flex items-center gap-2 text-lg">
@@ -324,6 +339,8 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
         </p>
       )}
       {error && <Alert tone="danger">{error}</Alert>}
+      <OnTheWay j={j} />
+      {j.kind === 'ENTREGA' && j.status === 'CONCLUIDA' && <AskReview deliveryId={j.id} large />}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {j.kind === 'RETIRADA' && j.status === 'AGENDADA' && (
@@ -335,7 +352,7 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
               run(`/api/v1/logistics/pickups/${j.id}/step`, { step: 'SAIDA' }, 'Saída registrada.')
             }
           >
-            Saí para a retirada
+            {j.onSite ? 'Saí para o serviço' : 'Saí para a retirada'}
           </Button>
         )}
         {j.kind === 'RETIRADA' && j.status === 'EM_EXECUCAO' && (
@@ -347,11 +364,11 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
               run(
                 `/api/v1/logistics/pickups/${j.id}/step`,
                 { step: 'RETIRADA_REALIZADA' },
-                'Retirada registrada.',
+                j.onSite ? 'Serviço feito registrado.' : 'Retirada registrada.',
               )
             }
           >
-            Peças retiradas
+            {j.onSite ? 'Serviço feito' : 'Peças retiradas'}
           </Button>
         )}
         {j.kind === 'ENTREGA' && j.status === 'AGENDADA' && (
@@ -647,5 +664,45 @@ function KindPanel({
         Registrar
       </Button>
     </div>
+  );
+}
+
+/** Minutos de viagem que a mensagem usa (o motorista ajusta no WhatsApp antes de mandar). */
+const TRAVEL_MINUTES = 40;
+
+/**
+ * Item 21 (lista de 53): "Estamos a caminho". Depois de tocar em "Saí", o motorista manda a
+ * previsão de chegada para o cliente com um toque (o WhatsApp abre com a mensagem pronta).
+ */
+function OnTheWay({ j }: { j: LogisticsJobDto }) {
+  const going =
+    (j.kind === 'ENTREGA' && j.status === 'EM_TRANSPORTE') ||
+    (j.kind === 'RETIRADA' && j.status === 'EM_EXECUCAO');
+  if (!going || !j.contactPhone) return null;
+  const from = j.departedAt ? new Date(j.departedAt) : new Date();
+  const eta = new Date(from.getTime() + TRAVEL_MINUTES * 60_000).toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const name = (j.contactName || j.customerName || '').split(' ')[0];
+  const what =
+    j.kind === 'ENTREGA'
+      ? 'Saímos agora com a sua peça'
+      : j.onSite
+        ? 'Saímos agora para fazer o serviço'
+        : 'Saímos agora para buscar a sua peça';
+  const text = `Olá${name ? `, ${name}` : ''}! ${what} e devemos chegar por volta das ${eta}. Qualquer coisa, é só responder aqui.`;
+  return (
+    <a
+      href={whatsappLink(j.contactPhone, text)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-ok-600 px-4 text-lg font-semibold text-white hover:bg-ok-600/90"
+      data-testid="a-caminho"
+    >
+      <MessageCircle className="size-6" aria-hidden /> Avisar o cliente: chegamos por volta das{' '}
+      {eta}
+    </a>
   );
 }

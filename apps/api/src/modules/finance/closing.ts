@@ -8,6 +8,7 @@
  * Conferência = retrato versionado (`weekly_closings`); Pix em lote = baixas nas obrigações
  * originais (`closing_payments` só agrupa e rastreia). Regras de competência: closing-domain.ts.
  */
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   allocateClosingPayment,
@@ -66,6 +67,7 @@ import {
 } from './labor';
 import { payPayable } from './payables';
 import { reversePayablePayment, tripCostInclude } from './trip-costs';
+import { requireCompanyId } from '../../core/tenant';
 
 type Db = Tx | PrismaClient;
 
@@ -84,7 +86,8 @@ const plusDays = (iso: string, n: number) => {
 
 async function tzOf(db: Db) {
   return (
-    (await db.companySettings.findUnique({ where: { id: 1 } }))?.timezone ?? 'America/Sao_Paulo'
+    (await db.companySettings.findUnique({ where: { id: requireCompanyId() } }))?.timezone ??
+    'America/Sao_Paulo'
   );
 }
 
@@ -242,7 +245,7 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
 
   // ── Logística ──
   const settings = await db.companySettings.findUnique({
-    where: { id: 1 },
+    where: { id: requireCompanyId() },
     include: { logisticsPayee: { include: { employee: { select: { active: true } } } } },
   });
   const configured = settings?.logisticsPayee
@@ -446,6 +449,8 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
   const deliveries = await db.delivery.findMany({
     where: {
       status: 'CONCLUIDA',
+      // Fase 1: entrega direta pela OS não é viagem — não tem custo de frete a informar.
+      origin: 'LOGISTICA',
       completedAt: { gte: startAt, lt: endAt },
       logisticsCosts: { none: { kind: 'ENTREGA', cancelledAt: null } },
     },
@@ -589,7 +594,7 @@ export async function weeklyClosing(
   filters: z.output<typeof closingQuerySchema> = { format: 'json' },
 ): Promise<WeeklyClosingDto> {
   const built = await buildClosingItems(db, weekStart);
-  const row = await db.weeklyClosing.findUnique({
+  const row = await db.weeklyClosing.findFirst({
     where: { weekStart: new Date(`${weekStart}T00:00:00Z`) },
     include: { checkedBy: { select: { displayName: true } } },
   });
@@ -759,7 +764,7 @@ export async function confirmClosing(
 ) {
   // Uma conferência por vez por semana (bloqueio consultivo pela semana).
   await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `closing:${weekStart}`);
-  const row = await tx.weeklyClosing.findUnique({
+  const row = await tx.weeklyClosing.findFirst({
     where: { weekStart: new Date(`${weekStart}T00:00:00Z`) },
   });
   if ((row?.version ?? 0) !== input.version) throw Errors.versionConflict(row?.version ?? 0);
@@ -770,7 +775,7 @@ export async function confirmClosing(
   const blocking = built.pendencies.filter((p) => p.blocking);
   if (blocking.length)
     throw Errors.business(
-      `Há ${blocking.length} pendência(s) que precisam de resolução explícita: ${blocking
+      `Há ${plural(blocking.length, 'pendência', 'pendências')} que precisam de resolução explícita: ${blocking
         .slice(0, 5)
         .map((p) => p.message)
         .join(' | ')}`,
@@ -826,7 +831,7 @@ export async function reopenClosing(
   input: z.output<typeof reopenClosingSchema>,
 ) {
   await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `closing:${weekStart}`);
-  const row = await tx.weeklyClosing.findUnique({
+  const row = await tx.weeklyClosing.findFirst({
     where: { weekStart: new Date(`${weekStart}T00:00:00Z`) },
   });
   if (!row) throw Errors.business('Semana ainda não conferida.');
@@ -906,8 +911,8 @@ export async function registerClosingPayment(
   if (input.amountCents > available)
     throw Errors.business(
       available
-        ? `Esta semana ainda não foi confirmada pelo profissional para todo o valor: há ${(available / 100).toFixed(2)} confirmados. Peça a conferência no tablet ou use a exceção administrativa.`
-        : 'Esta semana ainda não foi confirmada pelo profissional. Peça a conferência no tablet ou use a exceção administrativa.',
+        ? `Esta semana ainda não foi confirmada pelo funcionário para todo o valor: há ${(available / 100).toFixed(2)} confirmados. Peça a conferência no tablet ou use a exceção administrativa.`
+        : 'Esta semana ainda não foi confirmada pelo funcionário. Peça a conferência no tablet ou use a exceção administrativa.',
     );
   const { parts } = allocateClosingPayment(
     input.amountCents,
@@ -983,7 +988,7 @@ export async function registerClosingPayment(
     action: 'finance.closing_payment',
     entityType: 'closing_payment',
     entityId: header.id,
-    summary: `${code}: pagamento externo de ${(input.amountCents / 100).toFixed(2)} a ${user.displayName} (${input.method}) baixado em ${parts.length} obrigação(ões).`,
+    summary: `${code}: pagamento externo de ${(input.amountCents / 100).toFixed(2)} a ${user.displayName} (${input.method}) baixado em ${plural(parts.length, 'obrigação', 'obrigações')}.`,
     // F10-20b: o lote e o antes/depois de cada obrigação baixada (detalhe em cada baixa).
     changes: {
       weekStart,
@@ -1202,7 +1207,7 @@ export async function closingRoutes(app: FastifyInstance) {
     { config: { access: FIN_ADJUST, idempotent: true } },
     async (request) => {
       const { id, paymentId } = z
-        .object({ id: z.string().uuid(), paymentId: z.string().uuid() })
+        .object({ id: z.guid(), paymentId: z.guid() })
         .parse(request.params);
       const input = reverseLaborPaymentSchema.parse(request.body);
       await tx(async (t) => {

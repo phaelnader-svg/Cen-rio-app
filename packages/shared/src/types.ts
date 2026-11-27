@@ -7,6 +7,12 @@ export interface MeDto {
     id: string;
     email: string | null;
     displayName: string;
+    /** Confirmou o e-mail pelo link (melhoria 3). */
+    emailConfirmed: boolean;
+    /** Melhoria 98: verificação em duas etapas ligada. */
+    twoFactor: boolean;
+    /** Melhoria 114: sessão do suporte do Cenário dentro da empresa. */
+    supportAgent: boolean;
   };
   employee: EmployeeSummaryDto | null;
   session: {
@@ -15,7 +21,7 @@ export interface MeDto {
     expiresAt: string;
     deviceId: string | null;
   };
-  device: { id: string; name: string } | null;
+  device: { id: string; name: string; shows: 'TUDO' | 'PRODUCAO' | 'LOGISTICA' } | null;
   permissions: Permission[];
   company: {
     tradeName: string;
@@ -24,6 +30,30 @@ export interface MeDto {
     arrivalAlertAt: string;
     workdayEnd: string;
     arrivalWindowStart: string;
+    /** Multi-empresa: o gestor da empresa da plataforma (nº 1) vê o painel das empresas. */
+    platformOwner: boolean;
+    /** Empresa da plataforma (nº 1), para qualquer usuário dela (ex.: ferramentas de suporte no tablet). */
+    platformCompany: boolean;
+    /** Empresa recém-criada pelo Criar conta, ainda com o nome provisório: mostra as boas-vindas. */
+    needsWelcome: boolean;
+    /** Empresa sem WhatsApp cadastrado: o gestor informa ao entrar (obrigatório). */
+    needsWhatsapp: boolean;
+    /** Melhoria 114: acesso de suporte liberado até (null = não liberado). */
+    supportAccessUntil: string | null;
+    /** Melhoria 128: empresa de demonstração. */
+    isDemo: boolean;
+    /** 26/11/2026: atende na casa do cliente (mostra "No local" nas retiradas). */
+    servesOnSite: boolean;
+    /** Assinatura (cobrança): situação para o aviso do painel e o bloqueio. */
+    subscription: {
+      plan: string;
+      status: 'CORTESIA' | 'TESTE' | 'ATIVA' | 'ATRASADA' | 'VENCIDA';
+      /** Quando o sistema bloqueia sem pagamento (null = não vence). */
+      blocksAt: string | null;
+      /** Bloqueada agora: só a tela de assinatura abre. */
+      locked: boolean;
+      billingEnabled: boolean;
+    };
   };
 }
 
@@ -72,6 +102,7 @@ export interface DeviceDto {
   status: DeviceStatus;
   assignedEmployee: EmployeeSummaryDto | null;
   restrictToAssigned: boolean;
+  shows: 'TUDO' | 'PRODUCAO' | 'LOGISTICA';
   pairedAt: string | null;
   lastSeenAt: string | null;
   online: boolean;
@@ -111,6 +142,8 @@ export interface CompanySettingsDto {
   workingDays: number[];
   planningWeekday: number;
   measurementWeekday: number;
+  servesOnSite: boolean;
+  monthlyGoalCents: number | null;
   version: number;
   updatedAt: string;
 }
@@ -135,5 +168,6 @@ export interface PairingCodeDto {
 
 export interface TabletLoginOptionDto {
   device: { id: string; name: string };
+  company?: { tradeName: string | null };
   employees: EmployeeSummaryDto[];
 }

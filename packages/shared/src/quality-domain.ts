@@ -63,10 +63,13 @@ export type SubstituteReason = keyof typeof SUBSTITUTE_REASONS;
 
 /**
  * Quem pode aprovar ou reprovar uma inspeção (regra única):
- * - ninguém decide sobre a peça que executou — nem o gestor, nem com autorização
- *   (Simplificação Fase 5, D8): a decisão fica com outro gestor ou com um inspetor substituto
- *   designado pelo gestor;
- * - o gestor (qualidade.gerenciar) que não executou pode;
+ * - quem executou o serviço NÃO decide sobre a própria peça (Simplificação Fase 5, D8) —
+ *   **exceto o gestor** (qualidade.gerenciar), que desde a Reformulação Fase 3 (D4) pode APROVAR a
+ *   própria execução com **justificativa obrigatória**, gravada com identidade e data e
+ *   destacada na auditoria (`selfApproval`). Reprovar a própria peça não é conflito: o gestor
+ *   reprova normalmente;
+ * - os demais executores continuam sem decidir, nem com autorização;
+ * - o gestor que não executou pode;
  * - o inspetor designado que não executou pode;
  * - qualquer outra pessoa, não.
  */
@@ -74,18 +77,50 @@ export function canDecideInspection(i: {
   isManager: boolean;
   isAssignedInspector: boolean;
   executedService: boolean;
-}): { allowed: boolean; reason: string | null } {
+}): { allowed: boolean; reason: string | null; selfApproval: boolean } {
   if (i.executedService)
+    return i.isManager
+      ? {
+          allowed: true,
+          selfApproval: true,
+          reason:
+            'Você executou este serviço: como gestor, só aprova com justificativa (fica destacada na auditoria).',
+        }
+      : {
+          allowed: false,
+          selfApproval: false,
+          reason:
+            'Você executou este serviço: ninguém aprova a própria peça. A decisão fica com o gestor ou com outro inspetor autorizado.',
+        };
+  if (i.isManager) return { allowed: true, reason: null, selfApproval: false };
+  if (!i.isAssignedInspector)
     return {
       allowed: false,
-      reason: i.isManager
-        ? 'Você executou este serviço: ninguém aprova a própria peça. Designe um inspetor substituto autorizado.'
-        : 'Você executou este serviço: ninguém aprova a própria peça. A decisão fica com o gestor ou com outro inspetor autorizado.',
+      reason: 'A inspeção está designada para outra pessoa.',
+      selfApproval: false,
     };
-  if (i.isManager) return { allowed: true, reason: null };
-  if (!i.isAssignedInspector)
-    return { allowed: false, reason: 'A inspeção está designada para outra pessoa.' };
-  return { allowed: true, reason: null };
+  return { allowed: true, reason: null, selfApproval: false };
+}
+
+/** Tamanho mínimo da justificativa da autoaprovação do gestor (D4). */
+export const SELF_APPROVAL_REASON_MIN = 10;
+
+/** Ação de auditoria destacada (exceções que o gestor fez por conta própria). */
+export const HIGHLIGHTED_AUDIT_ACTIONS = [
+  'quality.inspection_self_approved',
+  'delivery.direct_reverted',
+] as const;
+
+/**
+ * "Tudo conforme": os itens ainda não conferidos viram CONFORME. Recusa se algum já está "não
+ * conforme" (aí é reprovação). Devolve só os que mudam (os já conferidos ficam como estão).
+ */
+export function allConformChanges<T extends { id: string; result: CheckResult | null }>(
+  items: readonly T[],
+): { ok: true; toCheck: T[] } | { ok: false; problem: string } {
+  if (items.some((i) => i.result === 'NAO_CONFORME'))
+    return { ok: false, problem: 'Há itens não conformes: reprove e registre a correção.' };
+  return { ok: true, toCheck: items.filter((i) => i.result === null) };
 }
 
 /**
@@ -221,6 +256,7 @@ export const FULFILLMENT_STAGES = [
   'AGUARDANDO_INSPECAO',
   'EM_INSPECAO',
   'EM_CORRECAO',
+  /** Só histórico (Reformulação S1): `computeStage` não produz mais as duas etapas de embalagem. */
   'AGUARDANDO_EMBALAGEM',
   'EM_EMBALAGEM',
   'BLOQUEIO_EXPEDICAO',
@@ -256,28 +292,23 @@ export interface ReadinessInput {
   inspection: InspectionStatus | null;
   /** Correções (tarefas) ainda não concluídas. */
   openCorrections: number;
-  packaging: 'PENDENTE' | 'EM_ANDAMENTO' | 'CONCLUIDA' | 'INVALIDADA' | 'CANCELADA' | null;
   /** Ocorrência logística aberta que bloqueia a expedição. */
   shippingBlock: boolean;
 }
 
-export const READINESS_CHECKS = [
-  'TAREFAS',
-  'INSPECAO',
-  'CORRECOES',
-  'EMBALAGEM',
-  'SEM_BLOQUEIO',
-] as const;
+export const READINESS_CHECKS = ['TAREFAS', 'INSPECAO', 'CORRECOES', 'SEM_BLOQUEIO'] as const;
 export type ReadinessCheck = (typeof READINESS_CHECKS)[number];
 export const READINESS_CHECK_LABEL: Record<ReadinessCheck, string> = {
   TAREFAS: 'Tarefas obrigatórias concluídas',
   INSPECAO: 'Inspeção final aprovada',
   CORRECOES: 'Nenhuma correção obrigatória pendente',
-  EMBALAGEM: 'Embalagem concluída',
   SEM_BLOQUEIO: 'Sem bloqueio crítico de expedição',
 };
 
-/** "Pronto para entrega" exige as cinco condições, sem exceção. */
+/**
+ * "Pronto para entrega" exige as quatro condições, sem exceção. Reformulação S1: a embalagem deixou
+ * de existir como etapa — a peça aprovada na qualidade fica pronta para entrega direto.
+ */
 export function deliveryReadiness(i: ReadinessInput): {
   ready: boolean;
   missing: ReadinessCheck[];
@@ -286,7 +317,6 @@ export function deliveryReadiness(i: ReadinessInput): {
   if (i.requiredTasks === 0 || i.requiredTasksDone < i.requiredTasks) missing.push('TAREFAS');
   if (i.inspection !== 'APROVADA') missing.push('INSPECAO');
   if (i.openCorrections > 0) missing.push('CORRECOES');
-  if (i.packaging !== 'CONCLUIDA') missing.push('EMBALAGEM');
   if (i.shippingBlock) missing.push('SEM_BLOQUEIO');
   return { ready: missing.length === 0, missing };
 }
@@ -312,13 +342,11 @@ export function computeStage(
   if (i.openCorrections > 0 || i.inspection === 'REPROVADA') return 'EM_CORRECAO';
   if (i.inspection === 'EM_ANDAMENTO') return 'EM_INSPECAO';
   if (i.inspection !== 'APROVADA') return 'AGUARDANDO_INSPECAO';
-  if (i.packaging === 'EM_ANDAMENTO') return 'EM_EMBALAGEM';
-  if (i.packaging !== 'CONCLUIDA') return 'AGUARDANDO_EMBALAGEM';
   if (i.shippingBlock) return 'BLOQUEIO_EXPEDICAO';
   return i.scheduled ? 'ENTREGA_AGENDADA' : 'PRONTA_ENTREGA';
 }
 
-// ─────────────────────────── Embalagem e localização ───────────────────────────
+// ───────────── Embalagem (só leitura do histórico, Reformulação S1) e localização ─────────────
 
 export const PACKAGING_STATUSES = [
   'PENDENTE',

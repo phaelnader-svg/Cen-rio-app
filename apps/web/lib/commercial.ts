@@ -1,5 +1,7 @@
 'use client';
 
+import type { OperationalState, ServiceType } from '@cenario/shared';
+
 import type {
   AttachmentDto,
   AttachmentEntity,
@@ -12,7 +14,7 @@ import type {
   OrderSummaryDto,
   PageDto,
   PickupDto,
-  ReceiptDto,
+  QuoteWorkDto,
   ServiceOrderDto,
   ServiceOrderRevisionDto,
   ServiceOrderSummaryDto,
@@ -64,6 +66,8 @@ export interface CustomerHistory {
     priority: string;
     pieceCount: number;
     createdAt: string;
+    /** Fase 3: estado geral da OS (mesma regra da lista e do cabeçalho). */
+    operationalState: OperationalState | null;
   }[];
   changes: {
     id: string;
@@ -97,7 +101,7 @@ export const useCustomerAddresses = (id: string | null) =>
   });
 
 export const useOrders = (
-  params: { q?: string; status?: string; customerId?: string },
+  params: { q?: string; status?: string; stage?: string; customerId?: string },
   enabled = true,
 ) =>
   useQuery({
@@ -132,44 +136,8 @@ export const usePickup = (id: string | null) =>
     enabled: Boolean(id),
   });
 
-export const useReceipts = (orderId?: string, enabled = true) =>
-  useQuery({
-    queryKey: ['receipts', orderId ?? 'all'],
-    queryFn: () => api<ReceiptDto[]>(`/api/v1/receipts${qs({ orderId })}`),
-    enabled,
-  });
-
-export interface PendingReceiptOrder {
-  id: string;
-  code: string;
-  status: string;
-  customer: CustomerSummaryDto;
-  items: {
-    id: string;
-    pieceType: string;
-    description: string;
-    quantity: number;
-    receivedQuantity: number;
-    pending: number;
-  }[];
-  pickups: {
-    id: string;
-    code: string;
-    status: string;
-    scheduledDate: string | null;
-    items: { orderItemId: string; quantity: number }[];
-  }[];
-}
-
-export const usePendingReceipts = (enabled = true) =>
-  useQuery({
-    queryKey: ['receipts-pending'],
-    queryFn: () => api<PendingReceiptOrder[]>('/api/v1/receipts/pending'),
-    enabled,
-  });
-
 export const useServiceOrders = (
-  params: { q?: string; status?: string; orderId?: string },
+  params: { q?: string; status?: string; orderId?: string; material?: string },
   enabled = true,
 ) =>
   useQuery({
@@ -195,7 +163,32 @@ export const useServiceOrderRevisions = (id: string) =>
   });
 
 export interface AvailableForOs {
-  order: { id: string; code: string; status: string; contractedService: string };
+  order: {
+    id: string;
+    code: string;
+    status: string;
+    contractedService: string;
+    promisedDate: string | null;
+    technicalNotes: string | null;
+  };
+  /** Fluxo da OS (2026-11-18): o orçamento aprovado que virou este pedido (preenche a OS). */
+  quote: {
+    number: number;
+    service: string;
+    /** Serviço do tapeceiro escolhido no orçamento (sem valor). */
+    upholsteryService?: string | null;
+    fabricName: string;
+    details: string[];
+    notes: string;
+    materials: string[];
+    responsibleName: string | null;
+    upholstererUserId: string | null;
+    /** Funcionário com o nome do responsável do orçamento (responsável técnico da OS). */
+    technicalLeadId: string | null;
+    photoDataUrl: string | null;
+    /** 2026-11-19: o orçamento em partes (serviço, tecido, o que fazer, materiais). */
+    work: QuoteWorkDto;
+  } | null;
   customer: CustomerSummaryDto;
   /** null = sem permissão para ver valores do pedido. */
   commercial: {
@@ -215,6 +208,13 @@ export interface AvailableForOs {
     receivedQuantity: number;
     inServiceOrders: number;
     available: number;
+    serviceType: ServiceType | null;
+    fabricName: string | null;
+    fabricColor: string | null;
+    fabricReference: string | null;
+    technicalNotes: string | null;
+    plannedUpholstererUserId: string | null;
+    plannedLaborUnitCents: number | null;
   }[];
 }
 

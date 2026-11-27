@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { MyQueueDto, ProductionTaskDto } from '@cenario/shared';
 import { WEEK_WAIT_REASON_LABEL, pageOf, summarizeWeek } from '@cenario/shared';
 import clsx from 'clsx';
@@ -9,9 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { formatDay } from '@/lib/commercial';
 import { useMyQueue, useMyTasks } from '@/lib/production';
-import { MyOpenHelp } from './help';
 import { MyOpenIssues } from './issues';
-import { MyDay, TaskCard } from './tasks';
+import { FreeTasks, MyDay, TaskCard } from './tasks';
 
 const DONE = ['CONCLUIDA', 'CANCELADA'];
 
@@ -24,12 +24,10 @@ const DONE = ['CONCLUIDA', 'CANCELADA'];
 export function MyWeek({
   onOpen,
   onAll,
-  canAskHelp,
   reportUserId,
 }: {
   onOpen: (id: string) => void;
   onAll: () => void;
-  canAskHelp?: boolean;
   reportUserId?: string | null;
 }) {
   const queue = useMyQueue();
@@ -46,8 +44,7 @@ export function MyWeek({
     );
   const q = queue.data;
   // Sem fila semanal: experiência anterior (planos por horário), sem conversão.
-  if (q.total === 0)
-    return <MyDay onOpen={onOpen} canAskHelp={canAskHelp} reportUserId={reportUserId} />;
+  if (q.total === 0) return <MyDay onOpen={onOpen} reportUserId={reportUserId} />;
 
   const s = summarizeWeek(q);
   const inQueue = new Set(q.items.map((e) => e.task.id));
@@ -72,7 +69,8 @@ export function MyWeek({
         )}
       </section>
 
-      {canAskHelp && <MyOpenHelp />}
+      <FreeTasks tasks={mine.data?.free ?? []} onOpen={onOpen} />
+
       {reportUserId && <MyOpenIssues userId={reportUserId} />}
 
       {s.upcoming.length > 0 && (
@@ -159,8 +157,8 @@ function WeekHeader({ q }: { q: MyQueueDto }) {
       </ul>
       {q.fromPreviousWeeks > 0 && (
         <p className="mt-3 text-base text-warn-600" data-testid="week-previous">
-          {q.fromPreviousWeeks} tarefa(s) de semanas anteriores continuam na sua fila (o gestor
-          decide se transfere).
+          {plural(q.fromPreviousWeeks, 'tarefa', 'tarefas')} de semanas anteriores continuam na sua
+          fila (o gestor decide se transfere).
         </p>
       )}
     </section>
@@ -255,8 +253,8 @@ export function MyQueueAll({ onOpen }: { onOpen: (id: string) => void }) {
   return (
     <div className="space-y-4" data-testid="queue-all">
       <p className="text-base text-ink-muted">
-        {q.total} tarefa(s) na ordem definida pelo gestor. A posição não muda quando uma tarefa fica
-        bloqueada.
+        {plural(q.total, 'tarefa', 'tarefas')} na ordem definida pelo gestor. A posição não muda
+        quando uma tarefa fica bloqueada.
       </p>
       {q.total === 0 ? (
         <p className="text-lg">Nenhuma tarefa na sua fila.</p>

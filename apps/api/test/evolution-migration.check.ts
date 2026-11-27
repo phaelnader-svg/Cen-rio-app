@@ -25,6 +25,23 @@ beforeAll(async () => {
 afterAll(() => app.close());
 const F = (p: string) => `/api/v1/finance${p}`;
 const post = (p: string, b: unknown = {}) => admin.post(p, b, { 'idempotency-key': idemKey() });
+const arrivedAndOs = async (orderId: string) => {
+  const o = (await admin.get(`/api/v1/orders/${orderId}`)).body;
+  const a = await post(`/api/v1/orders/${orderId}/arrived`, { version: o.version });
+  expect(a.status, JSON.stringify(a.body)).toBe(200);
+  const items = (await admin.get(`/api/v1/orders/${orderId}`)).body.items;
+  const so = await post('/api/v1/service-orders', {
+    orderId,
+    materialPurchased: true,
+    items: items.map((i: { id: string; quantity: number; description: string }) => ({
+      orderItemId: i.id,
+      quantity: i.quantity,
+      description: i.description,
+      serviceType: 'REFORMA_COMPLETA',
+    })),
+  });
+  expect(so.status, JSON.stringify(so.body)).toBe(201);
+};
 const put = (p: string, b: unknown) => admin.req('PUT', p, b, { 'idempotency-key': idemKey() });
 
 describe.runIf(STEP === 'read')('Legado migrado: leitura pelo código atual', () => {
@@ -199,7 +216,7 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       where: { serviceOrderItemId: so.items[0].id, status: { not: 'CANCELADO' } },
     });
     expect(split).toBe(2);
-    // Simplificação Fase 2: Novo serviço (pedido com OS automática) + chegada → OS gerada.
+    // Simplificação Fase 2 (D1 da remoção S5): Novo serviço gera a OS no fechamento.
     const ns = await post('/api/v1/services', {
       customer: {
         mode: 'NOVO',
@@ -222,23 +239,16 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
           { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },
         ],
       },
-      pickup: { team: 'LOGISTICA_TERCEIRIZADA' },
+      pickup: { team: 'LOGISTICA_TERCEIRIZADA', scheduledDate: day(2), windowStart: '09:00' },
     });
     expect(ns.status, JSON.stringify(ns.body)).toBe(201);
     const nsOrder = await db().commercialOrder.findUniqueOrThrow({
       where: { id: ns.body.order.id },
       include: { items: true },
     });
-    const rec = await post('/api/v1/receipts', {
-      orderId: nsOrder.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: [
-        { orderItemId: nsOrder.items[0]!.id, quantity: 1, condition: 'BOA', location: 'Oficina' },
-      ],
-    });
-    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
-    expect(rec.body.generatedServiceOrder).toBeTruthy();
+    // Fluxo da OS (2026-11-18): fechar o serviço não gera OS; a peça chega e a OS é gerada no pedido.
+    await arrivedAndOs(nsOrder.id);
+    expect(await db().serviceOrder.count({ where: { orderId: nsOrder.id } })).toBe(1);
     // Simplificação Fase 3: participante OPERACIONAL estruturado (equipe própria, sem custo) —
     // bloqueia a reversão de recebimentos_compartilhados.
     const own = await post('/api/v1/services', {
@@ -253,6 +263,8 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       pickup: {
         team: 'EQUIPE_PROPRIA',
         logisticsUserId: ids.ricardo,
+        scheduledDate: day(2),
+        windowStart: '09:00',
         participantUserIds: [ids.marcio],
       },
     });
@@ -265,16 +277,8 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       where: { id: own.body.order.id },
       include: { items: true },
     });
-    const ownRec = await post('/api/v1/receipts', {
-      orderId: ownSo.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: [
-        { orderItemId: ownSo.items[0]!.id, quantity: 1, condition: 'BOA', location: 'Oficina' },
-      ],
-    });
-    expect(ownRec.status, JSON.stringify(ownRec.body)).toBe(201);
-    const autoSo = ownRec.body.generatedServiceOrder as { id: string };
+    await arrivedAndOs(ownSo.id);
+    const autoSo = await db().serviceOrder.findFirstOrThrow({ where: { orderId: ownSo.id } });
     const soItem = await db().serviceOrderItem.findFirstOrThrow({
       where: { serviceOrderId: autoSo.id },
     });
@@ -354,6 +358,8 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       pickup: {
         team: 'EQUIPE_PROPRIA',
         logisticsUserId: await userIdOf('Ricardo'),
+        scheduledDate: day(2),
+        windowStart: '09:00',
         amountCents: 4000,
       },
     });
@@ -364,33 +370,29 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       where: { id: svc.body.order.id },
       include: { items: true },
     });
-    // 20270112 (compra antes da chegada): previsão de compra na peça do pedido, sem OS.
+    // 20270112 (compra antes da chegada) e 20270105 (cancelamento): as rotas de previsão e
+    // necessidade saíram com Compras (remoção S3/S4), mas os dados antigos continuam no banco.
+    // Gravados direto no banco descartável, como ficaram das versões anteriores.
     const linen = {
       kind: 'TECIDO',
       sourcing: 'EXCLUSIVO_OS',
       description: 'Linho',
       color: 'Cru',
       quantity: 6,
-      unit: 'METRO',
-    };
-    const f1 = await post(
-      `/api/v1/orders/${order.id}/items/${order.items[0]!.id}/material-forecasts`,
-      linen,
-    );
-    expect(f1.status, JSON.stringify(f1.body)).toBe(201);
-    // 20270105 (substituição/cancelamento): uma previsão cancelada pelo fluxo de necessidade.
-    const f2 = await post(
-      `/api/v1/orders/${order.id}/items/${order.items[1]!.id}/material-forecasts`,
-      linen,
-    );
-    expect(f2.status, JSON.stringify(f2.body)).toBe(201);
-    const target = await db().materialRequirement.findFirstOrThrow({
-      where: { orderItemId: order.items[1]!.id, status: 'ATIVA' },
+      unitCode: 'METRO',
+      origin: 'PREVISAO_COMPRA',
+    } as const;
+    await db().materialRequirement.create({ data: { ...linen, orderItemId: order.items[0]!.id } });
+    await db().materialRequirement.create({
+      data: {
+        ...linen,
+        orderItemId: order.items[1]!.id,
+        status: 'CANCELADA',
+        closedAt: new Date(),
+        closedById: await userIdOf('Ricardo'),
+        closeReason: 'Cliente trouxe o tecido',
+      },
     });
-    const cancel = await post(`/api/v1/material-requirements/${target.id}/cancel`, {
-      reason: 'Cliente trouxe o tecido',
-    });
-    expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
     expect(
       await db().materialRequirement.count({ where: { status: 'CANCELADA' } }),
     ).toBeGreaterThan(0);
@@ -416,7 +418,12 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
           },
         ],
       },
-      pickup: { team: 'EQUIPE_PROPRIA', logisticsUserId: await userIdOf('Ricardo') },
+      pickup: {
+        team: 'EQUIPE_PROPRIA',
+        logisticsUserId: await userIdOf('Ricardo'),
+        scheduledDate: day(2),
+        windowStart: '09:00',
+      },
     });
     expect(notice.status, JSON.stringify(notice.body)).toBe(201);
     const pk = await db().pickupRequest.findUniqueOrThrow({ where: { id: notice.body.pickup.id } });
@@ -431,5 +438,93 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     );
     // 20270202 (confirmação semanal): a exceção administrativa do caso anterior já gravou uma.
     expect(await db().weeklyClosingConfirmation.count()).toBeGreaterThan(0);
+    // 20270302 (Reformulação, Fase 0): pedidos de ajuda desligados — bloqueia a reversão (a versão
+    // anterior trataria a funcionalidade como ligada sem aviso). O interruptor "ajuda" saiu com a
+    // remoção S7; a linha antiga fica no banco.
+    await db().moduleSetting.upsert({
+      where: { companyId_key: { companyId: 1, key: 'ajuda' } },
+      create: { key: 'ajuda', enabled: false },
+      update: { enabled: false },
+    });
+    // 20270309 (Reformulação, Fase 1): material da lista simples da OS (comprado, com custo
+    // informado → livro de custos MATERIAL_OS) e estoque simples — bloqueiam a reversão.
+    const openSo = await db().serviceOrder.findFirstOrThrow({ where: { status: 'ABERTA' } });
+    const mat = await post(`/api/v1/service-orders/${openSo.id}/material-list`, {
+      description: 'Tecido da migração',
+      quantity: 6,
+      unit: 'm',
+      purchased: true,
+      costCents: 54000,
+    });
+    expect(mat.status, JSON.stringify(mat.body)).toBe(201);
+    const inv = await post('/api/v1/inventory/items', {
+      name: 'Espuma da migração',
+      unit: 'placa',
+      quantity: 3,
+    });
+    expect(inv.status, JSON.stringify(inv.body)).toBe(201);
+    expect(await db().serviceOrderCost.count({ where: { source: 'MATERIAL_OS' } })).toBe(1);
+    // 20270316 (Reformulação, Fase 2): material padrão de modelo de serviço aplicado na OS (linha
+    // sugerida, sem custo) — bloqueia a reversão.
+    const piece = await db().serviceOrderItem.findFirstOrThrow({
+      where: { serviceOrderId: openSo.id },
+    });
+    const def = await post('/api/v1/service-models/materials', {
+      pieceType: piece.pieceType,
+      serviceType: null,
+      description: 'Grampo da migração',
+      quantity: 1,
+      unit: 'cx',
+    });
+    expect(def.status, JSON.stringify(def.body)).toBe(201);
+    const applied = await post(`/api/v1/service-orders/${openSo.id}/material-suggestions/apply`, {
+      modelMaterialIds: [def.body.id],
+    });
+    expect(applied.status, JSON.stringify(applied.body)).toBe(201);
+    // Sugestão não lança custo: o livro continua com o único lançamento acima.
+    expect(await db().serviceOrderCost.count({ where: { source: 'MATERIAL_OS' } })).toBe(1);
+    // 20270323 (Reformulação, Fase 3): inspeção aprovada pelo gestor que executou (com
+    // justificativa) e com a embalagem dispensada — bloqueiam a reversão. Gravada direto no banco
+    // descartável (o fluxo completo de produção e inspeção é coberto em fase3-qualidade-embalagem).
+    const gestorId = (await admin.get('/api/auth/me')).body.user.id as string;
+    await db().qualityInspection.create({
+      data: {
+        serviceOrderItemId: piece.id,
+        serviceOrderId: openSo.id,
+        // Próxima rodada da peça (a cadeia já pode ter inspeções dela).
+        round:
+          ((
+            await db().qualityInspection.aggregate({
+              where: { serviceOrderItemId: piece.id },
+              _max: { round: true },
+            })
+          )._max.round ?? 0) + 1,
+        reason: 'PRODUCAO_CONCLUIDA',
+        status: 'APROVADA',
+        itemVersion: piece.version,
+        decidedAt: new Date(),
+        decidedById: gestorId,
+        osRevision: 0,
+        selfApprovalReason: 'Autoaprovação de teste da migração encadeada',
+        packagingRequired: false,
+      },
+    });
+    // Fase 3 (D5): entrega direta desfeita (registrada e marcada) — também bloqueia a reversão.
+    await db().delivery.create({
+      data: {
+        origin: 'DIRETA',
+        customerId: openSo.customerId,
+        addressSnapshot: {},
+        contactName: 'Cliente da migração',
+        scheduledDate: new Date(),
+        team: 'EQUIPE_PROPRIA',
+        requiresInstallation: false,
+        status: 'CONCLUIDA',
+        completedAt: new Date(),
+        revertedAt: new Date(),
+        revertedById: gestorId,
+        revertReason: 'Entrega desfeita de teste da migração',
+      },
+    });
   });
 });

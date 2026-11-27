@@ -1,18 +1,16 @@
+import { plural } from '@cenario/shared';
 import {
   ATTENDANCE_SITUATION_LABEL,
   ATTENTION_CATEGORIES,
   ATTENTION_LIST_LIMIT,
   ATTENTION_TYPE_PERMISSIONS,
   CATEGORY_ORDER,
-  HELP_KIND_LABEL,
-  HELP_STATUS_LABEL,
   ISSUE_IMPACT_LABEL,
   ISSUE_KIND_LABEL,
   ISSUE_STATUS_LABEL,
   PROPOSAL_KIND_LABEL,
   PRODUCTION_STOP_BLOCKERS,
   attentionQuerySchema,
-  helpRequestCode,
   isProductionStopped,
   localParts,
   mondayOf,
@@ -21,7 +19,6 @@ import {
   type AttentionCategory,
   type AttentionDto,
   type AttentionItemDto,
-  type HelpKind,
   type IssueImpact,
   type IssueKind,
   type Permission,
@@ -32,7 +29,6 @@ import type { FastifyInstance } from 'fastify';
 import type { z } from 'zod';
 import { attendanceConfig, clock, dbDate } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
-import { WAIT_ALERT_MINUTES } from '../help/engine';
 import { deadlineAttention } from '../deadlines/attention';
 import { qualityAttention } from '../quality/attention';
 import { billingAttention } from '../finance/billing';
@@ -128,58 +124,9 @@ export async function loadAttention(
     });
   }
 
-  // 2. Ajuda: só escalada ou esperando além do limite.
-  const helps = await prisma.helpRequest.findMany({
-    where: { status: { in: ['PENDENTE', 'ESCALADA'] } },
-    include: {
-      task: { select: { id: true, number: true, title: true } },
-      serviceOrder: { select: { id: true, number: true } },
-      requester: { select: { id: true, displayName: true } },
-    },
-  });
-  // Fase 10: pedido escalado que já virou proposta — a decisão é a proposta (um item só).
-  const proposedHelp = new Set(
-    (
-      await prisma.rescheduleProposal.findMany({
-        where: { status: 'PENDENTE', helpRequestId: { not: null } },
-        select: { helpRequestId: true },
-      })
-    ).map((p) => p.helpRequestId!),
-  );
-  for (const h of helps) {
-    if (proposedHelp.has(h.id)) continue;
-    const minutes = Math.floor((now.getTime() - h.createdAt.getTime()) / 60_000);
-    const limit = h.urgent ? WAIT_ALERT_MINUTES.urgent : WAIT_ALERT_MINUTES.normal;
-    if (h.status === 'PENDENTE' && minutes < limit && !h.urgent) continue;
-    const category: AttentionCategory =
-      h.status === 'ESCALADA' ? 'ACAO' : h.urgent && minutes >= limit ? 'CRITICO' : 'ATENCAO';
-    items.push({
-      key: `AJUDA:${h.id}`,
-      type: 'AJUDA',
-      category,
-      title: `${helpRequestCode(h.number)} · ${HELP_KIND_LABEL[h.kind as HelpKind]}${h.urgent ? ' (urgente)' : ''}`,
-      description: h.justification ?? h.note ?? `${h.requester.displayName} aguarda ajudante.`,
-      serviceOrder: { id: h.serviceOrder.id, code: serviceOrderCode(h.serviceOrder.number) },
-      task: { id: h.task.id, code: taskCode(h.task.number), title: h.task.title },
-      employee: { userId: h.requester.id, displayName: h.requester.displayName },
-      priority: h.urgent ? 'URGENTE' : 'NORMAL',
-      status: h.status,
-      statusLabel: HELP_STATUS_LABEL[h.status],
-      at: h.createdAt.toISOString(),
-      deadline: null,
-      solver: null,
-      impacts: [`Aguardando há ${minutes} min`],
-      nextActions:
-        h.status === 'ESCALADA'
-          ? ['Decidir a proposta em Reprogramação']
-          : ['Escolher o ajudante manualmente ou aguardar'],
-      link: `/painel/ajuda?foco=${h.id}`,
-    });
-  }
-
-  // 3. Propostas aguardando decisão.
+  // 2. Propostas aguardando decisão (sem as nascidas de pedidos de ajuda, que foram removidos).
   const proposals = await prisma.rescheduleProposal.findMany({
-    where: { status: 'PENDENTE' },
+    where: { status: 'PENDENTE', helpRequestId: null },
     orderBy: { createdAt: 'desc' },
   });
   for (const p of proposals) {
@@ -222,7 +169,7 @@ export async function loadAttention(
       type: 'PRESENCA',
       category: 'ACAO',
       title: `${att.employee.displayName} · ${ATTENDANCE_SITUATION_LABEL[att.situation]}`,
-      description: `${list.length} impacto(s) em tarefas a encaminhar.`,
+      description: `${plural(list.length, 'impacto', 'impactos')} em tarefas a encaminhar.`,
       serviceOrder: null,
       task: null,
       employee: { userId: att.employee.userId, displayName: att.employee.displayName },
@@ -299,7 +246,7 @@ export async function loadAttention(
     });
   }
 
-  // Fase 10: qualidade (inspeção sem inspetor, correções, embalagem sem responsável, peças
+  // Fase 10: qualidade (inspeção sem inspetor, correções, peças
   // prontas sem entrega) e logística (ocorrências, entregas frustradas).
   const quality = await qualityAttention(prisma);
   // A tarefa de correção já aparece no item da qualidade: sem "prazo interno" repetido.
@@ -404,7 +351,7 @@ export async function pastWeekDrafts(
       key: `RASCUNHO_ANTIGO:${planId}`,
       type: 'RASCUNHO_ANTIGO',
       category: 'ACAO',
-      title: `Semana de ${week}: ${n} serviço(s) ainda em rascunho`,
+      title: `Semana de ${week}: ${plural(n, 'serviço', 'serviços')} ainda em rascunho`,
       description: `A semana já passou e ${n === 1 ? 'este serviço continua' : 'estes serviços continuam'} em rascunho: nada foi liberado, transferido ou alterado automaticamente.`,
       serviceOrder: null,
       task: null,

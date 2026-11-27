@@ -1,0 +1,12 @@
+• prepare_version {"version": "341badb59624996cd95c1213808c51631bf34b92"} → job 7786f3e5-5c07-4dff-89cb-c0c627482449 (mensagem 20355780312711397)
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh preparar-versao 341badb59624996cd95c1213808c51631bf34b92
+✔ api: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/api:341badb59624996cd95c1213808c51631bf34b92
+    digest: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/api@sha256:b272404e79719dd1b7151502a9681c75be85614362252d688beab59d1c659df7
+    id: sha256:b272404e79719dd1b7151502a9681c75be85614362252d688beab59d1c659df7 · tamanho: 3757 MB
+✔ web: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/web:341badb59624996cd95c1213808c51631bf34b92
+    digest: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/web@sha256:8559184d2e2d5b1a07a8b19782a02cd4836136e306032cca5e3d07099d27f5f8
+    id: sha256:8559184d2e2d5b1a07a8b19782a02cd4836136e306032cca5e3d07099d27f5f8 · tamanho: 3756 MB
+✔ a imagem nova NÃO migra na partida (infra/homolog/api-iniciar.sh presente)
+• migrations na imagem: 37 · aplicadas no banco: 37
+✔ disco livre: 10 GB
+PREPARAR-VERSÃO: OK (imagens presentes; nada reiniciado; banco intocado)

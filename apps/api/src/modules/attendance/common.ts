@@ -26,6 +26,7 @@ import type { ActorContext } from '../../core/types';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { notify } from '../notifications/notify';
 import { now, setClock } from '../../core/clock';
+import { requireCompanyId } from '../../core/tenant';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -52,7 +53,7 @@ export function setAttendanceClock(fn?: () => Date) {
 }
 
 export async function attendanceConfig(db: Tx | PrismaClient, now = clock()) {
-  const c = await db.companySettings.findUnique({ where: { id: 1 } });
+  const c = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const timezone = c?.timezone ?? 'America/Sao_Paulo';
   const local = localParts(now, timezone);
   const weekday = new Date(`${local.date}T12:00:00Z`).getUTCDay();

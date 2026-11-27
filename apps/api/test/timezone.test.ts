@@ -6,7 +6,6 @@ import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { addOs, createPlan, userIdOf } from './production-helpers';
-import { approvedNeeds, staples } from './purchasing-helpers';
 
 /**
  * Evolução, Fase 8 — relógio e fuso da oficina (causa raiz do “−3 h fixo”).
@@ -170,45 +169,5 @@ describe('Mão de obra semanal e materiais: limites locais', () => {
       (r: { professionalUserId: string }) => r.professionalUserId === ricardo,
     );
     expect(row).toMatchObject({ weekStart: '2026-10-05', releasedCents: 50000 });
-  });
-
-  it('materiais aprovados: aprovação às 22h30 local entra no dia local (antes: meia-noite UTC)', async () => {
-    const tz = 'America/Sao_Paulo';
-    const { reqs } = await approvedNeeds(admin, 'Cliente Materiais Fuso', () => [staples()]);
-    await db().materialRequirement.updateMany({
-      where: { id: { in: reqs.map((r) => r.id) } },
-      data: { approvedAt: zonedDateTime('2026-10-09', '22:30', tz) },
-    });
-    const lines = (await admin.get('/api/v1/materials/consolidated?from=2026-10-09&to=2026-10-09'))
-      .body.lines;
-    expect(lines.length).toBeGreaterThan(0);
-    const next = (await admin.get('/api/v1/materials/consolidated?from=2026-10-10&to=2026-10-10'))
-      .body.lines;
-    expect(next).toHaveLength(0);
-  });
-});
-
-describe('“Hoje” segue o relógio operacional', () => {
-  it('planejamento e financeiro: sexta 23h59 → sexta; sábado 00h01 → sábado (prazo de sexta recusado)', async () => {
-    const tz = 'America/Sao_Paulo';
-    setClock(() => zonedDateTime('2026-10-09', '23:59', tz));
-    const plan1 = (await admin.get('/api/v1/materials/planning')).body;
-    expect(plan1.period.from).toBe('2026-10-09');
-    expect((await admin.get(F('/productivity'))).body.to).toBe('2026-10-09');
-    setClock(() => zonedDateTime('2026-10-10', '00:01', tz));
-    const plan2 = (await admin.get('/api/v1/materials/planning')).body;
-    expect(plan2.period.from).toBe('2026-10-10');
-    expect((await admin.get(F('/productivity'))).body.to).toBe('2026-10-10');
-    // Prazo calculado antes da meia-noite (sexta) enviado depois dela: recusado com mensagem clara.
-    const so = await openServiceOrder(admin, 'Cliente Meia-noite');
-    const gestor = (await db().user.findFirstOrThrow({ where: { email: 'gestor@teste.local' } }))
-      .id;
-    const r = await admin.post(
-      '/api/v1/measurements',
-      { serviceOrderId: so.id, kind: 'ROTINA', assigneeUserId: gestor, dueDate: '2026-10-09' },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(r.status).toBe(400);
-    expect(JSON.stringify(r.body)).toContain('passado');
   });
 });

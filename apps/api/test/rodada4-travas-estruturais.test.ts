@@ -2,8 +2,7 @@
  * Remediação pós-auditoria, Rodada 4 — travas estruturais contra regressão.
  * IDs: F1-07b (nenhuma permissão enfraquecida), F1-12b (endpoints antigos mantidos), F1-13
  * (nenhuma tela removida, nenhum dado excluído), F7-16 (a interface não define a natureza
- * jurídica do trabalho) e F10-01 (parte da API: "Recebimento de materiais" sem filtro no menu).
- * A estrutura do menu (F10-01) é provada no pacote web: apps/web/test/rodada4-menu.test.ts.
+ * jurídica do trabalho). O F10-01 ("Recebimento de materiais" no menu) saiu com a tela, na S4.
  *
  * Linha de base = commit auditado 9fb1786. Os dados abaixo foram extraídos UMA vez daquele commit
  * (fonte, git ls-tree e o routeCatalog do app de 9fb1786 construído em memória) e ficam gravados
@@ -17,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { loadUserPermissions } from '../src/core/permissions';
 import type { AccessRule } from '../src/core/types';
+import { PERMISSOES_REMOVIDAS, etapasConcluidas } from './remocao/catalogo';
 import { panelUserWith } from './commercial-helpers';
 import {
   ADMIN,
@@ -31,6 +31,142 @@ import {
 const ROOT = resolve(__dirname, '../../..');
 
 // ── Linha de base gerada UMA VEZ a partir de 9fb1786 (não depende de git em tempo de execução) ──
+/**
+ * Reformulação por remoção real: rotas de 9fb1786 removidas DE PROPÓSITO, por etapa aprovada pelo
+ * dono (tests/remocao/etapas-concluidas.json). Só deixam de ser exigidas depois que a etapa é
+ * registrada como concluída; qualquer outra rota que sumir continua quebrando as travas abaixo.
+ */
+const REMOVIDAS_POR_ETAPA: Record<string, readonly string[]> = {
+  S1: [
+    'GET /api/v1/packaging',
+    'GET /api/v1/packaging/:id',
+    'POST /api/v1/packaging/:id/assign',
+    'POST /api/v1/packaging/:id/complete',
+  ],
+  // prontidão e bloqueios por material
+  S2: [
+    'DELETE /api/v1/service-orders/:id/materials/:materialId',
+    'GET /api/v1/material-readiness',
+    'GET /api/v1/service-orders/:id/material-readiness',
+    'POST /api/v1/service-orders/:id/materials',
+    'PUT /api/v1/production-tasks/:id/materials',
+  ],
+  // medições formais, previsões e materiais aprovados
+  S3: [
+    'GET /api/v1/materials/consolidated',
+    'GET /api/v1/materials/consolidated.csv',
+    'GET /api/v1/materials/planning',
+    'GET /api/v1/measurements',
+    'GET /api/v1/measurements/:id',
+    'GET /api/v1/measurements/assignees',
+    'GET /api/v1/measurements/awaiting',
+    'GET /api/v1/measurements/mine',
+    'GET /api/v1/orders/:id/material-forecasts',
+    'POST /api/v1/material-forecasts/:id/link',
+    'POST /api/v1/material-requirements/:id/cancel',
+    'POST /api/v1/measurements',
+    'POST /api/v1/measurements/:id/assign',
+    'POST /api/v1/measurements/:id/cancel',
+    'POST /api/v1/measurements/:id/request/approve',
+    'POST /api/v1/measurements/:id/request/reopen',
+    'POST /api/v1/measurements/:id/request/return',
+    'POST /api/v1/measurements/:id/request/review',
+    'POST /api/v1/measurements/:id/start',
+    'POST /api/v1/measurements/:id/submit',
+    'POST /api/v1/orders/:id/items/:itemId/material-forecasts',
+    'PUT /api/v1/material-forecasts/:id',
+    'PUT /api/v1/measurements/:id/draft',
+    'PUT /api/v1/measurements/:id/request/items',
+  ],
+  // compras, fornecedores, recebimento de materiais e estoque formal
+  S4: [
+    'GET /api/v1/material-arrivals',
+    'GET /api/v1/material-leftovers',
+    'GET /api/v1/material-receipts',
+    'GET /api/v1/material-receipts/:id',
+    'GET /api/v1/material-receipts/pending',
+    'GET /api/v1/purchase-orders',
+    'GET /api/v1/purchase-orders/:id',
+    'GET /api/v1/purchasing/needs',
+    'GET /api/v1/purchasing/shortages',
+    'GET /api/v1/stock-items',
+    'GET /api/v1/stock-movements',
+    'GET /api/v1/stock-reservations',
+    'GET /api/v1/suppliers',
+    'POST /api/v1/arrivals/purchase-orders/:id/confirm',
+    'POST /api/v1/material-leftovers',
+    'POST /api/v1/material-leftovers/:id/discard',
+    'POST /api/v1/material-leftovers/:id/transfer',
+    'POST /api/v1/material-receipts',
+    'POST /api/v1/material-receipts/lines/:id/rejection-decision',
+    'POST /api/v1/material-receipts/lines/:id/reverse',
+    'POST /api/v1/purchase-orders',
+    'POST /api/v1/purchase-orders/:id/cancel',
+    'POST /api/v1/purchase-orders/:id/close-balance',
+    'POST /api/v1/purchase-orders/:id/confirm',
+    'POST /api/v1/purchase-orders/:id/items/:itemId/authorize-extra',
+    'POST /api/v1/stock-items',
+    'POST /api/v1/stock-items/:id/adjust',
+    'POST /api/v1/stock-items/:id/issue',
+    'POST /api/v1/stock-reservations',
+    'POST /api/v1/stock-reservations/:id/consume',
+    'POST /api/v1/stock-reservations/:id/release',
+    'POST /api/v1/suppliers',
+    'PUT /api/v1/purchase-orders/:id',
+    'PUT /api/v1/stock-items/:id',
+    'PUT /api/v1/suppliers/:id',
+  ],
+  // recebimentos (a OS nasce no fechamento — D1)
+  S5: [
+    'GET /api/v1/arrivals',
+    'GET /api/v1/receipts',
+    'GET /api/v1/receipts/:id',
+    'GET /api/v1/receipts/:id/corrections',
+    'GET /api/v1/receipts/pending',
+    'POST /api/v1/arrivals/pickups/:id/confirm',
+    'POST /api/v1/receipt-lines/:id/corrections',
+    'POST /api/v1/receipts',
+  ],
+  // pedidos de ajuda
+  S7: [
+    'GET /api/v1/help-requests',
+    'GET /api/v1/help-requests/:id',
+    'GET /api/v1/help-requests/:id/candidates',
+    'GET /api/v1/help-requests/mine',
+    'POST /api/v1/help-requests',
+    'POST /api/v1/help-requests/:id/assign',
+    'POST /api/v1/help-requests/:id/cancel',
+    'POST /api/v1/help-requests/process',
+    'POST /api/v1/help-requests/prolonged',
+  ],
+};
+const REMOVIDAS_AUTORIZADAS = new Set(
+  [...etapasConcluidas()].flatMap((e) => REMOVIDAS_POR_ETAPA[e] ?? []),
+);
+/** Permissões de 9fb1786 retiradas do catálogo por etapa concluída (remocao/catalogo.ts). */
+const PERMISSOES_REMOVIDAS_AUTORIZADAS = new Set<string>(
+  [...etapasConcluidas()].flatMap((e) => PERMISSOES_REMOVIDAS[e] ?? []),
+);
+/** Regra de acesso gravada na linha de base: as permissões são texto (algumas já não existem). */
+type BaselineAccess =
+  | Exclude<AccessRule, { session: unknown }>
+  | (Omit<Extract<AccessRule, { session: unknown }>, 'permissions' | 'anyPermissions'> & {
+      permissions?: readonly string[];
+      anyPermissions?: readonly string[];
+    });
+/** A regra de 9fb1786 sem as permissões removidas de propósito (o resto continua igual). */
+function semRemovidas(access: BaselineAccess): BaselineAccess {
+  if (!('session' in access)) return access;
+  const out = { ...access };
+  for (const k of ['permissions', 'anyPermissions'] as const) {
+    const list = access[k]?.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p));
+    if (list === undefined) continue;
+    if (list.length) out[k] = list;
+    else delete out[k];
+  }
+  return out;
+}
+
 /** ALL_PERMISSIONS em 9fb1786 (packages/shared/src/permissions.ts). */
 const BASELINE_PERMISSIONS = [
   'painel.acessar',
@@ -127,7 +263,7 @@ const BASELINE_ROLES: Record<string, readonly string[]> = {
  * regra de acesso efetiva lida do routeCatalog do app daquele commit. null = rota só registrada
  * com ENABLE_TEST_CLOCK (relógio do E2E), fora do catálogo do app padrão.
  */
-const BASELINE_ROUTES: Record<string, AccessRule | null> = {
+const BASELINE_ROUTES: Record<string, BaselineAccess | null> = {
   'DELETE /api/devices/:id': { session: 'WEB', permissions: ['dispositivos.gerenciar'] },
   'DELETE /api/employees/:id/admin-access': {
     session: 'WEB',
@@ -1162,6 +1298,29 @@ const BASELINE_ROUTES: Record<string, AccessRule | null> = {
   'PUT /api/v1/suppliers/:id': { session: 'WEB', permissions: ['compras.gerenciar'] },
 };
 /** apps/web/app/(…)/page.tsx em 9fb1786 (54). */
+/** Telas de 9fb1786 removidas de propósito, por etapa aprovada (os dados ficam no banco). */
+const PAGINAS_REMOVIDAS_POR_ETAPA: Record<string, readonly string[]> = {
+  S2: ['apps/web/app/painel/prontidao/page.tsx'],
+  S3: [
+    'apps/web/app/painel/materiais/page.tsx',
+    'apps/web/app/painel/medicoes/[id]/page.tsx',
+    'apps/web/app/painel/medicoes/page.tsx',
+    'apps/web/app/painel/planejamento/page.tsx',
+  ],
+  S4: [
+    'apps/web/app/painel/compras/[id]/page.tsx',
+    'apps/web/app/painel/compras/novo/page.tsx',
+    'apps/web/app/painel/compras/page.tsx',
+    'apps/web/app/painel/estoque/page.tsx',
+    'apps/web/app/painel/fornecedores/page.tsx',
+    'apps/web/app/painel/recebimento-materiais/page.tsx',
+  ],
+  S5: [
+    'apps/web/app/painel/recebimentos/novo/page.tsx',
+    'apps/web/app/painel/recebimentos/page.tsx',
+  ],
+  S7: ['apps/web/app/painel/ajuda/page.tsx'],
+};
 const BASELINE_PAGES = [
   'apps/web/app/entrar/page.tsx',
   'apps/web/app/page.tsx',
@@ -1292,8 +1451,10 @@ const split = (key: string) => {
 };
 
 /** O que a regra permite para uma sessão de painel (mesma lógica do plugin de autenticação). */
-function webAllows(access: AccessRule, perms: ReadonlySet<string>): boolean {
-  if ('public' in access || 'device' in access) return true;
+function webAllows(access: BaselineAccess, perms: ReadonlySet<string>): boolean {
+  if ('public' in access || 'device' in access || 'webhook' in access) return true;
+  // Painel da plataforma: nenhuma sessão de empresa entra (login próprio, cookie próprio).
+  if ('platform' in access) return false;
   if (access.session !== 'any' && access.session !== 'WEB') return false;
   const required = [
     ...(access.surfaceExempt ? [] : ['painel.acessar']),
@@ -1328,10 +1489,31 @@ afterAll(() => app.close());
 
 // ─────────────────────────────────────── F1-07b ───────────────────────────────────────
 
-/** Acréscimos permitidos desde 9fb1786 (Rodada 1, decisão do proprietário — F3-17). */
-const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir'];
+/**
+ * Acréscimos permitidos desde 9fb1786: estoque.conferir (Rodada 1, decisão do proprietário —
+ * F3-17), as duas do módulo Orçamentos (pedido do proprietário, 2026-11-16) e as do ambiente
+ * interativo (etapas 1 a 3, aprovadas pelo proprietário em 16/11), que nenhuma função padrão
+ * recebe; só o gestor (catálogo completo) e quem o gestor liberar.
+ */
+const GAME_PERMISSIONS = [
+  'jogo.acessar',
+  'jogo.construir',
+  'agentes.usar',
+  'agentes.gerenciar',
+  'conexoes.gerenciar',
+  'atendimento.ver',
+  'atendimento.responder',
+  'marketing.publicar',
+  'anuncios.gerenciar',
+];
+const ALLOWED_NEW_PERMISSIONS = [
+  'estoque.conferir',
+  'orcamentos.gerenciar',
+  'orcamentos.ver',
+  ...GAME_PERMISSIONS,
+];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
-  gestor: ['estoque.conferir'], // o gestor sempre recebe o catálogo completo
+  gestor: ALLOWED_NEW_PERMISSIONS, // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
   cabeceiras_qualidade: [],
   ajudante: [],
@@ -1339,13 +1521,22 @@ const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
 };
 /** Regras de acesso de rotas antigas que mudaram desde 9fb1786 (nenhuma). */
 const ALLOWED_ACCESS_CHANGES: Record<string, AccessRule> = {};
+/** Acréscimos da função que ainda existem no catálogo (estoque.conferir saiu com a S4). */
+const adicoes = (key: string) =>
+  (ALLOWED_ROLE_ADDITIONS[key] ?? [])
+    .filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p))
+    .sort();
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
-  it('o catálogo de permissões é superconjunto do de 9fb1786; único acréscimo: estoque.conferir', () => {
+  it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimos só os listados', () => {
     const now = new Set<string>(ALL_PERMISSIONS);
-    expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p))).toEqual([]);
+    expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p)).sort()).toEqual(
+      BASELINE_PERMISSIONS.filter((p) => PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)).sort(),
+    );
     const base = new Set<string>(BASELINE_PERMISSIONS);
-    expect(ALL_PERMISSIONS.filter((p) => !base.has(p))).toEqual(ALLOWED_NEW_PERMISSIONS);
+    expect(ALL_PERMISSIONS.filter((p) => !base.has(p)).sort()).toEqual(
+      ALLOWED_NEW_PERMISSIONS.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)).sort(),
+    );
   });
 
   it('DEFAULT_ROLES: toda função padrão de 9fb1786 continua com todas as permissões (acréscimos listados)', () => {
@@ -1354,14 +1545,11 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
     for (const [key, perms] of Object.entries(BASELINE_ROLES)) {
       const cur = now.get(key)!;
       expect(
-        perms.filter((p) => !cur.has(p)),
+        perms.filter((p) => !cur.has(p) && !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
-      expect(
-        [...cur].filter((p) => !base.has(p)),
-        `${key} ganhou`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[key]);
+      expect([...cur].filter((p) => !base.has(p)).sort(), `${key} ganhou`).toEqual(adicoes(key));
     }
   });
 
@@ -1375,18 +1563,26 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
       const cur = new Set(role.permissions.map((p) => p.permission));
       const base = BASELINE_ROLES[role.key!]!;
       expect(
-        base.filter((p) => !cur.has(p)),
+        base.filter((p) => !cur.has(p) && !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
         `${role.key} perdeu no banco`,
       ).toEqual([]);
       expect(
         [...cur].filter((p) => !base.includes(p)).sort(),
         `${role.key} ganhou no banco`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[role.key!]);
+      ).toEqual(adicoes(role.key!));
+      expect(
+        [...cur].filter((p) => PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
+        `${role.key} ainda tem permissão removida no banco`,
+      ).toEqual([]);
     }
     // Permissões efetivas de quem entra como gestor (o que o servidor realmente checa).
     const gestor = await db().user.findUniqueOrThrow({ where: { email: ADMIN.email } });
     const effective = await loadUserPermissions(db(), gestor.id);
-    expect(BASELINE_PERMISSIONS.filter((p) => !effective.has(p as Permission))).toEqual([]);
+    expect(
+      BASELINE_PERMISSIONS.filter(
+        (p) => !effective.has(p as Permission) && !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p),
+      ),
+    ).toEqual([]);
   });
 
   it('toda rota de 9fb1786 exige exatamente a mesma regra de acesso de antes (nenhuma afrouxada)', () => {
@@ -1395,26 +1591,30 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
     let compared = 0;
     for (const [key, access] of Object.entries(BASELINE_ROUTES)) {
       if (access === null) continue; // relógio de teste do E2E: fora do app padrão (ver F1-12b)
+      if (REMOVIDAS_AUTORIZADAS.has(key)) continue; // remoção real aprovada (ver F1-12b)
       compared += 1;
       const cur = now.get(key);
       expect(cur, `${key} sumiu do catálogo`).toBeDefined();
-      const expected = ALLOWED_ACCESS_CHANGES[key] ?? access;
+      const expected = ALLOWED_ACCESS_CHANGES[key] ?? semRemovidas(access);
       if (JSON.stringify(cur) !== JSON.stringify(expected))
         changed.push(`${key}: ${JSON.stringify(access)} → ${JSON.stringify(cur)}`);
     }
-    expect(compared).toBe(379);
+    expect(compared).toBe(379 - REMOVIDAS_AUTORIZADAS.size);
     expect(changed).toEqual([]);
   });
 
-  describe('amostra sensível pela API: financeiro, compras e presença recusam como em 9fb1786', () => {
-    const DOMAINS = /^\/api\/v1\/(finance|purchase-orders|purchasing|suppliers|attendance)\b/;
+  describe('amostra sensível pela API: financeiro e presença recusam como em 9fb1786', () => {
+    // Compras/fornecedores saíram com a S4 (remoção real): as rotas respondem 404, ver F1-12b.
+    const DOMAINS = /^\/api\/v1\/(finance|attendance)\b/;
     const sample = Object.entries(BASELINE_ROUTES)
-      .filter((e): e is [string, AccessRule] => e[1] !== null && DOMAINS.test(split(e[0]).url))
-      .map(([key, access]) => ({ ...split(key), access }));
+      .filter(
+        (e): e is [string, BaselineAccess] =>
+          e[1] !== null && !REMOVIDAS_AUTORIZADAS.has(e[0]) && DOMAINS.test(split(e[0]).url),
+      )
+      .map(([key, access]) => ({ ...split(key), access: semRemovidas(access) }));
     const users: Record<string, string[]> = {
       neutro: [],
       fin: ['financeiro.ver'],
-      comp: ['compras.ver'],
       pres: ['presenca.ver'],
     };
     const clients: Record<string, Client> = {};
@@ -1424,9 +1624,8 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         clients[tag] = await panelUserWith(app, admin, `r4b${tag}`, perms);
     });
 
-    it('a amostra cobre rotas de leitura e de escrita dos três domínios', () => {
+    it('a amostra cobre rotas de leitura e de escrita dos dois domínios', () => {
       expect(sample.filter((r) => r.url.startsWith('/api/v1/finance')).length).toBeGreaterThan(60);
-      expect(sample.filter((r) => /purchas|suppliers/.test(r.url)).length).toBeGreaterThan(10);
       expect(sample.filter((r) => r.url.startsWith('/api/v1/attendance')).length).toBeGreaterThan(
         10,
       );
@@ -1467,13 +1666,18 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
 // ─────────────────────────────────────── F1-12b ───────────────────────────────────────
 
 describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava contra remoção)', () => {
-  it('as 381 rotas (método + caminho) de 9fb1786 existem no app atual', () => {
+  it('as 381 rotas (método + caminho) de 9fb1786 existem no app atual — exceto as de remoção real aprovada', () => {
     const keys = Object.keys(BASELINE_ROUTES);
     expect(keys.length).toBe(381);
+    const has = (k: string) => app.app.hasRoute(split(k) as { method: 'GET'; url: string });
     const missing = keys
       .filter((k) => BASELINE_ROUTES[k] !== null)
-      .filter((k) => !app.app.hasRoute(split(k) as { method: 'GET'; url: string }));
+      .filter((k) => !REMOVIDAS_AUTORIZADAS.has(k))
+      .filter((k) => !has(k));
     expect(missing).toEqual([]);
+    // As removidas de verdade não voltaram (e são só as da lista autorizada).
+    for (const k of REMOVIDAS_AUTORIZADAS) expect(keys, k).toContain(k);
+    expect([...REMOVIDAS_AUTORIZADAS].filter(has)).toEqual([]);
   });
 
   it('as rotas do relógio de teste (só com ENABLE_TEST_CLOCK) continuam registradas quando ligadas', async () => {
@@ -1499,27 +1703,170 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270914000000_etapa3: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA do padrão da casa ' +
+    '(empresa, foto ou vídeo e quem alterou). Nenhuma linha é alterada.',
+  '20270913000000_painel_etapa2: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS do painel ' +
+    '(comprovantes e telas usadas). Nenhuma linha é alterada.',
+  '20270913000000_painel_etapa2: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" da tabela nova dos celulares do painel. Nenhuma linha é alterada.',
+  '20270912000000_comeco_guiado_recentes: UPDATE "company_settings"':
+    'Pedido do dono (2026-11-26): as empresas cadastradas pelo site a partir de 24/11 que ainda ' +
+    'não responderam as perguntas voltam a ter o começo guiado e os e-mails do teste. Só mexe nas ' +
+    'colunas criadas pela migration anterior; nenhum dado da empresa muda.',
+  '20270911000000_comeco_guiado: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS do começo ' +
+    'guiado (convites, explicações vistas e pedidos de ajuda). Nenhuma linha é alterada.',
+  '20270911000000_comeco_guiado: UPDATE "company_settings"':
+    'Pedido do dono (2026-11-26): empresas que já existem não passam pelas perguntas, pelo começo ' +
+    'guiado nem pelos e-mails do teste. Só preenche colunas NOVAS; nenhum dado existente muda.',
+  '20270903000000_lgpd_pedidos: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de pedidos sobre ' +
+    'dados pessoais (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270904000000_avisos_no_aparelho: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de avisos no ' +
+    'aparelho (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270906000000_atendimento_cliente: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave estrangeira NOVA de quem indicou o cliente ' +
+    '(padrão do Prisma). Nenhuma linha é alterada.',
+  '20270907000000_precos_material: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave da empresa na tabela NOVA de preços de ' +
+    'material (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270907000000_precos_material: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" da chave do item do catálogo na tabela NOVA de preços ' +
+    'de material. Nenhuma linha é alterada.',
+  '20270908000000_painel_plataforma: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" das chaves estrangeiras das tabelas NOVAS do painel da ' +
+    'plataforma (sessões e histórico do painel). Nenhuma linha é alterada.',
+  '20270909000000_plataforma_separada: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" da chave da tabela NOVA de links de senha nova do ' +
+    'painel da plataforma. Nenhuma linha é alterada.',
+  '20270909000000_plataforma_separada: UPDATE "company_settings"':
+    'Pedido do dono (2026-11-25): painel separado da Cenário Estofados. Só marca a empresa nº 1 ' +
+    'com a coluna NOVA "conexões do servidor" (o mesmo que o sistema já fazia por número); o ' +
+    'dono troca no painel. Nenhum dado existente muda.',
+  '20270901000000_preparacao_livre: UPDATE "production_tasks"':
+    'Pedido do dono (2026-11-19): etapas de preparação AINDA NÃO INICIADAS deixam de ter o ' +
+    'responsável escolhido automaticamente e ficam livres para o ajudante disponível pegar. ' +
+    'Nada iniciado, pausado ou concluído muda; o histórico de quem fez continua igual.',
+  '20270901000000_preparacao_livre: UPDATE "production_template_steps"':
+    'Pedido do dono (2026-11-19): as etapas de preparação dos modelos deixam de ter responsável ' +
+    'padrão (ninguém é escolhido). Nenhuma tarefa nem histórico muda.',
+  '20270822000000_retrabalhos_receitas: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS de retrabalhos ' +
+    'e receitas avulsas (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270815000000_despesas_prazos_alertas: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave estrangeira da tabela NOVA de categorias de ' +
+    'despesa (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270808000000_os_material_comprado: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave estrangeira da coluna NOVA de quem marcou ' +
+    '"Material comprado" (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270808000000_os_material_comprado: UPDATE "service_orders"':
+    'Preenche só a coluna NOVA "material comprado em" das OS que já existiam (com a data de ' +
+    'criação), para nenhuma sair da programação. Nenhum dado existente muda.',
+  '20270729000000_melhorias_rodada2: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de sugestões e ' +
+    'problemas enviados pelos clientes (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270729000000_melhorias_rodada2: UPDATE ON':
+    'Não é comando: é o privilégio "UPDATE ON" da sequência da tabela NOVA de amostras da página ' +
+    'de status, concedido ao papel cenario_app. Nenhuma linha é alterada.',
+  '20270729000000_melhorias_rodada2: UPDATE "quotes"':
+    'Preenche só as colunas NOVAS dos orçamentos já salvos (data da situação e lembrete de cobrar ' +
+    '3 dias depois do orçamento). Nenhum dado existente muda.',
+  '20270722000000_cobranca_planos_emails: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS (links de e-mail, ' +
+    'fila de e-mails, cobranças da assinatura). Nenhuma linha existente é alterada.',
+  '20270722000000_cobranca_planos_emails: UPDATE "company_settings"':
+    'Preenche os campos NOVOS da cobrança: a empresa 1 ganha cortesia no plano com o jogo (continua ' +
+    'como hoje) e as outras empresas ganham 7 dias de teste. Nenhum dado existente muda.',
+  '20270722000000_cobranca_planos_emails: UPDATE "users"':
+    'Preenche a coluna NOVA email_confirmed_at dos usuários que já existem (cadastrados pelo gestor, ' +
+    'não precisam confirmar). Nenhum dado existente muda.',
+  '20270715000000_multi_empresa_etapa4: DROP CONSTRAINT "module_settings_pkey"':
+    'Chave primária recriada na mesma migration com a empresa junto (company_id, key): cada ' +
+    'empresa liga e desliga os próprios módulos. Nenhuma linha é apagada nem alterada.',
+  '20270708000000_multi_empresa_etapa3: UPDATE ON':
+    'Não é comando: é o privilégio "UPDATE ON" concedido ao papel cenario_app (GRANT nas tabelas e ' +
+    'sequências, e o padrão para as novas). Nenhuma linha é alterada.',
   '20270223000000_custo_operacional_equipe_propria: DROP CONSTRAINT "logistics_costs_phase6"':
     'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OPERACIONAL): ' +
     'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270302000000_modulos_configuraveis: UPDATE CASCADE':
+    'Não é comando: é a ação referencial "ON UPDATE CASCADE" da chave estrangeira de uma tabela ' +
+    'NOVA (padrão do Prisma; sem ela o schema diverge da migration). Nenhuma linha é alterada.',
+  '20270309000000_materiais_estoque_entrega: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS da Fase 1 ' +
+    '(estoque simples e materiais da OS; padrão do Prisma). Nenhuma linha é alterada.',
+  '20270309000000_materiais_estoque_entrega: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEL o histórico de ' +
+    'ajustes do estoque (tabela nova). Protege dados em vez de alterá-los.',
+  '20270309000000_materiais_estoque_entrega: DROP CONSTRAINT "service_order_costs_kind"':
+    'Regra CHECK recriada na mesma migration com as mesmas origens e uma a mais (MATERIAL_OS): ' +
+    'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270316000000_reformulacao_fase_2: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de materiais ' +
+    'padrão dos modelos de serviço e da coluna nova de origem da linha sugerida (padrão do ' +
+    'Prisma). Nenhuma linha é alterada.',
+  '20270323000000_reformulacao_fase_3: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave estrangeira nova de quem desfez a entrega direta ' +
+    '(deliveries.reverted_by_id; padrão do Prisma). Nenhuma linha é alterada.',
+  '20270601000000_jogo_gestao: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEIS o histórico de ' +
+    'plantas e as conversas com os agentes (tabelas novas). Protege dados em vez de alterá-los.',
+  '20270608000000_conexoes_escritorio: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEL o histórico das ' +
+    'ações dos agentes (tabela nova). Protege dados em vez de alterá-los.',
+  '20270615000000_jogo_propostas_obsoletas: DROP CONSTRAINT "ai_agent_proposals_status"':
+    'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OBSOLETA): ' +
+    'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270622000000_jogo_quadro_metas: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" dos gatilhos que tornam IMUTÁVEIS os retratos do ' +
+    'caixa e os lançamentos do Quadro de Metas (tabelas novas).',
+};
+/** Migration da etapa 2 do multi-empresa: conferida à parte (ver o teste F1-13). */
+const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
+/** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
+const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270914000000_etapa3: UPDATE CASCADE': 3,
+  '20270913000000_painel_etapa2: UPDATE CASCADE': 3,
+  '20270911000000_comeco_guiado: UPDATE CASCADE': 7,
+  '20270903000000_lgpd_pedidos: UPDATE CASCADE': 2,
+  '20270904000000_avisos_no_aparelho: UPDATE CASCADE': 2,
+  '20270908000000_painel_plataforma: UPDATE NO': 2,
+  '20270822000000_retrabalhos_receitas: UPDATE CASCADE': 4,
+  '20270729000000_melhorias_rodada2: UPDATE CASCADE': 2,
+  '20270722000000_cobranca_planos_emails: UPDATE CASCADE': 4,
+  '20270722000000_cobranca_planos_emails: UPDATE "company_settings"': 2,
+  '20270708000000_multi_empresa_etapa3: UPDATE ON': 2,
+  '20270622000000_jogo_quadro_metas: UPDATE OR': 2,
+  '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
+  '20270316000000_reformulacao_fase_2: UPDATE CASCADE': 5,
 };
 
-describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum dado excluído', () => {
-  it('as 54 páginas Next de 9fb1786 continuam existindo', () => {
+describe('F1-13 — só as telas de remoção aprovada saíram, nenhum dado excluído', () => {
+  it('as 54 páginas Next de 9fb1786 continuam existindo — exceto as de remoção real aprovada', () => {
     expect(BASELINE_PAGES.length).toBe(54);
-    expect(BASELINE_PAGES.filter((p) => !existsSync(join(ROOT, p)))).toEqual([]);
+    const autorizadas = new Set(
+      [...etapasConcluidas()].flatMap((e) => PAGINAS_REMOVIDAS_POR_ETAPA[e] ?? []),
+    );
+    for (const p of autorizadas) expect(BASELINE_PAGES, p).toContain(p);
+    expect(BASELINE_PAGES.filter((p) => !autorizadas.has(p) && !existsSync(join(ROOT, p)))).toEqual(
+      [],
+    );
+    expect([...autorizadas].filter((p) => existsSync(join(ROOT, p)))).toEqual([]);
   });
 
   it('nenhuma página antiga virou redirecionamento (só a raiz, que já era)', () => {
-    const redirects = BASELINE_PAGES.filter((p) =>
-      /\bredirect\(/.test(readFileSync(join(ROOT, p), 'utf8')),
+    const redirects = BASELINE_PAGES.filter(
+      (p) => existsSync(join(ROOT, p)) && /\bredirect\(/.test(readFileSync(join(ROOT, p), 'utf8')),
     );
     expect(redirects).toEqual(['apps/web/app/page.tsx']);
   });
 
-  it('"Materiais aprovados" (/painel/materiais) voltou ao menu do painel', () => {
+  it('"Materiais aprovados" (/painel/materiais) saiu do menu junto com a tela (S3)', () => {
     const nav = readFileSync(join(ROOT, 'apps/web/components/admin/nav.ts'), 'utf8');
-    expect(nav).toMatch(/href: '\/painel\/materiais',\s*label: 'Materiais aprovados'/);
+    expect(nav).not.toMatch(/\/painel\/materiais'/);
   });
 
   it('as migrations de 9fb1786 continuam presentes e byte a byte iguais', () => {
@@ -1551,17 +1898,54 @@ describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum 
     const destructive =
       /\b(DROP|DELETE\s+FROM|TRUNCATE|UPDATE)\s+((?:IF\s+EXISTS\s+)?(?:TABLE|COLUMN|SCHEMA|INDEX|CONSTRAINT|TYPE|VIEW|TRIGGER|FUNCTION)?\s*"?[\w.]+"?)/gi;
     const found: string[] = [];
+    const multiEmpresa: string[] = [];
     for (const name of newer) {
       const sql = readFileSync(join(dir, name, 'migration.sql'), 'utf8').replace(/--.*$/gm, '');
       for (const m of sql.matchAll(destructive)) {
         const cmd = `${m[1]!.toUpperCase()} ${m[2]}`.replace(/\s+/g, ' ').trim();
+        if (name === MULTI_EMPRESA_ETAPA2) {
+          multiEmpresa.push(cmd);
+          continue;
+        }
         found.push(`${name}: ${cmd}`);
         // Toda regra derrubada precisa ser recriada na mesma migration.
         const c = /DROP CONSTRAINT ("?[\w]+"?)/i.exec(cmd);
         if (c) expect(sql, `${name} recria ${c[1]}`).toContain(`ADD CONSTRAINT ${c[1]}`);
       }
     }
-    expect(found.sort()).toEqual(Object.keys(ALLOWED_DESTRUCTIVE).sort());
+    // Multi-empresa (etapa 2): nenhuma linha é apagada; cada comando é de um tipo justificado.
+    const etapa2 = readFileSync(join(dir, MULTI_EMPRESA_ETAPA2, 'migration.sql'), 'utf8');
+    // Índices únicos recriados com company_id na frente (nome igual, ou o nome do Prisma para
+    // (company_id, coluna)), normalizados para o nome do índice que saiu.
+    const recriadosComEmpresa = new Set(
+      [...etapa2.matchAll(/CREATE UNIQUE INDEX "(\w+)" ON "\w+"\("company_id"/g)].map((m) =>
+        m[1]!.replace('_company_id_', '_'),
+      ),
+    );
+    const naoJustificados = multiEmpresa.filter((cmd) => {
+      // "ON UPDATE CASCADE" das chaves estrangeiras novas (company_id) e o "DO UPDATE SET" do
+      // contador de numeração: não alteram linhas existentes.
+      if (cmd === 'UPDATE CASCADE' || cmd === 'UPDATE SET') return false;
+      // Numeração por empresa: o padrão nextval e a sequência global saem; o contador da empresa 1
+      // começa do maior número já usado (testado em multi-empresa-banco.test.ts).
+      if (cmd === 'DROP DEFAULT' || cmd === 'DROP SEQUENCE') return false;
+      // A trava "só existe a empresa 1" sai: é exatamente o que a etapa 2 muda.
+      if (cmd === 'DROP CONSTRAINT "company_settings_singleton"') return false;
+      // Unicidade global trocada pela mesma unicidade dentro da empresa, com o mesmo nome ou com
+      // o nome do Prisma para (company_id, coluna).
+      const idx = /^DROP INDEX "(\w+)"$/.exec(cmd)?.[1];
+      if (idx) return !recriadosComEmpresa.has(idx);
+      return true;
+    });
+    expect(naoJustificados).toEqual([]);
+    expect(multiEmpresa.filter((c) => c.startsWith('DROP INDEX')).length).toBe(50);
+    expect(etapa2).not.toMatch(/\b(DELETE\s+FROM|TRUNCATE|DROP\s+(TABLE|COLUMN))\b/i);
+
+    expect(found.sort()).toEqual(
+      Object.keys(ALLOWED_DESTRUCTIVE)
+        .flatMap((k) => Array<string>(ALLOWED_DESTRUCTIVE_TIMES[k] ?? 1).fill(k))
+        .sort(),
+    );
   });
 });
 
@@ -1667,42 +2051,5 @@ describe('F7-16 — a interface não define a natureza jurídica da relação de
     const company = readFileSync(join(ROOT, 'apps/web/components/admin/company-page.tsx'), 'utf8');
     expect(stripComments(team)).toMatch(/não é registro de ponto, não calcula jornada/);
     expect(stripComments(company)).toMatch(/não é ponto eletrônico/);
-  });
-});
-
-// ─────────────────────────── F10-01 (lado da API do menu) ────────────────────────────
-
-describe('F10-01 — "Recebimento de materiais" sem filtro de permissão no menu (nav.ts)', () => {
-  /*
-   * O item não tem `anyOf` porque a regra do recebimento é "qualquer funcionário autenticado"
-   * (purchasing/common.ts ANY_EMPLOYEE). Prova abaixo que um usuário de painel SEM nenhuma
-   * permissão de compras/estoque abre a página sem recusa: as rotas que ela usa aceitam.
-   */
-  it('as rotas do recebimento valem para qualquer sessão; a lista de chegadas físicas é restrita', () => {
-    const rule = (k: string) => catalog(app).find((r) => `${r.method} ${r.url}` === k)?.access;
-    expect(rule('GET /api/v1/material-receipts/pending')).toEqual({ session: 'any' });
-    expect(rule('POST /api/v1/material-receipts')).toEqual({ session: 'any' });
-    expect(rule('GET /api/v1/material-arrivals')).toEqual({
-      session: 'WEB',
-      anyPermissions: ['estoque.ver', 'compras.ver', 'estoque.gerenciar'],
-    });
-  });
-
-  it('usuário de painel sem permissão de compras/estoque: a fila do recebimento responde 200 (link não leva a recusa)', async () => {
-    const admin = await loginAdmin(app);
-    const user = await panelUserWith(app, admin, 'r4bsemcompras', []);
-    expect((await user.get('/api/v1/material-receipts/pending')).status).toBe(200);
-    // A lista opcional de chegadas aguardando conferência é negada, e a página não a exibe:
-    expect((await user.get('/api/v1/material-arrivals?status=PENDENTE_CONFERENCIA')).status).toBe(
-      403,
-    );
-    const page = readFileSync(
-      join(ROOT, 'apps/web/components/purchasing/material-receiving.tsx'),
-      'utf8',
-    );
-    expect(page).toMatch(/conference && arrivals\.data\?\.length \?/);
-    expect(page).not.toMatch(/arrivals\.(isError|error)/);
-    // E a fila de pedidos é a principal: só ela trava a página com erro.
-    expect(page).toMatch(/if \(pending\.isError\) return <Alert/);
   });
 });

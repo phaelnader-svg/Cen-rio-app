@@ -66,7 +66,8 @@ export const AVAILABILITY_LABEL: Record<Availability, string> = {
   OCUPADO: 'Presente e ocupado',
   EM_PAUSA: 'Em pausa',
   EXTERNO: 'Em atividade externa',
-  AUSENCIA_PRESUMIDA: 'Ausência presumida',
+  // Melhoria 163: sem o vermelho de "ausência"; é só alguém que ainda não tocou em "Cheguei".
+  AUSENCIA_PRESUMIDA: 'Não marcou chegada',
   AUSENTE: 'Ausência confirmada',
   ENCERRADO: 'Expediente encerrado',
 };

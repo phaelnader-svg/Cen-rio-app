@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
-import { PreplanningPage } from '@/components/production/preplanning-page';
+import { WeeklySchedulePage } from '@/components/production/weekly-schedule-page';
 
-export const metadata: Metadata = { title: 'Produção — A planejar' };
+// Reformulação, Fase 3: endereço antigo preservado — abre a programação semanal em "Serviços".
+export const metadata: Metadata = { title: 'Programação semanal' };
 
 export default function Page() {
-  return <PreplanningPage />;
+  return <WeeklySchedulePage initial="servicos" />;
 }

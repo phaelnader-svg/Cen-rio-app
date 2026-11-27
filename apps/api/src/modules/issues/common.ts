@@ -327,8 +327,6 @@ export function issueDto(
     material:
       r.kind === 'MATERIAL' && r.materialQuantity && r.materialUnit
         ? {
-            requirementId: r.materialRequirementId,
-            stockItemId: r.stockItemId,
             description: r.materialDescription ?? '',
             quantity: Number(r.materialQuantity),
             unit: r.materialUnit as MaterialUnit,

@@ -148,11 +148,14 @@ describe('Solicitação de retirada', () => {
     const exec = await t('EM_EXECUCAO', occ2.body.version);
     const done = await t('RETIRADA_REALIZADA', exec.body.version);
     expect(done.body.status).toBe('RETIRADA_REALIZADA');
-    // "Recebida na oficina" só pelo recebimento físico.
-    const manual = await t('RECEBIDA_NA_OFICINA', done.body.version);
-    expect(manual.status).toBe(422);
+    // Transição inválida a partir de "realizada".
     const invalid = await t('AGUARDANDO_AGENDAMENTO', done.body.version);
     expect(invalid.status).toBe(422);
+    // Recebimentos removidos: "Recebida na oficina" é marcada na própria retirada e marca as peças.
+    const arrived = await t('RECEBIDA_NA_OFICINA', done.body.version);
+    expect(arrived.status, JSON.stringify(arrived.body)).toBe(200);
+    expect(arrived.body.status).toBe('RECEBIDA_NA_OFICINA');
+    expect((await t('EM_EXECUCAO', arrived.body.version)).status).toBe(422);
     expect(done.body.events.map((e: { kind: string }) => e.kind)).toEqual([
       'SOLICITADA',
       'AGENDADA',
@@ -160,6 +163,74 @@ describe('Solicitação de retirada', () => {
       'EM_EXECUCAO',
       'RETIRADA_REALIZADA',
     ]);
+  });
+
+  it('agenda: mostruário, maquininha, quem retira e valor do serviço (só com pedidos.valores)', async () => {
+    const admin = await loginAdmin(app);
+    const order = await createOrder(admin, await createCustomer(admin));
+    const created = await admin.post(
+      '/api/v1/pickups',
+      {
+        orderId: order.id,
+        scheduledDate: '2026-11-17',
+        windowStart: '13:00',
+        team: 'LOGISTICA_TERCEIRIZADA',
+        bringSamples: true,
+        samplesDescription: 'Veludos e linhos',
+        bringCardMachine: true,
+        items: order.items.map((i: { id: string; quantity: number }) => ({
+          orderItemId: i.id,
+          quantity: i.quantity,
+        })),
+      },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      bringSamples: true,
+      samplesDescription: 'Veludos e linhos',
+      bringCardMachine: true,
+      executor: null,
+      participants: [],
+    });
+    expect(created.body.order.agreedValueCents).toBe(350000);
+
+    // Edição sem os campos mantém o que está; desmarcar o mostruário limpa a descrição.
+    const base = {
+      scheduledDate: '2026-11-17',
+      windowStart: '13:00',
+      team: 'LOGISTICA_TERCEIRIZADA',
+      items: created.body.items.map((i: { orderItemId: string; quantity: number }) => ({
+        orderItemId: i.orderItemId,
+        quantity: i.quantity,
+      })),
+    };
+    const kept = await admin.put(`/api/v1/pickups/${created.body.id}`, {
+      ...base,
+      version: created.body.version,
+    });
+    expect(kept.body.bringSamples).toBe(true);
+    expect(kept.body.bringCardMachine).toBe(true);
+    const off = await admin.put(`/api/v1/pickups/${created.body.id}`, {
+      ...base,
+      bringSamples: false,
+      samplesDescription: 'ignorado',
+      bringCardMachine: false,
+      version: kept.body.version,
+    });
+    expect(off.body).toMatchObject({
+      bringSamples: false,
+      samplesDescription: null,
+      bringCardMachine: false,
+    });
+
+    // Sem pedidos.valores a agenda não mostra o valor do serviço.
+    const semValores = await panelUserWith(app, admin, 'agendasemvalor', ['retiradas.ver']);
+    const agenda = await semValores.get('/api/v1/pickups?from=2026-11-01&to=2026-11-30');
+    expect(agenda.status).toBe(200);
+    expect(agenda.body[0].order).not.toHaveProperty('agreedValueCents');
+    const comValores = await admin.get('/api/v1/pickups?from=2026-11-01&to=2026-11-30');
+    expect(comValores.body[0].order.agreedValueCents).toBe(350000);
   });
 
   it('não permite retirar mais peças do que o pedido tem disponível', async () => {

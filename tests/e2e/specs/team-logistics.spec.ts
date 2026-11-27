@@ -55,7 +55,8 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
 
     // ── Padrões e recebedor (aba Custos do financeiro) ──
     await page.goto('/painel/financeiro');
-    await page.getByRole('tab', { name: 'Custos e resultado por OS' }).click();
+    await page.getByRole('tab', { name: 'Resumo', exact: true }).click();
+    await page.getByRole('tab', { name: 'Por OS' }).click();
     const panel = page.getByTestId('logistics-defaults');
     await panel.getByTestId('logistics-defaults-edit').click();
     const dlg = page.getByRole('dialog');
@@ -94,8 +95,8 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
       items: [{ pieceType: 'POLTRONA', description: 'Poltrona', quantity: 1 }],
     });
     await page.goto(`/painel/pedidos/${order.id}`);
-    await page.getByRole('button', { name: 'Solicitar retirada' }).click();
-    await page.getByLabel('Data do compromisso').fill(plus(2));
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
+    await page.getByLabel('Data da retirada').fill(plus(2));
     await page.getByLabel('Horário de chegada ao cliente').fill('16:00');
     const fields = page.getByTestId('trip-cost-fields');
     await expect(page.getByTestId('trip-cost-amount')).toHaveValue('80,00');
@@ -103,7 +104,7 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     await page.getByTestId('trip-cost-amount').fill('100,00');
     await fields.getByTestId(`trip-participant-${IZAIAS.displayName}`).check();
     await evidence(page, '02-agendar-com-custo-total');
-    await page.getByRole('button', { name: 'Solicitar e agendar' }).click();
+    await page.getByRole('button', { name: 'Agendar retirada' }).click();
     await expect(page.getByTestId('order-status')).toContainText('Retirada agendada');
 
     await page.getByRole('button', { name: /RT-\d{5}/ }).click();
@@ -136,7 +137,8 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
 
     // ── Contas a pagar: parcial, estorno, quitação ──
     await page.goto('/painel/financeiro');
-    await page.getByRole('tab', { name: 'Contas a pagar' }).click();
+    await page.getByRole('tab', { name: 'Despesas', exact: true }).click();
+    await page.getByRole('tab', { name: 'A pagar' }).click();
     const row = page.getByTestId(`payable-${payableCode}`);
     await expect(row).toContainText(ANDRE.displayName);
     await expect(row).toContainText('R$ 100,00');

@@ -26,7 +26,6 @@ import {
   teamCostSchema,
   toCsv,
   EVENT_TYPES,
-  type ExpenseCategory,
   type RecurringExpenseDto,
   type TeamCostDto,
 } from '@cenario/shared';
@@ -50,6 +49,8 @@ import {
   period,
   shopTimezone,
 } from './common';
+import { assertCategory, expenseCategoryRoutes } from './categories';
+import { cashLedgerRoutes } from './cash-ledger';
 import { syncMaterialCosts } from './costs';
 import { loadTripCost, toTripCostDto, tripCostInclude } from './trip-costs';
 import {
@@ -96,8 +97,9 @@ import {
   setRevenueSplit,
   toReceivableDto,
 } from './revenue';
+import { requireCompanyId } from '../../core/tenant';
 
-const paymentParams = z.object({ id: z.string().uuid(), paymentId: z.string().uuid() });
+const paymentParams = z.object({ id: z.guid(), paymentId: z.guid() });
 const reportParams = z.object({ kind: z.enum(REPORTS) });
 const payableQuerySchema = periodQuerySchema.extend({
   status: z.string().max(60).optional(),
@@ -117,6 +119,8 @@ const monthQuerySchema = z.object({
  */
 export async function financeRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  await app.register(expenseCategoryRoutes);
+  await app.register(cashLedgerRoutes);
   const tx = <T>(fn: (t: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(fn, { timeout: 30_000 });
 
@@ -130,7 +134,10 @@ export async function financeRoutes(app: FastifyInstance) {
     const input = financeSettingsSchema.parse(request.body);
     return tx(async (t) => {
       const before = await taxRate(t);
-      await t.companySettings.update({ where: { id: 1 }, data: { taxRateBps: input.taxRateBps } });
+      await t.companySettings.update({
+        where: { id: requireCompanyId() },
+        data: { taxRateBps: input.taxRateBps },
+      });
       await audit(t, actorFrom(request), {
         action: 'finance.settings',
         entityType: 'company_settings',
@@ -253,12 +260,12 @@ export async function financeRoutes(app: FastifyInstance) {
     }
     if (itemIds.length) {
       const sis = await prisma.serviceOrderItem.findMany({
-        where: { id: { in: itemIds.filter((x) => z.string().uuid().safeParse(x).success) } },
+        where: { id: { in: itemIds.filter((x) => z.guid().safeParse(x).success) } },
         select: { serviceOrder: { select: { orderId: true } } },
       });
       for (const s of sis) orderIds.add(s.serviceOrder.orderId);
     }
-    const valid = [...orderIds].filter((x) => z.string().uuid().safeParse(x).success);
+    const valid = [...orderIds].filter((x) => z.guid().safeParse(x).success);
     return orderBalances(prisma, valid);
   });
 
@@ -361,7 +368,10 @@ export async function financeRoutes(app: FastifyInstance) {
     { config: { access: FIN_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createPayableSchema.parse(request.body);
-      const row = await tx((t) => createPayable(t, actorFrom(request), input));
+      const row = await tx(async (t) => {
+        await assertCategory(t, input.category, 'payable');
+        return createPayable(t, actorFrom(request), input);
+      });
       return reply.status(201).send(await payableDto(row.id));
     },
   );
@@ -579,7 +589,10 @@ export async function financeRoutes(app: FastifyInstance) {
     { config: { access: FIN_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = expenseSchema.parse(request.body);
-      const row = await tx((t) => createExpense(t, actorFrom(request), input));
+      const row = await tx(async (t) => {
+        await assertCategory(t, input.category, 'expense');
+        return createExpense(t, actorFrom(request), input);
+      });
       return reply.status(201).send(
         toExpenseDto(
           await prisma.operationalExpense.findUniqueOrThrow({
@@ -609,7 +622,7 @@ export async function financeRoutes(app: FastifyInstance) {
 
   const recurringDto = (r: Prisma.RecurringExpenseGetPayload<object>): RecurringExpenseDto => ({
     id: r.id,
-    category: r.category as ExpenseCategory,
+    category: r.category,
     description: r.description,
     amountCents: r.amountCents,
     dayOfMonth: r.dayOfMonth,
@@ -636,6 +649,7 @@ export async function financeRoutes(app: FastifyInstance) {
       if (input.endMonth && input.endMonth < input.startMonth)
         throw Errors.validation(undefined, 'O fim da recorrência é anterior ao início.');
       const row = await tx(async (t) => {
+        await assertCategory(t, input.category, 'expense');
         const r = await t.recurringExpense.create({
           data: {
             category: input.category,
@@ -679,6 +693,7 @@ export async function financeRoutes(app: FastifyInstance) {
         await lockRow(t, 'recurring_expenses', id, 'Despesa recorrente');
         const cur = await t.recurringExpense.findUniqueOrThrow({ where: { id } });
         checkVersion(cur, input.version!);
+        await assertCategory(t, input.category, 'expense', cur.category);
         // Alterar o modelo não muda despesas já geradas (histórico preservado).
         const r = await t.recurringExpense.update({
           where: { id },

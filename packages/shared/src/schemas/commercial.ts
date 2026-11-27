@@ -3,6 +3,7 @@ import {
   BR_STATES,
   CUSTOMER_KINDS,
   ORDER_STATUSES,
+  PICKUP_KINDS,
   SERVICE_ORDER_STATUSES,
   MATERIAL_KINDS,
   MATERIAL_SOURCINGS,
@@ -16,6 +17,7 @@ import {
 } from '../domain';
 import { isValidCnpj, isValidCpf, onlyDigits } from '../documents';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
+import { MAX_DELIVERY_BUSINESS_DAYS } from '../deadline-domain';
 import { tripCostInputSchema } from './finance';
 import {
   ELIGIBILITY_RULES,
@@ -99,7 +101,28 @@ const customerFields = {
     .nullable()
     .optional(),
   notes: optionalText(2000),
+  /** Aniversário (dia e mês, sem ano). */
+  birthDay: z.number().int().min(1).max(31).nullable().optional(),
+  birthMonth: z.number().int().min(1).max(12).nullable().optional(),
+  /** Quem indicou este cliente. */
+  referredById: z.string().uuid().nullable().optional(),
 };
+
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function refineBirthday(
+  v: { birthDay?: number | null; birthMonth?: number | null },
+  ctx: z.RefinementCtx,
+) {
+  const d = v.birthDay ?? null;
+  const m = v.birthMonth ?? null;
+  if (d === null && m === null) return;
+  if (d === null || m === null || d > MONTH_DAYS[m - 1]!)
+    ctx.addIssue({
+      code: 'custom',
+      path: ['birthDay'],
+      message: 'Aniversário inválido (dia/mês).',
+    });
+}
 
 function refineDocument<T extends { kind: 'PF' | 'PJ'; document?: string | null }>(
   v: T,
@@ -123,12 +146,18 @@ export const createCustomerSchema = z
     /** Confirma o cadastro mesmo havendo clientes com contato/nome semelhantes. */
     allowSimilar: z.boolean().default(false),
   })
-  .superRefine(refineDocument);
+  .superRefine((v, ctx) => {
+    refineDocument(v, ctx);
+    refineBirthday(v, ctx);
+  });
 export type CreateCustomerInput = z.input<typeof createCustomerSchema>;
 
 export const updateCustomerSchema = z
   .object({ ...customerFields, version: versionSchema, allowSimilar: z.boolean().default(false) })
-  .superRefine(refineDocument);
+  .superRefine((v, ctx) => {
+    refineDocument(v, ctx);
+    refineBirthday(v, ctx);
+  });
 export type UpdateCustomerInput = z.input<typeof updateCustomerSchema>;
 
 export const customerQuerySchema = z.object({
@@ -189,6 +218,10 @@ export const orderCancelFinanceSchema = z.object({
     .optional(),
 });
 
+/** Recebimentos removidos: marca as peças restantes do pedido como já na oficina. */
+export const markOrderArrivedSchema = z.object({ version: versionSchema });
+export type MarkOrderArrivedInput = z.infer<typeof markOrderArrivedSchema>;
+
 export const cancelOrderSchema = z.object({
   reason: trimmed(3, 500, 'Motivo do cancelamento'),
   version: versionSchema,
@@ -211,6 +244,8 @@ export type UpdateOrderPromisedDateInput = z.input<typeof updateOrderPromisedDat
 export const orderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: z.enum(ORDER_STATUSES).optional(),
+  /** Fluxo da OS (2026-11-18): SEM_OS = pedidos ativos que ainda não viraram OS. */
+  stage: z.enum(['SEM_OS', 'COM_OS']).optional(),
   customerId: idSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
@@ -219,6 +254,8 @@ export const orderQuerySchema = z.object({
 // ───────────────────────────── Retiradas ─────────────────────────────
 
 const pickupFields = {
+  /** 2026-11-25: Retirada ou No local (serviço na casa do cliente). Ausente = mantém / Retirada. */
+  kind: z.enum(PICKUP_KINDS).optional(),
   addressId: idSchema.nullable().optional(),
   scheduledDate: dateOnly.nullable().optional(),
   windowStart: timeOnly.nullable().optional(),
@@ -228,6 +265,10 @@ const pickupFields = {
   instructions: optionalText(1000),
   /** Referência externa (ex.: protocolo da logística) — preparado para integração. */
   externalReference: optionalText(80),
+  /** Agenda de Retiradas: o que levar ao cliente (ausente = mantém o que está). */
+  bringSamples: z.boolean().optional(),
+  samplesDescription: optionalText(200),
+  bringCardMachine: z.boolean().optional(),
   items: z
     .array(z.object({ orderItemId: idSchema, quantity: z.number().int().min(1).max(200) }))
     .min(1, { message: 'Selecione as peças a retirar.' })
@@ -374,6 +415,24 @@ export const serviceOrderItemLaborSchema = z.object({
 export const createServiceOrderSchema = z.object({
   orderId: idSchema,
   ...osHeader,
+  /** Fluxo da OS (2026-11-18): material já comprado (ou nada a comprar) na criação. */
+  materialPurchased: z.boolean().optional(),
+  /**
+   * 2026-11-24 (Raphael): a OS NÃO copia mais os materiais do orçamento (o orçamento estima para
+   * dar preço). Campo antigo aceito e ignorado, para não recusar telas abertas antes da troca.
+   */
+  materialsFromQuote: z.boolean().optional(),
+  /** Materiais que a OS vai usar, escritos ao gerar a OS (entram na lista "Comprar" se faltam). */
+  materials: z
+    .array(
+      z.object({
+        description: z.string().trim().min(2, { message: 'Escreva o material.' }).max(200),
+        quantity: z.number().positive().max(1_000_000).nullable().optional(),
+        unit: z.string().trim().max(20).nullable().optional(),
+      }),
+    )
+    .max(40)
+    .optional(),
   items: z
     .array(
       z
@@ -451,6 +510,8 @@ export const serviceOrderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: z.enum(SERVICE_ORDER_STATUSES).optional(),
   orderId: idSchema.optional(),
+  /** Fluxo da OS (2026-11-18): AGUARDANDO = aberta sem "Material comprado". */
+  material: z.enum(['AGUARDANDO', 'COMPRADO']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
 });
@@ -519,9 +580,18 @@ export const newServiceItemSchema = orderItemSchema.omit({ id: true }).extend({
 
 export const newServicePickupSchema = z
   .object({
-    scheduledDate: dateOnly.nullable().optional(),
+    /** 2026-11-25: Retirada (padrão) ou No local (serviço feito na casa do cliente). */
+    kind: z.enum(PICKUP_KINDS).default('RETIRADA'),
+    /** 2026-11-18: agendar a retirada exige data e horário (nada fica "aguardando agendamento"). */
+    scheduledDate: z
+      .string({ error: 'Informe a data da retirada.' })
+      .min(1, { message: 'Informe a data da retirada.' })
+      .pipe(dateOnly),
     /** Horário de CHEGADA ao endereço do cliente (não há horário de término). */
-    windowStart: timeOnly.nullable().optional(),
+    windowStart: z
+      .string({ error: 'Informe o horário de chegada ao cliente.' })
+      .min(1, { message: 'Informe o horário de chegada ao cliente.' })
+      .pipe(timeOnly),
     team: z.enum(PICKUP_TEAMS),
     /** Profissional responsável (equipe própria: padrão da empresa; terceirizada: André). */
     logisticsUserId: idSchema.nullable().optional(),
@@ -535,6 +605,10 @@ export const newServicePickupSchema = z
     amountCents: z.number().int().min(1).max(10_000_000).nullable().optional(),
     instructions: optionalText(1000),
     notes: optionalText(200),
+    /** Agenda de Retiradas: o que levar ao cliente (ausente = mantém o que está). */
+    bringSamples: z.boolean().optional(),
+    samplesDescription: optionalText(200),
+    bringCardMachine: z.boolean().optional(),
   })
   .superRefine((v, ctx) => {
     refineWindow(v, ctx);
@@ -575,6 +649,17 @@ export const newServiceSchema = z
       payment: newServicePaymentSchema.nullable().optional(),
       /** Prazo de entrega combinado (obrigatório; copiado para a OS gerada na chegada). */
       promisedDate: requiredPromisedDate,
+      /**
+       * 2026-11-18: prazo em DIAS ÚTEIS. Quando vem, a API calcula `promisedDate` a partir do dia
+       * da retirada (ou de hoje, se o cliente traz as peças) e o recalcula se a retirada mudar de dia.
+       */
+      deliveryBusinessDays: z
+        .number({ message: 'Informe o prazo em dias úteis.' })
+        .int({ message: 'Informe o prazo em dias úteis.' })
+        .min(1, { message: 'O prazo precisa ter pelo menos 1 dia útil.' })
+        .max(MAX_DELIVERY_BUSINESS_DAYS, { message: 'Prazo longo demais.' })
+        .nullable()
+        .optional(),
       technicalNotes: optionalText(4000),
       notes: optionalText(2000),
       items: z.array(newServiceItemSchema).min(1, { message: 'Inclua ao menos uma peça.' }).max(50),
@@ -584,6 +669,8 @@ export const newServiceSchema = z
      * nenhuma retirada, responsável, custo de logística ou agenda é criado (estabilização da Fase 2).
      */
     pickup: newServicePickupSchema.nullable().optional(),
+    /** Melhoria 78: orçamento aprovado que virou este serviço (fica ligado ao pedido). */
+    quoteId: z.guid().nullable().optional(),
   })
   .superRefine((v, ctx) => {
     refinePlannedIntent(v.service.items, ctx, ['service', 'items']);
@@ -645,3 +732,9 @@ export const confirmPieceArrivalSchema = z.object({
     .optional(),
 });
 export type ConfirmPieceArrivalInput = z.input<typeof confirmPieceArrivalSchema>;
+
+/** Fluxo da OS (2026-11-18): botão rápido "Material comprado" (e desfazer). */
+export const serviceOrderMaterialPurchasedSchema = z.object({
+  version: z.number().int().min(1),
+  purchased: z.boolean(),
+});

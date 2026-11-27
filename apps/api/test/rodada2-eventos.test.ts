@@ -9,7 +9,16 @@ import { setAttendanceClock } from '../src/modules/attendance/common';
 import { resolveNotifications } from '../src/modules/notifications/notify';
 import type { Client } from './helpers';
 import { splitSql } from './sql-helpers';
-import { WsClient, createTestApp, db, employeeByName, loginAdmin, resetDatabase } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  employeeByName,
+  loginAdmin,
+  resetDatabase,
+  naEmpresa1,
+  ownerDb,
+} from './helpers';
 import {
   F,
   PINS,
@@ -294,7 +303,7 @@ describe('F10-19 — notificação ATIVA × RESOLVIDA', () => {
     );
     // Idempotente: repetir a resolução não muda a data nem publica de novo.
     const at = (await db().notification.findUniqueOrThrow({ where: { id: notice.id } })).resolvedAt;
-    const again = await db().$transaction((tx) =>
+    const again = await ownerDb().$transaction((tx) =>
       resolveNotifications(tx, { userId: gestor, requestId: null } as never, 'VALOR_SOLICITADO', [
         `VALOR:${vr.id}`,
       ]),
@@ -322,7 +331,7 @@ describe('F10-19 — notificação ATIVA × RESOLVIDA', () => {
     const b = await mk(`VALOR:${crypto.randomUUID()}:${gestor}`);
     const subject = a.dedupeKey.split(':').slice(0, 2).join(':');
     const run = () =>
-      db().$transaction((tx) =>
+      ownerDb().$transaction((tx) =>
         resolveNotifications(tx, { userId: gestor, requestId: null } as never, 'VALOR_SOLICITADO', [
           subject,
         ]),
@@ -384,7 +393,7 @@ describe('F10-19 — notificação ATIVA × RESOLVIDA', () => {
     setClock('08:30', day(-1));
     expect((await arrive(s.tablets['João']!)).status).toBe(200);
     setClock('08:00');
-    expect(await detectOpenShifts(app.ctx.prisma)).toBe(1);
+    expect(await naEmpresa1(() => detectOpenShifts(app.ctx.prisma))).toBe(1);
     const gestor = await meId(s.admin);
     const open = await db().notification.findFirstOrThrow({
       where: { userId: gestor, kind: 'EXPEDIENTE_ABERTO' },
@@ -484,7 +493,7 @@ describe('F10-19 — migration 20270216000000_notificacoes_resolvidas', () => {
     // Sem aviso resolvido: a reversão remove a coluna e o registro; os dados ficam intactos;
     // reaplicar a migration volta ao estado atual (tudo numa transação desfeita no fim).
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         for (const st of down) await tx.$executeRawUnsafe(st);
         expect(await column(tx)).toEqual([]);
         expect(
@@ -506,7 +515,7 @@ describe('F10-19 — migration 20270216000000_notificacoes_resolvidas', () => {
     // Com um aviso resolvido, a reversão é recusada e nada muda.
     await db().notification.update({ where: { id: n.id }, data: { resolvedAt: new Date() } });
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         for (const st of down) await tx.$executeRawUnsafe(st);
       }),
     ).rejects.toThrow(/Reversão bloqueada: 1 notificação/);

@@ -1,5 +1,6 @@
+import { plural } from '@cenario/shared';
 import {
-  EXPENSE_CATEGORY_LABEL,
+  expenseCategoryLabel,
   LABOR_STATUS_LABEL,
   ALL_LOGISTICS_COST_KIND_LABEL,
   PAYMENT_METHOD_LABEL,
@@ -10,7 +11,6 @@ import {
   laborDue,
   productionPayableCode,
   receivableCode,
-  type ExpenseCategory,
   type LaborStatus,
   type LogisticsCostKind,
   type PaymentMethod,
@@ -246,7 +246,7 @@ export async function buildReport(
           ]),
           ...expenses.map((e) => [
             'Despesa operacional',
-            EXPENSE_CATEGORY_LABEL[e.category as ExpenseCategory] ?? e.category,
+            expenseCategoryLabel(e.category),
             e._count,
             csvMoney(e._sum.amountCents ?? 0),
           ]),
@@ -259,7 +259,7 @@ export async function buildReport(
           'Compra de estoque comum não é custo de OS até sair para a OS.',
           ...(unpriced
             ? [
-                `${unpriced} lançamento(s) de material sem preço no período: valor 0 até o gestor ajustar (custo subestimado).`,
+                `${plural(unpriced, 'lançamento', 'lançamentos')} de material sem preço no período: valor 0 até o gestor ajustar (custo subestimado).`,
               ]
             : []),
         ],
@@ -280,7 +280,7 @@ export async function buildReport(
         title: 'Pagamentos por produção',
         header: [
           'Código',
-          'Profissional',
+          'Funcionário',
           'OS',
           'Peça',
           'Serviço',
@@ -333,7 +333,7 @@ export async function buildReport(
         rows: rows.map((e) => [
           expenseCode(e.number),
           dateOnly(e.competence)!.slice(0, 7),
-          EXPENSE_CATEGORY_LABEL[e.category as ExpenseCategory] ?? e.category,
+          expenseCategoryLabel(e.category),
           e.description,
           e.recurringId ? 'Sim' : 'Não',
           csvMoney(e.amountCents),

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, markArrived } from './commercial-helpers';
 import {
   act,
   addOs,
@@ -75,16 +75,13 @@ async function os(
     customer,
     pieces.map((p) => ({ pieceType: p.pieceType, description: p.description, quantity: 1 })),
   );
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(
-      order.id,
-      order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-    ),
+  const rec = await markArrived(
+    order.id,
+    order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
   );
   expect(rec.status).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
+    materialPurchased: true,
     orderId: order.id,
     items: order.items.map((i: { id: string }, k: number) => ({
       orderItemId: i.id,
@@ -161,7 +158,7 @@ async function setSkills(admin: Client, name: string, change: (s: string[]) => s
 }
 
 describe('Modelos simplificados (Simplificação Fase 5)', () => {
-  it('CA5-01: reforma de sofá gera exatamente 3 tarefas — João, titular, titular — sem distribuição manual', async () => {
+  it('CA5-01: reforma de sofá gera exatamente 3 tarefas — preparação livre, titular, titular — sem distribuição manual', async () => {
     const admin = await loginAdmin(app);
     const p = await team();
     const so = await os(admin, 'Cliente Reforma', [
@@ -181,7 +178,7 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
     const t = await tasksOf(reforma!.id);
     expect(t).toHaveLength(3);
     expect(t.map((x) => [x.activity, x.stepClass, x.assigneeUserId])).toEqual([
-      ['DESMONTAGEM', 'PREPARACAO', p.joao],
+      ['DESMONTAGEM', 'PREPARACAO', null],
       ['CORTE_TECIDO', 'TAPECARIA', p.ricardo],
       ['MONTAGEM', 'TAPECARIA', p.ricardo],
     ]);
@@ -225,13 +222,13 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
       ).status,
     ).toBe(201);
     expect((await tasksOf(canto.items[0]!.id)).map((x) => x.assigneeUserId)).toEqual([
-      p.joao,
+      null,
       p.marcio,
       p.marcio,
     ]);
   });
 
-  it('CA5-02: cabeceira gera 2 tarefas — Thiago prepara; tapeçaria do titular (Thiago só por competência, D7)', async () => {
+  it('CA5-02: cabeceira gera 2 tarefas — preparação livre; tapeçaria do titular (Thiago só por competência, D7)', async () => {
     const admin = await loginAdmin(app);
     const p = await team();
     const plan = await createPlan(admin, today(), 'FILA_SEMANAL');
@@ -241,7 +238,7 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
           { pieceType: 'CABECEIRA', description: name, serviceType: 'FABRICACAO' },
         ])
       ).items[0]!;
-    // Titular Ricardo: Thiago prepara, Ricardo faz a tapeçaria.
+    // Titular Ricardo: preparação livre (quem tiver a competência pega), Ricardo faz a tapeçaria.
     const a = await cab('Cabeceira Ricardo');
     const soA = (await db().serviceOrderItem.findUniqueOrThrow({ where: { id: a.id } }))
       .serviceOrderId;
@@ -255,7 +252,7 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
     ).toBe(201);
     const ta = await tasksOf(a.id);
     expect(ta.map((x) => [x.activity, x.assigneeUserId])).toEqual([
-      ['PREPARACAO_MDF', p.thiago],
+      ['PREPARACAO_MDF', null],
       ['REVESTIMENTO', p.ricardo],
     ]);
     expect(ta.every((x) => x.templateId === CABECEIRA)).toBe(true);
@@ -281,7 +278,7 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
       ).status,
     ).toBe(201);
     expect((await tasksOf(b.id)).map((x) => [x.activity, x.assigneeUserId])).toEqual([
-      ['PREPARACAO_MDF', p.thiago],
+      ['PREPARACAO_MDF', null],
       ['REVESTIMENTO', p.thiago],
     ]);
     // Márcio titular: mesma divisão do Ricardo.
@@ -292,7 +289,7 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
       serviceOrderId: soC,
       pieces: [{ serviceOrderItemId: c.id, upholstererUserId: p.marcio }],
     });
-    expect((await tasksOf(c.id)).map((x) => x.assigneeUserId)).toEqual([p.thiago, p.marcio]);
+    expect((await tasksOf(c.id)).map((x) => x.assigneeUserId)).toEqual([null, p.marcio]);
     // Cabeceira em REPARO não tem modelo simplificado → modelo antigo (fallback).
     const rep = await os(admin, 'Cabeceira reparo', [
       { pieceType: 'CABECEIRA', description: 'Reparo', serviceType: 'REPARO' },
@@ -304,7 +301,7 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
     expect(await tasksOf(rep.items[0]!.id)).toHaveLength(5);
   });
 
-  it('responsável por etapa: precedência sobre o global, inelegível vira pendência, sem responsável próprio vale o global', async () => {
+  it('preparação livre: ninguém é escolhido; só vira pendência sem ninguém com a competência', async () => {
     const admin = await loginAdmin(app);
     const p = await team();
     const plan = await createPlan(admin, today(), 'FILA_SEMANAL');
@@ -317,46 +314,25 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
       expect(r.status, JSON.stringify(r.body)).toBe(201);
       return s.items[0]!.id;
     };
-    // Global = Thiago; a etapa da reforma tem João próprio → João (a etapa vence).
-    expect(
-      (
-        await admin.put('/api/v1/production/distribution-settings', {
-          preparationAssigneeUserId: p.thiago,
-        })
-      ).status,
-    ).toBe(200);
-    expect((await tasksOf(await add('R1', 'SOFA', 'REFORMA_COMPLETA')))[0]!.assigneeUserId).toBe(
-      p.joao,
-    );
-    // Sem responsável próprio na etapa → vale o global (Thiago).
-    const reforma = (await templates(admin)).find((t) => t.id === REFORMA)!;
-    const cleared = await admin.put(
-      `/api/v1/production-templates/${REFORMA}`,
-      templateBody(reforma, {}, () => ({ defaultAssigneeUserId: null })),
-    );
-    expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
-    expect((await tasksOf(await add('R2', 'SOFA', 'REFORMA_COMPLETA')))[0]!.assigneeUserId).toBe(
-      p.thiago,
-    );
-    // Responsável próprio inelegível (Thiago sem a competência de preparação): pendência visível,
-    // nunca outra pessoa no lugar (nem o global, nem o único ajudante).
+    const pend = async (item: string) =>
+      (await dist(admin, plan.id)).pieces
+        .find((x) => x.item.id === item)!
+        .pendencies.map((x) => x.kind);
+    const r1 = await add('R1', 'SOFA', 'REFORMA_COMPLETA');
+    expect((await tasksOf(r1))[0]!.assigneeUserId).toBeNull();
+    expect(await pend(r1)).not.toContain('SEM_RESPONSAVEL_PADRAO');
+    // Ninguém com a competência de preparação (João e Thiago perdem): pendência visível.
     await setSkills(admin, 'Thiago', (s) => s.filter((x) => x !== 'PREPARACAO'));
+    await setSkills(admin, 'João', (s) => s.filter((x) => x !== 'PREPARACAO'));
     const item = await add('C1', 'CABECEIRA', 'FABRICACAO');
     const t = await tasksOf(item);
     expect(t[0]!.assigneeUserId).toBeNull();
     expect(t[1]!.assigneeUserId).toBe(p.ricardo);
-    const piece = (await dist(admin, plan.id)).pieces.find((x) => x.item.id === item)!;
-    expect(piece.pendencies.map((x) => x.kind)).toContain('SEM_RESPONSAVEL_PADRAO');
-    // A competência volta: reprocessar completa o responsável (nunca troca um já gravado).
-    await setSkills(admin, 'Thiago', (s) => [...s, 'PREPARACAO']);
-    const planItem = await db().productionPlanItem.findFirstOrThrow({
-      where: { planId: plan.id, serviceOrder: { items: { some: { id: item } } } },
-    });
-    expect(
-      (await post(admin, `/api/v1/production-plans/${plan.id}/items/${planItem.id}/distribute`, {}))
-        .status,
-    ).toBe(200);
-    expect((await tasksOf(item)).map((x) => x.assigneeUserId)).toEqual([p.thiago, p.ricardo]);
+    expect(await pend(item)).toContain('SEM_RESPONSAVEL_PADRAO');
+    // A competência volta: a pendência some, a etapa continua livre.
+    await setSkills(admin, 'João', (s) => [...s, 'PREPARACAO']);
+    expect(await pend(item)).not.toContain('SEM_RESPONSAVEL_PADRAO');
+    expect((await tasksOf(item))[0]!.assigneeUserId).toBeNull();
   });
 
   it('cadastro do modelo: tipos de serviço e responsável por etapa validados; inativo não é escolhido (D6)', async () => {
@@ -365,8 +341,9 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
     const list = await templates(admin);
     const reforma = list.find((t) => t.id === REFORMA)!;
     expect(reforma.serviceTypes).toEqual(['REFORMA_COMPLETA']);
+    // Preparação não tem responsável padrão: fica livre para quem estiver disponível.
     expect(reforma.steps.map((s) => s.defaultAssignee?.displayName ?? null)).toEqual([
-      'João',
+      null,
       null,
       null,
     ]);
@@ -395,14 +372,6 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
       ),
     );
     expect(derived.status).toBe(400);
-    // Quem não executa produção (logística) não pode ser responsável padrão.
-    const notWorker = await admin.put(
-      `/api/v1/production-templates/${REFORMA}`,
-      templateBody(reforma, {}, (s) =>
-        s.stepClass === 'PREPARACAO' ? { defaultAssigneeUserId: p.andre } : {},
-      ),
-    );
-    expect(notWorker.status).toBe(422);
     expect((await templates(admin)).find((t) => t.id === REFORMA)!.version).toBe(1);
     // Inativo: nova geração volta ao modelo geral (antigo).
     expect(
@@ -483,7 +452,8 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
     const pick = (t: typeof after) =>
       t.map((x) => [x.id, x.templateId, x.templateVersion, x.assigneeUserId, x.status]);
     expect(pick(after)).toEqual(
-      pick(before).map((x) => (x[0] === desm.id ? [...x.slice(0, 4), 'EM_EXECUCAO'] : x)),
+      // A desmontagem era livre: o João tocou em Iniciar e ficou com ela.
+      pick(before).map((x) => (x[0] === desm.id ? [...x.slice(0, 3), p.joao, 'EM_EXECUCAO'] : x)),
     );
     expect(after.some((x) => x.templateId === REFORMA)).toBe(false);
     const piece = (await dist(admin, plan.id)).pieces.find((x) => x.item.id === item)!;
@@ -636,118 +606,25 @@ describe('Modelos simplificados (Simplificação Fase 5)', () => {
   });
 });
 
-describe('Seed dos modelos simplificados (responsável inicial da preparação)', () => {
-  const stepsOf = async () =>
-    (
-      await db().productionTemplateStep.findMany({
-        select: { templateId: true, position: true, defaultAssigneeUserId: true },
-        orderBy: [{ templateId: 'asc' }, { position: 'asc' }],
-      })
-    ).map((s) => `${s.templateId}:${s.position}:${s.defaultAssigneeUserId ?? '-'}`);
-  const firstStep = async (templateId: string) =>
-    db().productionTemplateStep.findUniqueOrThrow({
-      where: { templateId_position: { templateId, position: 1 } },
+describe('Preparação sem responsável padrão (2026-11-19)', () => {
+  const prepDefaults = () =>
+    db().productionTemplateStep.count({
+      where: { stepClass: 'PREPARACAO', defaultAssigneeUserId: { not: null } },
     });
-  /** Instalação recém-migrada: etapa vazia e modelo na versão 1 (como sai da migration). */
-  const resetToMigrated = (templateId: string) =>
-    db().productionTemplateStep.update({
-      where: { templateId_position: { templateId, position: 1 } },
-      data: { defaultAssigneeUserId: null },
-    });
-  const seed = async (withTeam = true) => {
-    const logs: string[] = [];
-    await runSeed({ withTeam, log: (m) => logs.push(m) });
-    return logs;
-  };
 
-  it('modelo novo, não editado e vazio: aplica João e Thiago; repetir o seed não muda nada; antigos sem responsável', async () => {
-    const p = await team();
-    expect((await firstStep(REFORMA)).defaultAssigneeUserId).toBe(p.joao);
-    expect((await firstStep(CABECEIRA)).defaultAssigneeUserId).toBe(p.thiago);
-    const before = await stepsOf();
-    await seed();
-    await seed();
-    expect(await stepsOf()).toEqual(before);
-    expect(
-      await db().productionTemplateStep.count({
-        where: {
-          templateId: { notIn: [REFORMA, CABECEIRA] },
-          defaultAssigneeUserId: { not: null },
-        },
-      }),
-    ).toBe(0);
-    expect(
-      (await db().productionTemplate.findMany({ where: { id: { in: [REFORMA, CABECEIRA] } } })).map(
-        (t) => t.version,
-      ),
-    ).toEqual([1, 1]);
-  });
-
-  it('modelo editado pelo gestor: etapa vazia continua vazia e responsável diferente é preservado', async () => {
+  it('o seed não escolhe ninguém e o cadastro do modelo não guarda responsável na preparação', async () => {
     const admin = await loginAdmin(app);
     const p = await team();
-    const list = await templates(admin);
-    // Reforma: o gestor esvazia a etapa (decisão: usar o responsável global).
-    const reforma = list.find((t) => t.id === REFORMA)!;
-    expect(
-      (
-        await admin.put(
-          `/api/v1/production-templates/${REFORMA}`,
-          templateBody(reforma, {}, () => ({ defaultAssigneeUserId: null })),
-        )
-      ).status,
-    ).toBe(200);
-    // Cabeceira: o gestor troca o responsável da preparação pelo João.
-    const cab = list.find((t) => t.id === CABECEIRA)!;
-    expect(
-      (
-        await admin.put(
-          `/api/v1/production-templates/${CABECEIRA}`,
-          templateBody(cab, {}, (s) =>
-            s.stepClass === 'PREPARACAO' ? { defaultAssigneeUserId: p.joao } : {},
-          ),
-        )
-      ).status,
-    ).toBe(200);
-    const before = await stepsOf();
-    for (let i = 0; i < 3; i++) await seed();
-    expect(await stepsOf()).toEqual(before);
-    expect((await firstStep(REFORMA)).defaultAssigneeUserId).toBeNull();
-    expect((await firstStep(CABECEIRA)).defaultAssigneeUserId).toBe(p.joao);
-  });
-
-  it('funcionário ausente ou com nome repetido: nada é configurado (sem escolha arbitrária) e o motivo é registrado', async () => {
-    const p = await team();
-    // Ausente: o João passa a se chamar de outro jeito (seed sem cadastro de equipe).
-    await resetToMigrated(REFORMA);
-    await db().employee.update({ where: { userId: p.joao }, data: { displayName: 'João Pedro' } });
-    const absent = await seed(false);
-    expect((await firstStep(REFORMA)).defaultAssigneeUserId).toBeNull();
-    expect(absent.join('\n')).toMatch(/nenhum funcionário ativo chamado João/);
-    // Repetido: dois funcionários ativos chamados Thiago.
-    await resetToMigrated(CABECEIRA);
-    const role = await db().role.findUniqueOrThrow({ where: { key: 'cabeceiras_qualidade' } });
-    await db().user.create({
-      data: {
-        displayName: 'Thiago',
-        roles: { create: { roleId: role.id } },
-        employee: {
-          create: {
-            fullName: 'Thiago Segundo',
-            displayName: 'Thiago',
-            jobTitle: 'Cabeceiras',
-            color: '#111111',
-          },
-        },
-      },
-    });
-    const twice = await seed(false);
-    expect((await firstStep(CABECEIRA)).defaultAssigneeUserId).toBeNull();
-    expect(twice.join('\n')).toMatch(/mais de um funcionário ativo chamado Thiago/);
-    // Com um único João novamente, a configuração inicial é aplicada (modelo ainda na versão 1).
-    await db().employee.update({ where: { userId: p.joao }, data: { displayName: 'João' } });
-    await seed(false);
-    expect((await firstStep(REFORMA)).defaultAssigneeUserId).toBe(p.joao);
-    expect((await firstStep(CABECEIRA)).defaultAssigneeUserId).toBeNull();
+    await runSeed({ withTeam: true, log: () => undefined });
+    expect(await prepDefaults()).toBe(0);
+    const cab = (await templates(admin)).find((t) => t.id === CABECEIRA)!;
+    const r = await admin.put(
+      `/api/v1/production-templates/${CABECEIRA}`,
+      templateBody(cab, {}, (s) =>
+        s.stepClass === 'PREPARACAO' ? { defaultAssigneeUserId: p.joao } : {},
+      ),
+    );
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(await prepDefaults()).toBe(0);
   });
 });

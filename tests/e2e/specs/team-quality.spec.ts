@@ -4,7 +4,7 @@ import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
- * Fase 10 — qualidade, correção, embalagem, entrega e logística, com dados fictícios.
+ * Fase 10 — qualidade, correção, entrega e logística, com dados fictícios (S1: sem embalagem).
  * Painel (gestor) + tablets do Ricardo, do Thiago e do João + celular do André (logística
  * terceirizada). Ricardo conclui o sofá → Thiago reprova (costura) → Ricardo corrige → nova
  * inspeção aprovada → João embala → gestor agenda → André entrega. Presença num dia próprio.
@@ -71,8 +71,8 @@ async function startAndComplete(p: Page, card: Locator, note: string) {
   await p.getByRole('button', { name: 'Voltar ao Meu dia' }).click();
 }
 
-test.describe.serial('Fase 10 — qualidade, embalagem e entrega', () => {
-  test('produção → reprovação → correção → aprovação → embalagem → agenda → entrega', async ({
+test.describe.serial('Fase 10 — qualidade e entrega (S1: sem embalagem)', () => {
+  test('produção → reprovação → correção → aprovação → agenda → entrega', async ({
     page,
     browser,
   }) => {
@@ -224,26 +224,15 @@ test.describe.serial('Fase 10 — qualidade, embalagem e entrega', () => {
       await expect(d2.getByTestId('inspection-status')).toContainText('Aprovada');
       await evidence(tt, '04-tablet-thiago-aprovada');
 
-      // 5. A embalagem vai para o João (disponível), que registra proteção e local.
-      const pack = myCard(jt, /Embalar/);
-      await expect(pack).toBeVisible();
-      await pack
-        .getByRole('button', { name: /^Abrir/ })
-        .first()
-        .click();
-      await jt.getByTestId('task-actions').getByRole('button', { name: 'Iniciar' }).click();
-      const panel = jt.getByTestId('packaging-panel');
-      await panel.getByRole('button', { name: 'Plástico bolha' }).click();
-      await panel.getByLabel('Onde a peça ficou').selectOption({ label: 'Expedição' });
-      await evidence(jt, '05-tablet-joao-embalagem');
-      await panel.getByRole('button', { name: 'Concluir embalagem' }).click();
-      await expect(jt.getByText('Embalagem concluída').first()).toBeVisible();
+      // 5. Reformulação S1: não há embalagem — nenhuma tarefa "Embalar" chega ao tablet do João.
+      await jt.reload();
+      await expect(myCard(jt, /Embalar/)).toHaveCount(0);
 
       // 6. Painel: peça pronta para entrega; o gestor agenda (só ele) com o André.
       await page.goto('/painel/entregas');
       await page.getByRole('tab', { name: /Prontas para entrega/ }).click();
       const ready = page.getByTestId(`ready-${sofa.code}`);
-      await expect(ready).toContainText('Expedição');
+      await expect(ready).toBeVisible();
       await evidence(page, '06-painel-prontas-para-entrega');
       await page
         .getByTestId('ready-pieces')

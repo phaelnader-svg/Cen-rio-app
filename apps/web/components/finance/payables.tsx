@@ -1,18 +1,21 @@
 'use client';
 
 import {
-  EXPENSE_CATEGORY_LABEL,
   PAYABLE_CATEGORY_LABEL,
   PAYABLE_STATUS_LABEL,
+  expenseCategoryLabel,
+  payableCategoryLabel,
+  type ExpenseCategoryDto,
   PAYMENT_METHOD_LABEL,
   type PayableDto,
   type RecurringExpenseDto,
 } from '@cenario/shared';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Plus, RefreshCw, Tags } from 'lucide-react';
 import { useState } from 'react';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/field';
 import { Alert, Badge, Spinner } from '@/components/ui/misc';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/hooks';
@@ -20,6 +23,7 @@ import {
   brDate,
   localToday,
   money,
+  useExpenseCategories,
   useExpenses,
   useFinSend,
   usePayable,
@@ -27,14 +31,45 @@ import {
   useRecurring,
   type Period,
 } from '@/lib/finance';
-import { FormDialog, PAYMENT_OPTIONS, Table } from './common';
+import { FormDialog, NEW_OPTION, PAYMENT_OPTIONS, Table } from './common';
 import { History, statusTone } from './revenue';
+
+export const NEW_CATEGORY_LABEL = '+ Nova categoria…';
+
+/** Opções do menu de categoria: as ativas (e a atual do registro, mesmo se escondida depois). */
+export function categoryOptions(
+  list: ExpenseCategoryDto[] | undefined,
+  opts: { payable?: boolean; current?: string } = {},
+) {
+  const out = (list ?? [])
+    .filter((c) => c.active || c.value === opts.current)
+    .map((c) => ({ value: c.value, label: c.label }));
+  if (opts.current && !out.some((o) => o.value === opts.current))
+    out.push({ value: opts.current, label: expenseCategoryLabel(opts.current) });
+  if (opts.payable)
+    for (const k of ['MATERIAL', 'LOGISTICA', 'SERVICOS'] as const)
+      out.push({ value: k, label: PAYABLE_CATEGORY_LABEL[k] });
+  return out;
+}
+
+/** Categoria escolhida no formulário; "+ Nova categoria…" cadastra antes de salvar a despesa. */
+export async function chosenCategory(v: Record<string, string>) {
+  if (v.category !== NEW_OPTION) return v.category;
+  const c = await api<ExpenseCategoryDto>('/api/v1/finance/expense-categories', {
+    method: 'POST',
+    body: { name: (v.category__novo ?? '').trim() },
+    idempotencyKey: crypto.randomUUID().replace(/-/g, ''),
+  });
+  return c.value;
+}
 
 /** Contas a pagar (fornecedores, despesas, logística): só registro, sem pagamento bancário. */
 export function PayablesTab() {
   const can = useCan();
+  const manageCats = can('financeiro.gerenciar');
   const [filter, setFilter] = useState('ABERTO,PARCIAL');
   const q = usePayables(filter || undefined);
+  const cats = useExpenseCategories();
   const [create, setCreate] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   return (
@@ -88,7 +123,7 @@ export function PayablesTab() {
               <td className="px-4 py-2.5 font-mono font-semibold">{p.code}</td>
               <td className="px-4 py-2.5">{p.beneficiary}</td>
               <td className="px-4 py-2.5">
-                {PAYABLE_CATEGORY_LABEL[p.category]}
+                {payableCategoryLabel(p.category)}
                 {p.origin && <p className="text-xs text-ink-muted">{p.origin.code}</p>}
               </td>
               <td className="px-4 py-2.5">{p.description}</td>
@@ -119,7 +154,8 @@ export function PayablesTab() {
               name: 'category',
               label: 'Categoria',
               type: 'select',
-              options: PAYMENT_OPTIONS(PAYABLE_CATEGORY_LABEL),
+              options: categoryOptions(cats.data, { payable: true }),
+              allowNew: manageCats ? NEW_CATEGORY_LABEL : undefined,
             },
             { name: 'description', label: 'Descrição', required: true },
             { name: 'amount', label: 'Valor (R$)', type: 'money', required: true },
@@ -132,12 +168,12 @@ export function PayablesTab() {
             },
             { name: 'notes', label: 'Observações', type: 'textarea' },
           ]}
-          onSubmit={(v, cents, key) =>
+          onSubmit={async (v, cents, key) =>
             api('/api/v1/finance/payables', {
               method: 'POST',
               body: {
                 beneficiary: v.beneficiary,
-                category: v.category,
+                category: await chosenCategory(v),
                 description: v.description,
                 amountCents: cents('amount'),
                 dueDate: v.dueDate,
@@ -182,7 +218,7 @@ function PayableDialog({ id, onClose }: { id: string; onClose: () => void }) {
               Em aberto: <strong>{money(p.openCents)}</strong>
             </p>
             <p>Vencimento: {brDate(p.dueDate)}</p>
-            <p>{PAYABLE_CATEGORY_LABEL[p.category]}</p>
+            <p>{payableCategoryLabel(p.category)}</p>
             <p>
               <Badge tone={statusTone(p.status)}>{PAYABLE_STATUS_LABEL[p.status]}</Badge>
             </p>
@@ -323,7 +359,9 @@ export function ExpensesTab({ period }: { period: Period }) {
   const can = useCan();
   const q = useExpenses(period);
   const rec = useRecurring();
+  const cats = useExpenseCategories();
   const [create, setCreate] = useState(false);
+  const [manageCats, setManageCats] = useState(false);
   const [recurring, setRecurring] = useState<RecurringExpenseDto | 'new' | null>(null);
   const [cancel, setCancel] = useState<{ id: string; version: number; code: string } | null>(null);
   const gen = useFinSend();
@@ -353,6 +391,14 @@ export function ExpensesTab({ period }: { period: Period }) {
               >
                 Gerar recorrentes do mês
               </Button>
+              <Button
+                variant="secondary"
+                icon={<Tags className="size-4" />}
+                onClick={() => setManageCats(true)}
+                data-testid="expense-categories-open"
+              >
+                Categorias
+              </Button>
               <Button icon={<Plus className="size-4" />} onClick={() => setCreate(true)}>
                 Nova despesa
               </Button>
@@ -378,7 +424,7 @@ export function ExpensesTab({ period }: { period: Period }) {
                 <td className="px-4 py-2.5 font-mono font-semibold">{e.code}</td>
                 <td className="px-4 py-2.5">{e.competence.split('-').reverse().join('/')}</td>
                 <td className="px-4 py-2.5">
-                  {EXPENSE_CATEGORY_LABEL[e.category]}
+                  {expenseCategoryLabel(e.category)}
                   {e.recurring && <p className="text-xs text-ink-muted">recorrente</p>}
                 </td>
                 <td className="px-4 py-2.5">{e.description}</td>
@@ -426,7 +472,7 @@ export function ExpensesTab({ period }: { period: Period }) {
             {rec.data.map((r) => (
               <tr key={r.id}>
                 <td className="px-4 py-2.5">{r.description}</td>
-                <td className="px-4 py-2.5">{EXPENSE_CATEGORY_LABEL[r.category]}</td>
+                <td className="px-4 py-2.5">{expenseCategoryLabel(r.category)}</td>
                 <td className="px-4 py-2.5 tabular-nums">{money(r.amountCents)}</td>
                 <td className="px-4 py-2.5">dia {r.dayOfMonth}</td>
                 <td className="px-4 py-2.5">
@@ -457,7 +503,8 @@ export function ExpensesTab({ period }: { period: Period }) {
               name: 'category',
               label: 'Categoria',
               type: 'select',
-              options: PAYMENT_OPTIONS(EXPENSE_CATEGORY_LABEL),
+              options: categoryOptions(cats.data),
+              allowNew: NEW_CATEGORY_LABEL,
             },
             { name: 'description', label: 'Descrição', required: true },
             { name: 'amount', label: 'Valor (R$)', type: 'money', required: true },
@@ -477,11 +524,11 @@ export function ExpensesTab({ period }: { period: Period }) {
             },
             { name: 'beneficiary', label: 'Beneficiário', required: true },
           ]}
-          onSubmit={(v, cents, key) =>
+          onSubmit={async (v, cents, key) =>
             api('/api/v1/finance/expenses', {
               method: 'POST',
               body: {
-                category: v.category,
+                category: await chosenCategory(v),
                 description: v.description,
                 amountCents: cents('amount'),
                 competence: v.competence,
@@ -505,7 +552,10 @@ export function ExpensesTab({ period }: { period: Period }) {
               name: 'category',
               label: 'Categoria',
               type: 'select',
-              options: PAYMENT_OPTIONS(EXPENSE_CATEGORY_LABEL),
+              options: categoryOptions(cats.data, {
+                current: recurring === 'new' ? undefined : recurring.category,
+              }),
+              allowNew: NEW_CATEGORY_LABEL,
               initial: recurring === 'new' ? undefined : recurring.category,
             },
             {
@@ -561,9 +611,9 @@ export function ExpensesTab({ period }: { period: Period }) {
               initial: recurring === 'new' || recurring.active ? '1' : '0',
             },
           ]}
-          onSubmit={(v, cents, key) => {
+          onSubmit={async (v, cents, key) => {
             const body = {
-              category: v.category,
+              category: await chosenCategory(v),
               description: v.description,
               amountCents: cents('amount'),
               dayOfMonth: Number(v.day),
@@ -585,6 +635,9 @@ export function ExpensesTab({ period }: { period: Period }) {
           }}
         />
       )}
+      {manageCats && (
+        <CategoriesDialog list={cats.data ?? []} onClose={() => setManageCats(false)} />
+      )}
       {cancel && (
         <FormDialog
           title={`Cancelar ${cancel.code}`}
@@ -601,5 +654,97 @@ export function ExpensesTab({ period }: { period: Period }) {
         />
       )}
     </div>
+  );
+}
+
+/** Categorias de despesa: as fixas e as cadastradas pela empresa (que podem ser escondidas). */
+function CategoriesDialog({ list, onClose }: { list: ExpenseCategoryDto[]; onClose: () => void }) {
+  const [name, setName] = useState('');
+  const send = useFinSend(() => setName(''));
+  const add = () =>
+    send.m.mutate({
+      run: () =>
+        api('/api/v1/finance/expense-categories', {
+          method: 'POST',
+          body: { name: name.trim() },
+          idempotencyKey: crypto.randomUUID().replace(/-/g, ''),
+        }),
+      ok: 'Categoria cadastrada.',
+    });
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Categorias de despesa"
+      description="As categorias aparecem no menu da despesa, da recorrente e da conta a pagar."
+    >
+      {send.error && (
+        <Alert tone="danger" className="mb-3">
+          {send.error}
+        </Alert>
+      )}
+      <form
+        className="mb-4 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim().length >= 2) add();
+        }}
+      >
+        <Input
+          className="flex-1"
+          placeholder="Nova categoria (ex.: Manutenção)"
+          maxLength={30}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          data-testid="expense-category-name"
+          aria-label="Nome da nova categoria"
+        />
+        <Button
+          type="submit"
+          icon={<Plus className="size-4" />}
+          disabled={name.trim().length < 2}
+          loading={send.m.isPending}
+          data-testid="expense-category-add"
+        >
+          Adicionar
+        </Button>
+      </form>
+      <ul
+        className="divide-y divide-line rounded-xl border border-line"
+        data-testid="expense-categories"
+      >
+        {list.map((c) => (
+          <li key={c.value} className="flex items-center gap-3 px-3 py-2">
+            <span className={c.active ? 'flex-1' : 'flex-1 text-ink-muted line-through'}>
+              {c.label}
+            </span>
+            {c.custom ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={c.active ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                onClick={() =>
+                  send.m.mutate({
+                    run: () =>
+                      api(`/api/v1/finance/expense-categories/${c.id}`, {
+                        method: 'PUT',
+                        body: { active: !c.active },
+                      }),
+                    ok: c.active ? 'Categoria escondida.' : 'Categoria de volta na lista.',
+                  })
+                }
+              >
+                {c.active ? 'Esconder' : 'Mostrar'}
+              </Button>
+            ) : (
+              <span className="text-xs text-ink-muted">padrão</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-ink-muted">
+        Esconder tira a categoria do menu; as despesas já lançadas continuam com ela.
+      </p>
+    </Dialog>
   );
 }

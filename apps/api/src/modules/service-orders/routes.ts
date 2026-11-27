@@ -1,11 +1,12 @@
 import {
   EVENT_TYPES,
+  reworkCode,
   anyPermissionAudience,
   cancelServiceOrderSchema,
   createServiceOrderSchema,
   formatServiceOrderItemCode,
-  materialRequirementSchema,
   measurementSchema,
+  serviceOrderMaterialPurchasedSchema,
   serviceOrderQuerySchema,
   updateServiceOrderItemSchema,
   updateServiceOrderSchema,
@@ -14,6 +15,9 @@ import {
   type ServiceOrderDto,
   type ServiceOrderRevisionDto,
   type ServiceOrderSummaryDto,
+  normalizeQuoteName,
+  type QuoteSnapshot,
+  type QuoteWorkOrder,
 } from '@cenario/shared';
 import { applyServicePriority, lockServicePlanning } from '../production/service-priority';
 import { serviceDeadlineOf, serviceDeadlines } from '../deadlines/service';
@@ -24,13 +28,14 @@ import { emitItemTechnicalChange } from '../../core/item-changes';
 import { actorFrom, actorOf, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
+import { quoteWork } from './quote-work';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
 import { notify } from '../notifications/notify';
 import { protectCancelledServiceOrder } from '../production/cancellation';
-import { readinessOf } from '../purchasing/common';
 import { idParams, toEmployeeSummary } from '../presenters';
 import {
+  asSnapshot,
   can,
   dateOnly,
   lockOrderItems,
@@ -43,27 +48,32 @@ import { itemAllocations } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { orderRevenue } from '../finance/revenue';
 import { loadTeam, upholsterersOf } from '../production/distribution';
+import { loadOperationalState, loadOperationalStates } from './operational';
+import { nextStepsOf } from '../production/shop-floor';
 import { createServiceOrder } from './service';
+import { requireCompanyId } from '../../core/tenant';
+import { announce as announceOsMaterials } from '../os-materials/routes';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
 const AUDIENCE = anyPermissionAudience('os.ver', 'pedidos.ver');
-const itemParams = z.object({ id: z.string().uuid(), itemId: z.string().uuid() });
-const materialParams = z.object({ id: z.string().uuid(), materialId: z.string().uuid() });
+const itemParams = z.object({ id: z.guid(), itemId: z.guid() });
+
+const reworkSelect = { select: { id: true, number: true } } as const;
 
 const fullInclude = {
-  order: { select: { id: true, number: true } },
+  order: { select: { id: true, number: true, rework: reworkSelect } },
   customer: true,
   technicalLead: true,
   createdBy: { select: { displayName: true } },
+  materialPurchasedBy: { select: { displayName: true } },
   items: {
     include: {
       measuredBy: { select: { displayName: true } },
-      orderItem: { include: { receiptLines: { select: { location: true } } } },
+      currentLocation: { select: { id: true, label: true } },
     },
     orderBy: { position: 'asc' as const },
   },
-  materials: { orderBy: { createdAt: 'asc' as const } },
 } satisfies Prisma.ServiceOrderInclude;
 
 function measurementsOf(json: Prisma.JsonValue): MeasurementDto[] {
@@ -77,7 +87,11 @@ export async function loadServiceOrderDto(
   const so = await db.serviceOrder.findUnique({ where: { id }, include: fullInclude });
   if (!so) throw Errors.notFound('Ordem de serviço');
   const measuredCount = so.items.filter((i) => measurementsOf(i.measurements).length > 0).length;
-  const materialsState = (await readinessOf(db, id)).state;
+  // Materiais e medidas nunca impedem o início da produção; a prontidão só informa (a lista
+  // simples da OS dá o aviso).
+  const simpleMaterialsPending = await db.serviceOrderMaterial.count({
+    where: { serviceOrderId: id, removedAt: null, available: false },
+  });
   // Fase 5: programada quando há tarefa ativa em planejamento publicado.
   const scheduled = await db.productionTask.count({
     where: {
@@ -86,12 +100,37 @@ export async function loadServiceOrderDto(
       status: { notIn: ['RASCUNHO', 'CANCELADA'] },
     },
   });
+  // 2026-11-25: serviço "No local" — a equipe vê dia, horário e endereço na própria OS.
+  const visit = await db.pickupRequest.findFirst({
+    where: { orderId: so.orderId, kind: 'NO_LOCAL', status: { not: 'CANCELADA' } },
+    orderBy: [{ scheduledDate: 'asc' }, { number: 'asc' }],
+    select: { scheduledDate: true, windowStart: true, addressSnapshot: true },
+  });
+  const visitAddress = visit ? asSnapshot(visit.addressSnapshot) : null;
   return {
     id: so.id,
     number: so.number,
     code: serviceOrderCode(so.number),
     status: so.status,
+    onSite: visit
+      ? {
+          date: dateOnly(visit.scheduledDate),
+          windowStart: visit.windowStart,
+          address: visitAddress
+            ? [
+                `${visitAddress.street}, ${visitAddress.number}`,
+                visitAddress.district,
+                `${visitAddress.city}/${visitAddress.state}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            : null,
+        }
+      : null,
     order: { id: so.order.id, code: orderCode(so.order.number) },
+    rework: so.order.rework
+      ? { id: so.order.rework.id, code: reworkCode(so.order.rework.number) }
+      : null,
     customer: toCustomerSummary(so.customer),
     priority: so.priority,
     promisedDate: dateOnly(so.promisedDate),
@@ -100,6 +139,8 @@ export async function loadServiceOrderDto(
     itemCount: so.items.length,
     pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),
     createdAt: so.createdAt.toISOString(),
+    materialPurchasedAt: so.materialPurchasedAt?.toISOString() ?? null,
+    materialPurchasedBy: so.materialPurchasedBy?.displayName ?? null,
     technicalInstructions: so.technicalInstructions,
     notes: so.notes,
     items: so.items.map((i) => ({
@@ -121,34 +162,15 @@ export async function loadServiceOrderDto(
       measuredAt: i.measuredAt?.toISOString() ?? null,
       measuredBy: i.measuredBy?.displayName ?? null,
       measurementKind: i.measurementKind,
-      locations: [...new Set(i.orderItem.receiptLines.map((l) => l.location))],
+      currentLocation: i.currentLocation,
       version: i.version,
-    })),
-    materials: so.materials.map((m) => ({
-      id: m.id,
-      serviceOrderItemId: m.serviceOrderItemId,
-      kind: m.kind,
-      description: m.description,
-      quantity: m.quantity ? Number(m.quantity) : null,
-      unit: m.unitCode ?? m.unit,
-      sourcing: m.sourcing,
-      notes: m.notes,
-      createdAt: m.createdAt.toISOString(),
-      origin: m.origin,
-      status: m.status,
-      closeReason: m.closeReason,
-      color: m.color,
-      foamDensity: m.foamDensity,
-      thicknessCm: m.thicknessCm ? Number(m.thicknessCm) : null,
     })),
     // Prontidão para produção: apenas informativa. O início é decidido tarefa a
     // tarefa pelo motor de liberação (Fase 5), nunca pela OS como um todo.
     readiness: {
-      measurements: so.items.length > 0 && measuredCount === so.items.length ? 'OK' : 'PENDENTE',
+      measurements: so.items.length > 0 && measuredCount === so.items.length ? 'OK' : 'INFORMATIVO',
       technicalLead: so.technicalLeadId ? 'OK' : 'PENDENTE',
-      // Fase 4: calculada a partir de solicitações, compras, recebimentos e reservas.
-      materials: materialsState === 'COMPLETO' ? 'OK' : 'PENDENTE',
-      materialsState,
+      simpleMaterialsPending,
       scheduling: scheduled > 0 ? 'OK' : 'PENDENTE',
       canStartProduction: false,
     },
@@ -310,6 +332,69 @@ type AvailableCommercial = {
   serviceOrders: { code: string; revenueCents: number; pieces: number }[];
 };
 
+/**
+ * Fluxo da OS (2026-11-18): o que o orçamento aprovado já diz sobre a execução — tecido,
+ * detalhes da O.S. do orçamento, foto e o tapeceiro (ligado pelo nome ao titular).
+ */
+function quotePrefill(
+  quote: { number: number; snapshot: Prisma.JsonValue; workOrder: Prisma.JsonValue },
+  upholsterers: { userId: string; displayName: string }[],
+) {
+  const snap = (quote.snapshot ?? {}) as Partial<QuoteSnapshot>;
+  const wo = (quote.workOrder ?? null) as Partial<QuoteWorkOrder> | null;
+  const fabrics = (snap.fabrics ?? []).filter(Boolean);
+  const details: string[] = [];
+  // 2026-11-18 (Raphael): o serviço do tapeceiro escolhido no orçamento vai para a OS.
+  const upholsteryService = snap.upholstery?.name?.trim() || null;
+  if (snap.sofaCount && snap.sofaCount > 1) details.push(`Quantidade: ${snap.sofaCount}`);
+  if (wo) {
+    if (wo.keepOriginal) details.push(`Manter o original: ${wo.keepOriginal}`);
+    if (wo.changeFoam) details.push(`Trocar espuma: ${wo.changeFoam}`);
+    if (wo.changeFabric) details.push(`Trocar tecido: ${wo.changeFabric}`);
+    if (wo.repairStructure) details.push(`Reparar estrutura: ${wo.repairStructure}`);
+  } else {
+    if (snap.foamChange !== undefined)
+      details.push(`Trocar espuma: ${snap.foamChange ? 'Sim' : 'Não'}`);
+    if (snap.fabricChange !== undefined)
+      details.push(`Trocar tecido: ${snap.fabricChange ? 'Sim' : 'Não'}`);
+  }
+  if (wo?.fabricMeters) details.push(`Tecido: ${String(wo.fabricMeters).replace('.', ',')} m`);
+  const materials = (wo?.items ?? snap.lines ?? [])
+    .filter((l) => l && l.name && (('realQty' in l ? l.realQty : l.qty) ?? 0) > 0)
+    .map(
+      (l) =>
+        `${l.name} (${String('realQty' in l ? l.realQty : l.qty).replace('.', ',')} ${l.unit})`,
+    );
+  const name = wo?.responsibleName ? normalizeQuoteName(wo.responsibleName) : '';
+  const upholsterer = name
+    ? (upholsterers.find((u) => normalizeQuoteName(u.displayName) === name) ?? null)
+    : null;
+  return {
+    number: quote.number,
+    service: snap.service ?? '',
+    upholsteryService,
+    fabricName: wo?.fabricName?.trim() || fabrics.join(', '),
+    details,
+    notes: wo?.notes?.trim() ?? '',
+    materials,
+    responsibleName: wo?.responsibleName ?? null,
+    upholstererUserId: upholsterer?.userId ?? null,
+    photoDataUrl: wo?.photoDataUrl ?? null,
+  };
+}
+
+/** Responsável técnico da OS: o funcionário ativo com o mesmo nome do responsável do orçamento. */
+async function quoteLead(db: Tx | PrismaClient, quote: { workOrder: Prisma.JsonValue }) {
+  const wo = (quote.workOrder ?? null) as Partial<QuoteWorkOrder> | null;
+  const name = wo?.responsibleName ? normalizeQuoteName(wo.responsibleName) : '';
+  if (!name) return null;
+  const employees = await db.employee.findMany({
+    where: { active: true },
+    select: { id: true, displayName: true },
+  });
+  return employees.find((e) => normalizeQuoteName(e.displayName) === name)?.id ?? null;
+}
+
 export async function serviceOrderRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -320,6 +405,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const where: Prisma.ServiceOrderWhereInput = {
       ...(q.status ? { status: q.status } : {}),
       ...(q.orderId ? { orderId: q.orderId } : {}),
+      ...(q.material === 'AGUARDANDO'
+        ? { status: 'ABERTA', materialPurchasedAt: null }
+        : q.material === 'COMPRADO'
+          ? { materialPurchasedAt: { not: null } }
+          : {}),
       ...(q.q
         ? {
             OR: [
@@ -335,7 +425,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       prisma.serviceOrder.findMany({
         where,
         include: {
-          order: { select: { id: true, number: true } },
+          order: { select: { id: true, number: true, rework: reworkSelect } },
           customer: true,
           technicalLead: true,
           items: { select: { quantity: true } },
@@ -346,6 +436,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       }),
     ]);
     const deadlines = await serviceDeadlines(prisma, { id: { in: rows.map((r) => r.id) } });
+    const states = await loadOperationalStates(
+      prisma,
+      rows.map((r) => r.id),
+    );
+    const nexts = await nextStepsOf(prisma, rows, states);
     return {
       total,
       items: rows.map(
@@ -355,6 +450,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           code: serviceOrderCode(so.number),
           status: so.status,
           order: { id: so.order.id, code: orderCode(so.order.number) },
+          rework: so.order.rework
+            ? { id: so.order.rework.id, code: reworkCode(so.order.rework.number) }
+            : null,
           customer: toCustomerSummary(so.customer),
           priority: so.priority,
           promisedDate: dateOnly(so.promisedDate),
@@ -363,6 +461,10 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           itemCount: so.items.length,
           pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),
           createdAt: so.createdAt.toISOString(),
+          materialPurchasedAt: so.materialPurchasedAt?.toISOString() ?? null,
+          version: so.version,
+          operationalState: states.get(so.id)?.state,
+          nextStep: nexts.get(so.id) ?? null,
         }),
       ),
     } satisfies PageDto<ServiceOrderSummaryDto>;
@@ -370,7 +472,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
 
   /** Peças recebidas ainda não incluídas em OS (base para criar a OS). */
   app.get('/api/v1/service-orders/available', { config: { access: MANAGE } }, async (request) => {
-    const { orderId } = z.object({ orderId: z.string().uuid() }).parse(request.query);
+    const { orderId } = z.object({ orderId: z.guid() }).parse(request.query);
     const order = await prisma.commercialOrder.findUnique({
       where: { id: orderId },
       include: { customer: true, items: { orderBy: { position: 'asc' } } },
@@ -404,16 +506,31 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     }
     const canPlan = perms.has('producao.planejar');
     const canLabor = perms.has('financeiro.ver') && perms.has('financeiro.gerenciar');
+    const upholsterers = canPlan ? upholsterersOf(await loadTeam(prisma)) : [];
+    // Fluxo da OS (2026-11-18): a tela de gerar OS vem preenchida com o orçamento aprovado.
+    const quote = await prisma.quote.findFirst({
+      where: { orderId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
     return {
       order: {
         id: order.id,
         code: orderCode(order.number),
         status: order.status,
         contractedService: order.contractedService,
+        promisedDate: dateOnly(order.promisedDate),
+        technicalNotes: order.technicalNotes,
       },
+      quote: quote
+        ? {
+            ...quotePrefill(quote, upholsterers),
+            technicalLeadId: await quoteLead(prisma, quote),
+            work: quoteWork(quote),
+          }
+        : null,
       commercial,
       permissions: { upholsterer: canPlan, labor: canLabor },
-      upholsterers: canPlan ? upholsterersOf(await loadTeam(prisma)) : [],
+      upholsterers,
       customer: toCustomerSummary(order.customer),
       items: order.items.map((i) => ({
         orderItemId: i.id,
@@ -422,7 +539,14 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         quantity: i.quantity,
         receivedQuantity: i.receivedQuantity,
         inServiceOrders: alloc.inServiceOrders(i.id),
-        available: i.receivedQuantity - i.returnedQuantity - alloc.inServiceOrders(i.id),
+        available: i.quantity - i.returnedQuantity - alloc.inServiceOrders(i.id),
+        serviceType: i.serviceType,
+        fabricName: i.fabricName,
+        fabricColor: i.fabricColor,
+        fabricReference: i.fabricReference,
+        technicalNotes: i.technicalNotes ?? i.notes,
+        plannedUpholstererUserId: canPlan ? i.plannedUpholstererUserId : null,
+        plannedLaborUnitCents: canLabor ? i.plannedLaborUnitCents : null,
       })),
     };
   });
@@ -431,6 +555,21 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     return loadServiceOrderDto(prisma, id);
   });
+
+  /**
+   * Reformulação, Fase 0: estado operacional derivado (somente leitura; nenhum contrato existente
+   * muda). Só no painel: a base técnica dos estados que as próximas fases vão exibir.
+   */
+  app.get(
+    '/api/v1/service-orders/:id/operational-state',
+    { config: { access: { session: 'WEB', permissions: ['os.ver'] } } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const state = await loadOperationalState(prisma, id);
+      if (!state) throw Errors.notFound('Ordem de serviço');
+      return state;
+    },
+  );
 
   app.get('/api/v1/service-orders/:id/revisions', { config: { access: VIEW } }, async (request) => {
     const { id } = idParams.parse(request.params);
@@ -459,8 +598,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Cria a OS técnica. Só aceita peças efetivamente recebidas e ainda não
-   * incluídas em outra OS ativa — antes do recebimento físico, a OS é bloqueada.
+   * Cria a OS técnica a partir do pedido (peças ainda não incluídas em outra OS ativa). A tela
+   * oferece a criação depois que a peça chega na tapeçaria; a API não exige a chegada.
    */
   app.post(
     '/api/v1/service-orders',
@@ -602,7 +741,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     async (request) => {
       const { id, itemId } = itemParams.parse(request.params);
       const input = measurementSchema.parse(request.body);
-      const company = await prisma.companySettings.findUnique({ where: { id: 1 } });
+      const company = await prisma.companySettings.findUnique({
+        where: { id: requireCompanyId() },
+      });
       const isManager = can(request, 'os.gerenciar');
       const routineDay =
         weekdayIn(company?.timezone ?? 'America/Sao_Paulo') === (company?.measurementWeekday ?? 5);
@@ -646,112 +787,117 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     },
   );
 
+  /** Cancela a OS: as peças voltam a ficar disponíveis para outra OS. */
+  /**
+   * Fluxo da OS (2026-11-18): botão rápido "Material comprado". Marcado, a OS entra na
+   * programação da semana; desmarcar só vale enquanto ela ainda não foi programada.
+   */
   app.post(
-    '/api/v1/service-orders/:id/materials',
-    { config: { access: MANAGE } },
-    async (request, reply) => {
-      const { id } = idParams.parse(request.params);
-      const input = materialRequirementSchema.parse(request.body);
-      await prisma.$transaction(async (tx) => {
-        const revision = await lockForRevision(tx, id);
-        const so = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
-        if (so.status === 'CANCELADA') throw Errors.business('OS cancelada não pode ser alterada.');
-        if (input.serviceOrderItemId) {
-          const item = await tx.serviceOrderItem.findFirst({
-            where: { id: input.serviceOrderItemId, serviceOrderId: id },
-          });
-          if (!item) throw Errors.validation(undefined, 'Item não pertence a esta OS.');
-        }
-        const m = await tx.materialRequirement.create({
-          data: {
-            serviceOrderId: id,
-            serviceOrderItemId: input.serviceOrderItemId ?? null,
-            kind: input.kind,
-            description: input.description,
-            quantity: input.quantity ?? null,
-            unit: input.unit ?? null,
-            sourcing: input.sourcing,
-            notes: input.notes ?? null,
-          },
-        });
-        await tx.serviceOrder.update({ where: { id }, data: { updatedAt: new Date() } });
-        await recordChange(tx, request, so, revision, {
-          scope: 'MATERIAL',
-          itemId: input.serviceOrderItemId ?? null,
-          changes: {
-            added: { id: m.id, kind: m.kind, description: m.description, sourcing: m.sourcing },
-          },
-          summary: `Material "${m.description}" previsto na OS ${serviceOrderCode(so.number)}.`,
-          action: 'service_order.material_added',
-        });
-      });
-      return reply.status(201).send(await loadServiceOrderDto(prisma, id));
-    },
-  );
-
-  app.delete(
-    '/api/v1/service-orders/:id/materials/:materialId',
+    '/api/v1/service-orders/:id/material-purchased',
     { config: { access: MANAGE } },
     async (request) => {
-      const { id, materialId } = materialParams.parse(request.params);
+      const { id } = idParams.parse(request.params);
+      const input = serviceOrderMaterialPurchasedSchema.parse(request.body);
+      const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
+        await lockServicePlanning(tx, id);
         const revision = await lockForRevision(tx, id);
-        const so = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
-        if (so.status === 'CANCELADA') throw Errors.business('OS cancelada não pode ser alterada.');
-        const m = await tx.materialRequirement.findFirst({
-          where: { id: materialId, serviceOrderId: id },
-        });
-        if (!m) throw Errors.notFound('Material');
-        if (m.origin === 'SOLICITACAO_APROVADA') {
+        const before = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
+        if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (before.status === 'CANCELADA')
+          throw Errors.business('OS cancelada não pode ser alterada.');
+        if (Boolean(before.materialPurchasedAt) === input.purchased) return;
+        if (
+          !input.purchased &&
+          (await tx.productionPlanItem.count({ where: { serviceOrderId: id } })) > 0
+        )
           throw Errors.business(
-            'Material aprovado em solicitação só muda pela revisão da medição (reabrir aprovação).',
+            'Esta OS já está na programação da semana. Tire-a da programação antes de desmarcar o material.',
           );
-        }
-        await tx.materialRequirement.delete({ where: { id: materialId } });
-        await tx.serviceOrder.update({ where: { id }, data: { updatedAt: new Date() } });
-        await recordChange(tx, request, so, revision, {
-          scope: 'MATERIAL',
-          itemId: m.serviceOrderItemId,
-          changes: { removed: { kind: m.kind, description: m.description, sourcing: m.sourcing } },
-          summary: `Material "${m.description}" removido da OS ${serviceOrderCode(so.number)}.`,
-          action: 'service_order.material_removed',
+        const after = await tx.serviceOrder.update({
+          where: { id, version: input.version },
+          data: input.purchased
+            ? {
+                materialPurchasedAt: new Date(),
+                materialPurchasedById: actor.userId,
+                version: { increment: 1 },
+              }
+            : { materialPurchasedAt: null, materialPurchasedById: null, version: { increment: 1 } },
         });
+        await recordChange(tx, request, after, revision, {
+          scope: 'OS',
+          changes: { materialPurchased: { from: !input.purchased, to: input.purchased } },
+          summary: input.purchased
+            ? `OS ${serviceOrderCode(after.number)}: material comprado — liberada para a programação.`
+            : `OS ${serviceOrderCode(after.number)}: material desmarcado — aguardando material.`,
+          action: 'service_order.material_purchased',
+        });
+        // 2026-11-24 (Raphael): "Material comprado" vale para a lista da OS inteira — o que ainda
+        // estava em "Comprar" sai de lá (marcado como comprado, com quem e quando no registro).
+        if (input.purchased) {
+          const pending = await tx.serviceOrderMaterial.updateMany({
+            where: { serviceOrderId: id, purchased: false, removedAt: null },
+            data: { purchased: true, updatedById: actor.userId, version: { increment: 1 } },
+          });
+          if (pending.count) await announceOsMaterials(tx, actor, id);
+        }
       });
       return loadServiceOrderDto(prisma, id);
     },
   );
 
-  /** Cancela a OS: as peças voltam a ficar disponíveis para outra OS. */
   app.post('/api/v1/service-orders/:id/cancel', { config: { access: MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);
     const input = cancelServiceOrderSchema.parse(request.body);
-    await prisma.$transaction(async (tx) => {
-      const revision = await lockForRevision(tx, id);
-      const before = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
-      if (before.version !== input.version) throw Errors.versionConflict(before.version);
-      if (before.status === 'CANCELADA') throw Errors.business('A OS já está cancelada.');
-      await lockOrderItems(tx, before.orderId);
-      const actor = actorFrom(request);
-      const after = await tx.serviceOrder.update({
-        where: { id },
-        data: {
-          status: 'CANCELADA',
-          cancelledAt: new Date(),
-          cancelledById: actor.userId,
-          cancelReason: input.reason,
-          version: { increment: 1 },
-        },
-      });
-      await recordChange(tx, request, after, revision, {
-        scope: 'CANCELAMENTO',
-        changes: { status: { from: before.status, to: 'CANCELADA' } },
-        reason: input.reason,
-        summary: `OS ${serviceOrderCode(after.number)} cancelada.`,
-        action: 'service_order.cancelled',
-      });
-      await emitOrderEvent(tx, request, before.orderId);
-      await protectCancelledServiceOrder(tx, actor, id, input.reason);
-    });
+    await prisma.$transaction((tx) =>
+      cancelServiceOrder(tx, actorFrom(request), id, input.reason, input.version),
+    );
     return loadServiceOrderDto(prisma, id);
   });
+}
+
+/**
+ * Cancela uma OS na transação do chamador (rota da OS e cancelamento do pedido, já que a OS nasce
+ * no fechamento do serviço): tarefas não concluídas são canceladas e as peças ficam livres.
+ */
+export async function cancelServiceOrder(
+  tx: Tx,
+  actor: ActorContext,
+  id: string,
+  reason: string,
+  expectedVersion?: number,
+) {
+  const revision = await lockForRevision(tx, id);
+  const before = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
+  if (expectedVersion !== undefined && before.version !== expectedVersion)
+    throw Errors.versionConflict(before.version);
+  if (before.status === 'CANCELADA') throw Errors.business('A OS já está cancelada.');
+  // 2026-11-26 (ligações): peça já entregue ao cliente não volta — a OS não pode ser cancelada.
+  const delivered = await tx.serviceOrderItem.count({
+    where: { serviceOrderId: id, fulfillmentStage: 'ENTREGUE' },
+  });
+  if (delivered > 0)
+    throw Errors.business(
+      `A OS ${serviceOrderCode(before.number)} já tem peça entregue ao cliente e não pode ser cancelada. Se o cliente devolveu, registre a devolução.`,
+    );
+  await lockOrderItems(tx, before.orderId);
+  const after = await tx.serviceOrder.update({
+    where: { id },
+    data: {
+      status: 'CANCELADA',
+      cancelledAt: new Date(),
+      cancelledById: actor.userId,
+      cancelReason: reason,
+      version: { increment: 1 },
+    },
+  });
+  await recordChange(tx, actor, after, revision, {
+    scope: 'CANCELAMENTO',
+    changes: { status: { from: before.status, to: 'CANCELADA' } },
+    reason,
+    summary: `OS ${serviceOrderCode(after.number)} cancelada.`,
+    action: 'service_order.cancelled',
+  });
+  await emitOrderEvent(tx, actor, before.orderId);
+  await protectCancelledServiceOrder(tx, actor, id, reason);
 }

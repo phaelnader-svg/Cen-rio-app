@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   FULFILLMENT_STAGE_LABEL,
@@ -13,7 +14,6 @@ import {
   type FulfillmentStage,
   type InspectionStatus,
   type NotificationKind,
-  type PackagingStatus,
   type Permission,
   type PieceRefDto,
   type SubstituteReason,
@@ -29,6 +29,7 @@ import { skillsByEmployee } from '../help/engine';
 import { notify, resolveNotifications } from '../notifications/notify';
 import { refreshLaborOf } from '../finance/labor';
 import { laborOwners, notifyOwnChanged } from '../finance/own-changed';
+import { requireCompanyId } from '../../core/tenant';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -278,7 +279,7 @@ const ABSENT = [
  * inspeção e a permissão de inspecionar (Thiago, no cadastro inicial).
  */
 export async function mainInspector(db: Tx | PrismaClient) {
-  const settings = await db.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const candidates = settings?.qualityInspectorUserId
     ? [settings.qualityInspectorUserId]
     : await (async () => {
@@ -359,7 +360,6 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
   const inspection = await db.qualityInspection.findFirst({
     where: { serviceOrderItemId: itemId, status: { not: 'CANCELADA' } },
     orderBy: { round: 'desc' },
-    include: { packaging: true },
   });
   const openCorrections = await db.productionTask.count({
     where: { activity: 'CORRECAO', inspection: { serviceOrderItemId: itemId }, status: OPEN_TASK },
@@ -394,9 +394,7 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
       requiredTasksDone,
       inspection: (inspection?.status ?? null) as InspectionStatus | null,
       openCorrections,
-      packaging: (inspection?.status === 'APROVADA'
-        ? (inspection.packaging?.status ?? null)
-        : null) as PackagingStatus | null,
+      // Reformulação S1: a embalagem não entra mais na prontidão (nem a antiga, só histórico).
       shippingBlock,
       cancelled: item.serviceOrder.status === 'CANCELADA',
       returned: item.fulfillmentStage === 'DEVOLVIDA',
@@ -416,7 +414,7 @@ export async function readinessOfItem(db: Tx | PrismaClient, itemId: string) {
 
 /**
  * Recalcula a etapa da peça (determinística, a partir do banco). Ao chegar em "Pronta para
- * entrega", avisa o gestor uma única vez por embalagem — nunca agenda nada sozinho.
+ * entrega", avisa o gestor uma única vez por aprovação — nunca agenda nada sozinho.
  */
 export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: string) {
   const s = await readinessOfItem(tx, itemId);
@@ -457,7 +455,9 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
     'service_order_item',
   );
   await resolveStageNotices(tx, actor, itemId, before, s.stage);
-  if (s.stage === 'PRONTA_ENTREGA' && s.inspection?.packaging) {
+  // Uma vez por aprovação (S1: sem embalagem).
+  const readyKey = s.inspection?.id;
+  if (s.stage === 'PRONTA_ENTREGA' && readyKey) {
     const siblings = await tx.serviceOrderItem.findMany({
       where: { serviceOrderId: updated.serviceOrderId },
       select: { fulfillmentStage: true },
@@ -470,8 +470,8 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
       actor,
       'entregas.gerenciar',
       'PRONTO_ENTREGA',
-      `PRONTO_ENTREGA:${itemId}:${s.inspection.packaging.id}`,
-      `${pieceCode(updated)} · ${updated.description} (${updated.serviceOrder.customer.name}) está pronta para entrega — ${ready} de ${siblings.length} peça(s) da OS. Agende quando quiser.`,
+      `PRONTO_ENTREGA:${itemId}:${readyKey}`,
+      `${pieceCode(updated)} · ${updated.description} (${updated.serviceOrder.customer.name}) está pronta para entrega — ${ready} de ${plural(siblings.length, 'peça', 'peças')} da OS. Agende quando quiser.`,
       updated.serviceOrderId,
     );
   }
@@ -553,7 +553,7 @@ export async function refreshStagesOfOrder(tx: Tx, actor: ActorContext, serviceO
 // ─────────────────────────── Localização ───────────────────────────
 
 export async function locationByKey(db: Tx | PrismaClient, key: string) {
-  return db.itemLocation.findUnique({ where: { key } });
+  return db.itemLocation.findFirst({ where: { key } });
 }
 
 /** Registra a movimentação (sem exigir cada pequeno deslocamento: só quando informada). */

@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Prisma } from '@cenario/db';
 import { SIMPLIFIED_PRODUCTION_TEMPLATES, classifyStep } from '@cenario/shared';
-import { db, resetDatabase } from './helpers';
+import { db, resetDatabase, ownerDb } from './helpers';
 
 /** Separa os comandos de um script de reversão respeitando blocos $$ … $$ (sem BEGIN/COMMIT). */
 function splitSql(sql: string): string[] {
@@ -159,9 +159,13 @@ describe('Banco de dados e migrations', () => {
     ).rejects.toThrow(/somente inserção/);
   });
 
-  it('restrições de integridade: configuração única, e-mail minúsculo, credencial de dispositivo', async () => {
+  it('restrições de integridade: e-mail minúsculo, credencial de dispositivo, horários', async () => {
+    // Multi-empresa (etapa 2): outras empresas são permitidas; o que não pode é um dado apontar
+    // para uma empresa que não existe.
     await expect(
-      db().companySettings.create({ data: { id: 2, tradeName: 'Outra' } }),
+      db().customer.create({
+        data: { companyId: 999, kind: 'PF', name: 'Sem empresa', searchText: 'x' },
+      }),
     ).rejects.toThrow();
     await expect(
       db().user.create({ data: { displayName: 'X', email: 'Maiuscula@Teste.local' } }),
@@ -212,72 +216,6 @@ describe('Banco de dados e migrations', () => {
     expect(team.every((u) => u.pinHash === null && u.passwordHash === null)).toBe(true);
   });
 
-  it('estabilização da Fase 3: instalação existente passa a ter recebimentos.registrar nas funções da oficina (migration e reversão)', async () => {
-    const DB = resolve(__dirname, '../../../packages/db');
-    const NAME = '20261220000000_recebimentos_permissao_funcoes';
-    const up = readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8');
-    const down = readFileSync(resolve(DB, `rollback/${NAME}.down.sql`), 'utf8');
-    const KEYS = ['tapeceiro', 'cabeceiras_qualidade', 'ajudante'];
-    const granted = async () =>
-      (
-        await db().rolePermission.findMany({
-          where: { permission: 'recebimentos.registrar' },
-          include: { role: { select: { key: true } } },
-        })
-      )
-        .map((p) => p.role.key)
-        .sort();
-    // Instalação existente: funções já tinham permissões (o seed não as completa) e não tinham esta.
-    const roles = await db().role.findMany({ where: { key: { in: KEYS } } });
-    expect(roles).toHaveLength(3);
-    await db().rolePermission.deleteMany({
-      where: { permission: 'recebimentos.registrar', roleId: { in: roles.map((r) => r.id) } },
-    });
-    const custom = await db().role.create({
-      data: {
-        key: 'funcao_personalizada',
-        name: 'Personalizada',
-        description: 'teste',
-        system: false,
-      },
-    });
-    expect(await granted()).toEqual(['gestor']);
-    const others = await db().rolePermission.count({
-      where: { permission: { not: 'recebimentos.registrar' } },
-    });
-    // Migration: concede às três funções; repetir não duplica; nada mais muda.
-    await db().$executeRawUnsafe(up);
-    await db().$executeRawUnsafe(up);
-    expect(await granted()).toEqual(['ajudante', 'cabeceiras_qualidade', 'gestor', 'tapeceiro']);
-    expect(await db().rolePermission.count({ where: { roleId: custom.id } })).toBe(0);
-    expect(
-      await db().rolePermission.count({ where: { permission: { not: 'recebimentos.registrar' } } }),
-    ).toBe(others);
-    // Reversão (executada numa transação desfeita no fim, para não alterar o banco de teste).
-    const statements = down
-      .split(';')
-      .map((st) => st.replace(/--.*$/gm, '').trim())
-      .filter((st) => st && !/^(BEGIN|COMMIT)$/i.test(st));
-    expect(statements).toHaveLength(2);
-    await expect(
-      db().$transaction(async (tx) => {
-        for (const st of statements) await tx.$executeRawUnsafe(st);
-        const left = await tx.rolePermission.findMany({
-          where: { permission: 'recebimentos.registrar' },
-          include: { role: { select: { key: true } } },
-        });
-        expect(left.map((p) => p.role.key)).toEqual(['gestor']);
-        expect(
-          await tx.$queryRawUnsafe<{ n: bigint }[]>(
-            `SELECT count(*) AS n FROM "_prisma_migrations" WHERE "migration_name" = '${NAME}'`,
-          ),
-        ).toEqual([{ n: 0n }]);
-        throw new Error('desfazer');
-      }),
-    ).rejects.toThrow('desfazer');
-    expect(await granted()).toEqual(['ajudante', 'cabeceiras_qualidade', 'gestor', 'tapeceiro']);
-    await db().role.delete({ where: { id: custom.id } });
-  });
   it('Rodada 3 (F1-08): instalação existente passa a ter financeiro.producao_propria no tapeceiro e na logística (20270126), sem tocar outras funções', async () => {
     const DB = resolve(__dirname, '../../../packages/db');
     const NAME = '20270126000000_meus_ganhos_permissao';
@@ -355,7 +293,7 @@ describe('Banco de dados e migrations', () => {
     };
     // Reversão sem pedidos "cliente entrega": remove a coluna e o registro; reaplicar funciona.
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         await run(tx);
         expect(await column(tx)).toEqual([]);
         expect(
@@ -370,7 +308,7 @@ describe('Banco de dados e migrations', () => {
     ).rejects.toThrow('desfazer');
     // Com um pedido "cliente entrega", a reversão é bloqueada (a informação se perderia).
     await db().commercialOrder.update({ where: { id: order.id }, data: { customerDropOff: true } });
-    await expect(db().$transaction(async (tx) => run(tx))).rejects.toThrow(
+    await expect(ownerDb().$transaction(async (tx) => run(tx))).rejects.toThrow(
       /Reversão bloqueada: 1 pedido/,
     );
     expect(await column(db())).toEqual([{ default: 'false', nullable: 'NO' }]);
@@ -428,7 +366,7 @@ describe('Banco de dados e migrations', () => {
     };
     // Sem intenção registrada: a reversão remove tudo; reaplicar a migration funciona.
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         await run(tx, down);
         expect(await columns(tx)).toEqual([]);
         expect(
@@ -446,7 +384,7 @@ describe('Banco de dados e migrations', () => {
       where: { id: item.id },
       data: { plannedUpholstererUserId: owner, plannedLaborUnitCents: 1000 },
     });
-    await expect(db().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
+    await expect(ownerDb().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
       /Reversão bloqueada: 1 item/,
     );
     expect(await columns(db())).toHaveLength(2);
@@ -535,7 +473,7 @@ describe('Banco de dados e migrations', () => {
     // Sem uso: a reversão remove colunas, registros novos e o registro da migration; reaplicar
     // funciona. Tudo numa transação desfeita no fim.
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         await run(tx, down);
         expect(await columns(tx)).toEqual([]);
         expect(
@@ -559,7 +497,7 @@ describe('Banco de dados e migrations', () => {
       where: { id: legacy.id },
       data: { serviceTypes: ['REPARO'] },
     });
-    await expect(db().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
+    await expect(ownerDb().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
       /Reversão bloqueada: 1 configuração/,
     );
     await db().productionTemplate.update({ where: { id: legacy.id }, data: { serviceTypes: [] } });

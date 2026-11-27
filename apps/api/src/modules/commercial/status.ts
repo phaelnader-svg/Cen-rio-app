@@ -46,10 +46,18 @@ export async function refreshOrderStatus(tx: Tx, orderId: string): Promise<Comme
 
 /** Quantidades por item do pedido: em retiradas ativas e já alocadas em OS ativas. */
 export async function itemAllocations(tx: Tx, orderId: string) {
-  const [pickupRows, osRows] = await Promise.all([
+  const [pickupRows, onSiteRows, osRows] = await Promise.all([
     tx.pickupRequestItem.groupBy({
       by: ['orderItemId'],
       where: { pickup: { orderId, status: { in: [...ACTIVE_PICKUP_STATUSES] } } },
+      _sum: { quantity: true },
+    }),
+    // 2026-11-25: peças com serviço "No local" agendado (a OS pode nascer antes do dia).
+    tx.pickupRequestItem.groupBy({
+      by: ['orderItemId'],
+      where: {
+        pickup: { orderId, kind: 'NO_LOCAL', status: { in: [...SCHEDULED_PICKUP_STATUSES] } },
+      },
       _sum: { quantity: true },
     }),
     tx.serviceOrderItem.groupBy({
@@ -64,8 +72,10 @@ export async function itemAllocations(tx: Tx, orderId: string) {
   ]);
   const inPickups = new Map(pickupRows.map((r) => [r.orderItemId, r._sum.quantity ?? 0]));
   const inServiceOrders = new Map(osRows.map((r) => [r.orderItemId, r._sum.quantity ?? 0]));
+  const onSite = new Map(onSiteRows.map((r) => [r.orderItemId, r._sum.quantity ?? 0]));
   return {
     inPickups: (id: string) => inPickups.get(id) ?? 0,
+    inOnSiteVisits: (id: string) => onSite.get(id) ?? 0,
     inServiceOrders: (id: string) => inServiceOrders.get(id) ?? 0,
   };
 }

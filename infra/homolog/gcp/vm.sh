@@ -14,6 +14,7 @@
 #   vm.sh semear               # seed inicial (gestor de teste, equipe fictícia, checklists) — uma vez
 #   vm.sh backup               # backup imediato + envio ao bucket
 #   vm.sh enviar-backups       # envia ao bucket os backups ainda não enviados (usado pelo timer diário)
+#   vm.sh envio-externo        # SÓ LEITURA: cópia externa em dia? (último envio e backups não enviados há > 36 h)
 #   vm.sh restaurar-teste [pasta]   # restaura num banco SEPARADO e compara (não toca na homologação)
 #   vm.sh restaurar <pasta> --sim   # restaura SOBRE a homologação (faz backup de segurança antes)
 #   vm.sh atualizar <etiqueta>      # DESATIVADO: migrava implicitamente na partida; use a sequência abaixo
@@ -127,6 +128,25 @@ HOMOLOG_GATE_TOKEN='$gate'
 CENARIO_API_IMAGE='$REGION-docker.pkg.dev/$PROJECT/$REPO/api:$TAG'
 CENARIO_WEB_IMAGE='$REGION-docker.pkg.dev/$PROJECT/$REPO/web:$TAG'
 EOF
+  # Chave da IA (opcional, infra/ia/guardar-chave-ia.sh): sem ela os agentes usam as regras.
+  local ia; ia="$(s homolog-anthropic-api-key 2>/dev/null || true)"
+  if [[ "$ia" == sk-ant-* ]]; then
+    printf "ANTHROPIC_API_KEY='%s'\nGAME_AI_PROVIDER='anthropic'\n" "$ia" >> "$ENV_FILE"
+  fi
+  unset ia
+  # Chave do e-mail (opcional, infra/email/guardar-chave-email.sh): sem ela os e-mails ficam na fila.
+  local em; em="$(s homolog-resend-api-key 2>/dev/null || true)"
+  if [[ "$em" == re_* ]]; then
+    printf "RESEND_API_KEY='%s'\n" "$em" >> "$ENV_FILE"
+  fi
+  unset em
+  # Voz da Conversar (opcional, infra/voz/ligar-voz.sh): sem ela o app usa a voz do navegador.
+  local vz; vz="$(s homolog-speech-api-key 2>/dev/null || true)"
+  if [[ "$vz" == AIza* ]]; then
+    printf "SPEECH_API_KEY='%s'\n" "$vz" >> "$ENV_FILE"
+  fi
+  unset vz
+  escrever_meta >> "$ENV_FILE"
   log "Variáveis geradas em $ENV_FILE (memória, permissão 600)."
 }
 
@@ -306,6 +326,16 @@ saude() {
     local idade; idade="$(compose exec -T backup sh -c "echo \$(( (\$(date +%s) - \$(stat -c %Y '$ultimo')) / 3600 ))")"
     (( idade <= 26 )) && ok "último backup há ${idade} h ($(basename "$ultimo"))" || ruim "último backup há ${idade} h"
   else ruim "nenhum backup encontrado"; fi
+  # Cópia externa (bucket). Nas operações internas (ativar, aplicar-config, recuperar) vira só aviso:
+  # um envio atrasado não pode reprovar uma troca de versão já feita. No `vm.sh saude` direto
+  # (smoke_test) conta como problema.
+  local linha_e; while IFS= read -r linha_e; do
+    case "$linha_e" in
+      "✔ "*) ok "${linha_e#✔ }" ;;
+      "✘ "*) if [[ "${CENARIO_ENVIO_SO_AVISO:-0}" == 1 ]]; then echo "⚠ ${linha_e#✘ } (aviso; não reprova esta operação)"; else ruim "${linha_e#✘ }"; fi ;;
+      *) echo "$linha_e" ;;
+    esac
+  done < <(verificar_envio_externo || true)
   local mig; mig="$(compose exec -T postgres psql -tAU cenario -d cenario_homolog -c \
     "select count(*) filter (where finished_at is not null and rolled_back_at is null) || ' ' || count(*) filter (where finished_at is null and rolled_back_at is null) from _prisma_migrations" 2>/dev/null || true)"
   if [[ "$mig" =~ ^([0-9]+)\ 0$ ]]; then ok "migrations: ${BASH_REMATCH[1]} aplicadas, nenhuma pendente/com falha"
@@ -322,9 +352,114 @@ semear() { need_env; compose exec -T api pnpm db:seed; }
 # Aplica uma mudança no Caddyfile recriando SÓ o proxy (banco, API, web e dados intocados; os
 # certificados ficam no volume caddy_data). Valida a configuração antes; segredos vão ao
 # contêiner por nome de variável (nunca nos argumentos).
+# Chave da IA (infra/ia/guardar-chave-ia.sh): relê o segredo e troca só as linhas da IA no .env, sem
+# mostrar a chave. Segredo inválido: tira as linhas e os agentes voltam às regras.
+atualizar_ia() {
+  local ia tmp
+  # Falha ao ler (rede, segredo ainda não criado): deixa o .env como está.
+  if ! ia="$(gcloud secrets versions access latest --secret=homolog-anthropic-api-key --project="$PROJECT" 2>/dev/null)"; then
+    log "Chave da IA: não deu para ler o segredo; nada mudou."
+    return 0
+  fi
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^(ANTHROPIC_API_KEY|GAME_AI_PROVIDER)=' "$ENV_FILE" > "$tmp" || true
+  if [[ "$ia" == sk-ant-* ]]; then
+    printf "ANTHROPIC_API_KEY='%s'\nGAME_AI_PROVIDER='anthropic'\n" "$ia" >> "$tmp"
+    log "Chave da IA: ligada."
+  else
+    log "Chave da IA: segredo inválido; agentes pelas regras."
+  fi
+  unset ia
+  mv -f "$tmp" "$ENV_FILE"
+}
+
+# Voz da Conversar (infra/voz/ligar-voz.sh): relê o segredo e troca só a linha SPEECH_API_KEY no
+# .env, sem mostrar a chave. Falha ao ler: nada muda. Sem segredo válido: o app usa a voz do navegador.
+atualizar_voz() {
+  local vz tmp
+  if ! vz="$(gcloud secrets versions access latest --secret=homolog-speech-api-key --project="$PROJECT" 2>/dev/null)"; then
+    log "Voz da Conversar: segredo ainda não existe; o app usa a voz do navegador."
+    return 0
+  fi
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^SPEECH_API_KEY=' "$ENV_FILE" > "$tmp" || true
+  if [[ "$vz" == AIza* ]]; then
+    printf "SPEECH_API_KEY='%s'\n" "$vz" >> "$tmp"
+    log "Voz da Conversar: ligada."
+  else
+    log "Voz da Conversar: segredo inválido; o app usa a voz do navegador."
+  fi
+  unset vz
+  mv -f "$tmp" "$ENV_FILE"
+}
+
+# Chave do e-mail (infra/email/guardar-chave-email.sh): relê o segredo e troca só a linha
+# RESEND_API_KEY no .env, sem mostrar a chave. Falha ao ler: nada muda. Segredo inválido: tira a
+# linha e os e-mails voltam a ficar na fila.
+atualizar_email() {
+  local em tmp
+  if ! em="$(gcloud secrets versions access latest --secret=homolog-resend-api-key --project="$PROJECT" 2>/dev/null)"; then
+    log "Chave do e-mail: não deu para ler o segredo; nada mudou."
+    return 0
+  fi
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^RESEND_API_KEY=' "$ENV_FILE" > "$tmp" || true
+  if [[ "$em" == re_* ]]; then
+    printf "RESEND_API_KEY='%s'\n" "$em" >> "$tmp"
+    log "Chave do e-mail: ligada."
+  else
+    log "Chave do e-mail: segredo inválido; e-mails ficam na fila."
+  fi
+  unset em
+  mv -f "$tmp" "$ENV_FILE"
+}
+
+# WhatsApp/Meta da empresa (infra/meta/guardar-chave-meta.sh e guardar-ids-meta.sh): imprime as
+# linhas META_* do .env a partir do Secret Manager. Sem o app completo (id + chave + token do
+# webhook), não imprime nada e o botão "Conectar WhatsApp" fica esperando. Nunca mostra valores.
+escrever_meta() {
+  local s; s() { gcloud secrets versions access latest --secret="homolog-meta-$1" --project="$PROJECT" 2>/dev/null || true; }
+  local id sec tok cfg
+  id="$(s app-id)"; sec="$(s app-secret)"; tok="$(s webhook-verify-token)"; cfg="$(s wa-config-id)"
+  if [[ "$id" =~ ^[0-9]{5,20}$ && "$sec" =~ ^[0-9a-fA-F]{32}$ && "$tok" =~ ^[A-Za-z0-9_-]{20,80}$ ]]; then
+    printf "META_APP_ID='%s'\nMETA_APP_SECRET='%s'\nMETA_WEBHOOK_VERIFY_TOKEN='%s'\n" "$id" "$sec" "$tok"
+    [[ "$cfg" =~ ^[0-9]{5,20}$ ]] && printf "META_WA_CONFIG_ID='%s'\n" "$cfg"
+  fi
+  unset sec tok
+}
+
+# Relê a configuração da Meta e troca só as linhas META_* no .env. Falha ao ler: nada muda.
+atualizar_meta() {
+  local tmp linhas
+  if ! gcloud secrets versions access latest --secret=homolog-meta-app-secret --project="$PROJECT" >/dev/null 2>&1; then
+    log "WhatsApp (Meta): não deu para ler o segredo; nada mudou."
+    return 0
+  fi
+  linhas="$(escrever_meta)"
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^META_(APP_ID|APP_SECRET|WEBHOOK_VERIFY_TOKEN|WA_CONFIG_ID)=' "$ENV_FILE" > "$tmp" || true
+  if [[ -n "$linhas" ]]; then
+    printf '%s\n' "$linhas" >> "$tmp"
+    if grep -q '^META_WA_CONFIG_ID=' <<<"$linhas"; then log "WhatsApp (Meta): ligado."
+    else log "WhatsApp (Meta): app ligado; falta o ID da configuração do cadastro."; fi
+  else
+    log "WhatsApp (Meta): configuração incompleta; botão Conectar WhatsApp espera."
+  fi
+  unset linhas
+  mv -f "$tmp" "$ENV_FILE"
+}
+
 aplicar_config() {
   need_portao
   need_env
+  atualizar_ia
+  atualizar_email
+  atualizar_voz
+  atualizar_meta
   set -a
   # shellcheck source=/dev/null
   source "$ENV_FILE"
@@ -337,7 +472,7 @@ aplicar_config() {
   log "Caddyfile válido. Recriando só o proxy (caddy)…"
   compose up -d --no-deps --force-recreate caddy
   sleep 5
-  saude
+  CENARIO_ENVIO_SO_AVISO=1 saude
 }
 
 backup() {
@@ -354,8 +489,7 @@ enviar_backups() {
   if [[ -z "$BUCKET" ]]; then log "Sem bucket configurado (cenario-bucket): envio ignorado."; return 0; fi
   install -d -m 700 "$STATE_DIR"; touch "$STATE_DIR/enviados"
   local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
-  local vol="${CENARIO_BACKUPS_DIR:-}"
-  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-homolog_backups 2>/dev/null || true)"
+  local vol; vol="$(dir_backups)"
   [[ -n "$vol" && -d "$vol" ]] || { log "Sem volume de backups: nada a enviar."; return 0; }
   cabecalho_token "$tmp/auth" || return 1
   local erros=0 d nome codigo rc
@@ -373,6 +507,49 @@ enviar_backups() {
     esac
   done
   (( erros == 0 )) || { log "Envio com $erros erro(s)."; return 1; }
+  # Carimbo do último envio SEM erro (lido pela saúde: alerta se passar de 36 h).
+  date -u +%s > "$STATE_DIR/ultimo-envio"
+}
+
+# Pasta dos backups no host (volume do contêiner backup). Vazio se não existir.
+dir_backups() {
+  local vol="${CENARIO_BACKUPS_DIR:-}"
+  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-homolog_backups 2>/dev/null || true)"
+  echo "$vol"
+}
+
+# Cópia externa em dia? SÓ LÊ (carimbo, lista de enviados e nomes das pastas). Imprime linhas
+# "✔ …"/"✘ …" e sai com 1 se houver problema:
+#   - último envio sem erro há mais de CENARIO_ENVIO_MAX_H horas (padrão 36), ou nenhum registrado;
+#   - backup local com mais de CENARIO_ENVIO_MAX_H horas (pela data no nome) que nunca foi enviado.
+# O envio roda às 07:30 UTC; o backup diário fica pronto ~16:41 UTC: um envio por dia mantém os dois
+# critérios abaixo de 36 h com folga para um atraso pontual.
+verificar_envio_externo() {
+  local max="${CENARIO_ENVIO_MAX_H:-36}" agora falhas=0
+  agora="$(date -u +%s)"
+  if [[ -z "$BUCKET" ]]; then echo "• envio externo desativado (sem cenario-bucket)"; return 0; fi
+  if [[ -s "$STATE_DIR/ultimo-envio" ]]; then
+    local h=$(( (agora - $(cat "$STATE_DIR/ultimo-envio")) / 3600 ))
+    if (( h <= max )); then echo "✔ último envio ao bucket há ${h} h"
+    else echo "✘ último envio ao bucket há ${h} h (limite ${max} h)"; falhas=1; fi
+  else
+    echo "✘ nenhum envio ao bucket registrado (limite ${max} h)"; falhas=1
+  fi
+  local vol pend=0 antigo="" d nome ts
+  vol="$(dir_backups)"
+  if [[ -n "$vol" && -d "$vol" ]]; then
+    for d in "$vol"/cenario-*; do
+      [[ -d "$d" ]] || continue
+      nome="$(basename "$d")"
+      grep -qx "$nome" "$STATE_DIR/enviados" 2>/dev/null && continue
+      [[ "$nome" =~ -([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$ ]] || continue
+      ts="$(date -u -d "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s)"
+      if (( (agora - ts) / 3600 > max )); then pend=$((pend + 1)); [[ -n "$antigo" ]] || antigo="$nome"; fi
+    done
+  fi
+  if (( pend == 0 )); then echo "✔ nenhum backup local sem cópia externa há mais de ${max} h"
+  else echo "✘ ${pend} backup(s) local(is) sem cópia externa há mais de ${max} h (mais antigo: ${antigo})"; falhas=1; fi
+  return "$falhas"
 }
 
 # Verificação da preparação, SEM iniciar contêineres, sem PostgreSQL, sem migrations e sem gravar
@@ -696,7 +873,7 @@ ativar() {
     [[ "$st" == healthy ]] && break; sleep 5
   done
   [[ "$st" == healthy ]] || { compose logs --tail 30 api; log "✘ API não ficou saudável. Recuperação: vm.sh recuperar --sim"; return 1; }
-  saude
+  CENARIO_ENVIO_SO_AVISO=1 saude
 }
 
 recuperar() {
@@ -736,7 +913,7 @@ recuperar() {
     [[ "$st" == healthy ]] && break; sleep 5
   done
   log "Versão $ETIQUETA em execução (API: ${st:-?})."
-  saude
+  CENARIO_ENVIO_SO_AVISO=1 saude
 }
 
 parar() { need_env; compose stop; log "Contêineres parados (volumes e dados preservados)."; }
@@ -753,6 +930,7 @@ case "${1:-}" in
   semear) semear ;;
   backup) backup ;;
   enviar-backups) enviar_backups ;;
+  envio-externo) verificar_envio_externo ;;
   restaurar-teste) restaurar_teste "${2:-}" ;;
   restaurar) restaurar "${2:-}" "${3:-}" ;;
   atualizar) atualizar "${2:-}" ;;

@@ -19,6 +19,8 @@ export const EVENT_TYPES = {
   DEVICE_CONNECTION_CHANGED: 'device.connection_changed',
   SESSION_REVOKED: 'session.revoked',
   COMPANY_SETTINGS_UPDATED: 'company.settings_updated',
+  /** Reformulação, Fase 0: funcionalidade ligada ou desligada (payload só com chave e estado). */
+  COMPANY_MODULE_UPDATED: 'company.module_updated',
   SYNC_SIGNAL: 'sync.signal',
   CUSTOMER_CREATED: 'customer.created',
   CUSTOMER_UPDATED: 'customer.updated',
@@ -59,6 +61,11 @@ export const EVENT_TYPES = {
   MATERIAL_SHORTAGE_DETECTED: 'material.shortage_detected',
   MATERIAL_READINESS_CHANGED: 'material.readiness_changed',
   LEFTOVER_CHANGED: 'leftover.changed',
+  /** Reformulação, Fase 1: lista simples de materiais da OS e estoque simples (sem valores). */
+  OS_MATERIALS_CHANGED: 'os_materials.changed',
+  INVENTORY_CHANGED: 'inventory.changed',
+  /** Reformulação, Fase 2: materiais padrão dos modelos de serviço (sem valores). */
+  SERVICE_MODELS_CHANGED: 'service_models.changed',
   PRODUCTION_TEMPLATE_CHANGED: 'production.template_changed',
   PRODUCTION_PLAN_CREATED: 'production.plan_created',
   PRODUCTION_PLAN_UPDATED: 'production.plan_updated',
@@ -145,6 +152,14 @@ export const EVENT_TYPES = {
    * SEM valores: o Meus Ganhos aberto recarrega pela API (PIN/D12 continuam valendo).
    */
   FINANCE_OWN_CHANGED: 'finance.own_changed',
+  /** Jogo de gestão: a planta (oficina ou escritório) foi salva; o Firma Viva recarrega. */
+  GAME_LAYOUT_SAVED: 'game.layout_saved',
+  GAME_AGENT_CHANGED: 'game.agent_changed',
+  GAME_PROPOSAL_CHANGED: 'game.proposal_changed',
+  /** Escritório do jogo: conexões externas, caixa de entrada e mudanças do escritório (só ids). */
+  CONNECTION_CHANGED: 'connection.changed',
+  INBOX_MESSAGE: 'inbox.message',
+  OFFICE_CHANGED: 'office.changed',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

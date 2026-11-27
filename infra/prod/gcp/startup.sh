@@ -7,9 +7,12 @@
 #     (a VM atual já tem 2 GB: nada é alterado);
 #   - atualizações automáticas de segurança (unattended-upgrades): instala/ativa se ausentes;
 #   - systemd-resolved sem LLMNR/mDNS (nenhuma escuta em 5355/5353 fora do loopback);
-#   - serviços systemd da pilha e do envio diário dos backups, COM PORTÃO DE PUBLICAÇÃO: só rodam
-#     se existir /etc/cenario/publicacao-autorizada. Este script NUNCA cria esse arquivo e NUNCA
-#     inicia a pilha sem ele (nem PostgreSQL, nem migrations, nem portas 80/443).
+#   - serviço systemd da pilha COM PORTÃO DE PUBLICAÇÃO: só roda se existir
+#     /etc/cenario/publicacao-autorizada. Este script NUNCA cria esse arquivo e NUNCA
+#     inicia a pilha sem ele (nem PostgreSQL, nem migrations, nem portas 80/443). Rodar este
+#     script COM o portão aberto (re)inicia a pilha: para só atualizar as unidades, rode com ele fechado;
+#   - envio diário dos backups ao bucket (timer 07:30 UTC), SEM o portão: só lê os backups e cria
+#     objetos no bucket com a conta da VM (nenhum segredo, nada iniciado).
 # Nenhum segredo é lido nem gravado aqui.
 # CENARIO_RAIZ (só nos testes) prefixa os caminhos do sistema, para executar sem tocar na máquina.
 set -euo pipefail
@@ -104,11 +107,16 @@ TimeoutStartSec=900
 [Install]
 WantedBy=multi-user.target
 EOF
+# Envio dos backups ao bucket: SEM o portão de publicação. O portão protege a pilha (segredos,
+# PostgreSQL, portas) e fica fechado na operação normal; o envio só LÊ as pastas de backup e CRIA
+# objetos no bucket com a conta da VM (nenhum segredo, nada iniciado). Com o portão como condição,
+# o envio diário era pulado sempre que o portão estava fechado (produção: sem cópia externa de
+# 23/10 a 13/11/2026). Sem volume de backups (antes do 1º deploy), o envio não faz nada.
 cat > "$R/etc/systemd/system/cenario-backup-upload.service" <<EOF
 [Unit]
 Description=Cenário Gestão — envio dos backups ao Cloud Storage
 After=cenario-prod.service
-ConditionPathExists=$PORTAO
+ConditionPathExists=/opt/cenario/infra/prod/gcp/vm.sh
 
 [Service]
 Type=oneshot
@@ -127,7 +135,7 @@ WantedBy=timers.target
 EOF
 systemctl daemon-reload
 systemctl enable cenario-prod.service cenario-backup-upload.timer
-systemctl start cenario-backup-upload.timer # o serviço que ele aciona respeita o portão
+systemctl start cenario-backup-upload.timer # envio diário (independe do portão)
 
 if [[ -f "$R$PORTAO" && -x "$R/opt/cenario/infra/prod/gcp/vm.sh" ]]; then
   echo "publicação autorizada ($PORTAO): (re)iniciando a pilha"

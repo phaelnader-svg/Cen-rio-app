@@ -1,10 +1,33 @@
-import type { Permission } from '@cenario/shared';
+import { scopePermissions, type Permission } from '@cenario/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { Errors } from '../lib/errors';
 import { loadUserPermissions } from '../core/permissions';
 import { sessionExpiry } from '../core/sessions';
 import type { AccessRule } from '../core/types';
+import { PLATFORM_RECORD_ID } from '../core/tenant';
+import { COMPANY_BILLING_SELECT, billingLocked } from '../core/billing';
+import { AppError } from '../lib/errors';
+import { ERROR_CODES } from '@cenario/shared';
+import { refreshPlatformConfig, serverConnectionsCompanyId } from '../core/platform-config';
+
+/** Painel da plataforma: 12 horas sem uso encerram a sessão; no máximo 30 dias. */
+export const PLATFORM_IDLE_MS = 12 * 3_600_000;
+export function platformSessionExpiry(createdAt: Date, now = new Date()): Date {
+  return new Date(
+    Math.min(now.getTime() + PLATFORM_IDLE_MS, createdAt.getTime() + 30 * 86_400_000),
+  );
+}
+
+function subscriptionRequired(tablet: boolean) {
+  return new AppError(
+    402,
+    ERROR_CODES.SUBSCRIPTION_REQUIRED,
+    tablet
+      ? 'A assinatura do Cenário Gestão desta empresa venceu. Peça ao gestor para regularizar no painel.'
+      : 'A assinatura do Cenário Gestão venceu. Regularize em Assinatura para voltar a usar o sistema.',
+  );
+}
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /** Intervalo mínimo entre atualizações de "último acesso" (reduz escritas no banco). */
@@ -33,11 +56,14 @@ export function cookieOptions(secure: boolean, maxAgeSeconds: number) {
  * - Sessões web exigem `painel.acessar`; sessões de tablet exigem `producao.acessar`.
  */
 export const authPlugin = fp(async (app: FastifyInstance) => {
-  const { prisma, env, hashToken, cookies } = app.ctx;
+  // Multi-empresa: a credencial (cookie, token, tablet) é achada antes de se saber a empresa, por
+  // isso estas buscas usam o banco do sistema. A empresa encontrada passa a valer na requisição.
+  const { system: prisma, env, hashToken, cookies } = app.ctx;
   const allowedOrigins = new Set(env.ALLOWED_ORIGINS);
 
   app.decorateRequest('auth', null);
   app.decorateRequest('device', null);
+  app.decorateRequest('platformAdmin', null);
 
   // Catálogo das regras de acesso (auditoria automática de todas as rotas — Fase 12).
   const routeCatalog: { method: string; url: string; access: AccessRule }[] = [];
@@ -56,6 +82,56 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   app.addHook('onRequest', async (request, reply) => {
     const access = request.routeOptions.config?.access;
     if (!access) return; // 404 e rotas fora de /api
+    // Configuração da plataforma (bloqueio automático, tolerância, empresa da plataforma): cópia
+    // em memória de 30 s. Antes dos webhooks, que gravam na empresa da plataforma.
+    await refreshPlatformConfig(prisma).catch((err: unknown) =>
+      request.log.warn({ err }, 'Falha ao ler a configuração da plataforma'),
+    );
+
+    // Webhooks de provedores (Meta, Asaas, Clicksign): sem cookie e sem Origin. A autenticação é a
+    // assinatura/token do provedor, verificada no handler (falha fechada se não configurada).
+    // Multi-empresa: as chaves e os webhooks do servidor são da tapeçaria que o painel liberou
+    // ("conexões do servidor"); sem nenhuma liberada, o webhook roda sem empresa.
+    if ('webhook' in access) {
+      if (request.tenant) request.tenant.companyId = serverConnectionsCompanyId();
+      return;
+    }
+    if ('public' in access && access.serverToServer) return;
+
+    // Painel da plataforma: cookie próprio, nunca o login das empresas (e vice-versa).
+    if ('platform' in access) {
+      if (!SAFE_METHODS.has(request.method)) {
+        const origin = request.headers.origin?.replace(/\/$/, '');
+        if (!origin || !allowedOrigins.has(origin)) throw Errors.originNotAllowed();
+      }
+      if (request.headers.authorization)
+        throw Errors.forbidden('Este acesso não está disponível para aplicativos conectados.');
+      await resolvePlatformSession(request, reply);
+      if (!request.platformAdmin) throw Errors.unauthenticated();
+      // O que o painel grava fica no registro interno da plataforma (nunca numa tapeçaria).
+      if (request.tenant) request.tenant.companyId = PLATFORM_RECORD_ID;
+      return;
+    }
+
+    // 0. Acesso delegado de aplicativo (Authorization: Bearer). Sem cookies: não há CSRF;
+    // a origem não se aplica. Rotas de login/sessão e a própria autorização nunca aceitam token.
+    const authz = request.headers.authorization;
+    if (authz?.startsWith('Bearer ')) {
+      if (
+        request.headers.upgrade ||
+        request.url.startsWith('/api/auth/') ||
+        request.url.startsWith('/api/oauth/') ||
+        request.url.startsWith('/api/sessions')
+      ) {
+        throw Errors.forbidden('Este acesso não está disponível para aplicativos conectados.');
+      }
+      await resolveBearer(request, authz.slice(7).trim());
+      if (!request.auth)
+        throw Errors.unauthenticated('Autorização do aplicativo inválida, expirada ou revogada.');
+      bindCompany(request);
+      enforce(request, access);
+      return;
+    }
 
     // 1. Origem (CSRF / WebSocket cross-site)
     const isUpgrade = request.headers.upgrade?.toLowerCase() === 'websocket';
@@ -70,23 +146,62 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     // 3. Sessão
     await resolveSession(request, reply);
 
+    // 3b. Empresa da requisição (a sessão manda; sem sessão, a do tablet pareado).
+    bindCompany(request);
+
     // 4. Regra de acesso
     enforce(request, access);
   });
 
+  async function resolvePlatformSession(request: FastifyRequest, reply: FastifyReply) {
+    const token = request.cookies[cookies.platform];
+    if (!token) return;
+    const s = await prisma.platformAdminSession.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: { admin: true },
+    });
+    const now = new Date();
+    if (!s || s.revokedAt || s.expiresAt <= now || !s.admin.active) {
+      void reply.clearCookie(cookies.platform, { path: '/' });
+      return;
+    }
+    if (now.getTime() - s.lastSeenAt.getTime() > TOUCH_INTERVAL_MS) {
+      const expiresAt = platformSessionExpiry(s.createdAt, now);
+      await prisma.platformAdminSession.update({
+        where: { id: s.id },
+        data: { lastSeenAt: now, expiresAt },
+      });
+      const maxAge = Math.max(1, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+      void reply.setCookie(cookies.platform, token, cookieOptions(env.COOKIE_SECURE, maxAge));
+    }
+    request.platformAdmin = {
+      id: s.admin.id,
+      email: s.admin.email,
+      displayName: s.admin.displayName,
+      sessionId: s.id,
+    };
+  }
+
   async function resolveDevice(request: FastifyRequest, reply: FastifyReply) {
     const token = request.cookies[cookies.device];
     if (!token) return;
-    const device = await prisma.device.findUnique({ where: { credentialHash: hashToken(token) } });
+    const device = await prisma.device.findUnique({
+      where: { credentialHash: hashToken(token) },
+      include: { company: { select: { blockedAt: true, ...COMPANY_BILLING_SELECT } } },
+    });
+    // Empresa bloqueada: o tablet não entra, mas continua vinculado (volta quando liberar).
+    if (device?.company.blockedAt) return;
     if (!device || device.status !== 'ACTIVE') {
       void reply.clearCookie(cookies.device, { path: '/' });
       return;
     }
     request.device = {
       id: device.id,
+      companyId: device.companyId,
       name: device.name,
       assignedEmployeeId: device.assignedEmployeeId,
       restrictToAssigned: device.restrictToAssigned,
+      billingLocked: billingLocked(device.company, env),
     };
     const now = Date.now();
     if (!device.lastSeenAt || now - device.lastSeenAt.getTime() > TOUCH_INTERVAL_MS) {
@@ -112,11 +227,26 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     if (!token) return;
     const session = await prisma.session.findUnique({
       where: { tokenHash: hashToken(token) },
-      include: { user: { include: { employee: { select: { id: true, active: true } } } } },
+      include: {
+        user: {
+          include: {
+            employee: { select: { id: true, active: true } },
+            company: {
+              select: { blockedAt: true, supportAccessUntil: true, ...COMPANY_BILLING_SELECT },
+            },
+          },
+        },
+      },
     });
     const now = new Date();
     const valid =
       session &&
+      // Empresa bloqueada pelo dono da plataforma: ninguém dela entra.
+      !session.user.company.blockedAt &&
+      // Melhoria 114: o suporte só entra enquanto a empresa mantém o acesso liberado.
+      (!session.user.supportAgent ||
+        (session.user.company.supportAccessUntil !== null &&
+          session.user.company.supportAccessUntil > now)) &&
       !session.revokedAt &&
       session.expiresAt > now &&
       session.user.active &&
@@ -143,6 +273,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     }
     request.auth = {
       sessionId: session.id,
+      companyId: session.user.companyId,
       kind: session.kind,
       userId: session.userId,
       displayName: session.user.displayName,
@@ -151,17 +282,102 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       deviceId: session.deviceId,
       permissions,
       expiresAt,
+      billingLocked: billingLocked(session.user.company, env),
     };
   }
 
+  async function resolveBearer(request: FastifyRequest, token: string) {
+    if (!token || token.length > 200) return;
+    const row = await prisma.oAuthAccessToken.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: {
+        grant: {
+          include: {
+            client: { select: { name: true, active: true } },
+            session: true,
+            user: {
+              include: {
+                employee: { select: { id: true, active: true } },
+                company: { select: { blockedAt: true, ...COMPANY_BILLING_SELECT } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const now = new Date();
+    const g = row?.grant;
+    if (
+      !row ||
+      !g ||
+      row.expiresAt <= now ||
+      g.revokedAt ||
+      !g.client.active ||
+      g.session.revokedAt ||
+      !g.user.active ||
+      g.user.company.blockedAt ||
+      g.user.employee?.active === false
+    ) {
+      return;
+    }
+    const userPerms = await loadUserPermissions(prisma, g.userId);
+    const allowed = scopePermissions(g.scopes);
+    const permissions = new Set([...userPerms].filter((p) => allowed.has(p)));
+    if (!g.lastUsedAt || now.getTime() - g.lastUsedAt.getTime() > TOUCH_INTERVAL_MS) {
+      await prisma.oAuthGrant.update({ where: { id: g.id }, data: { lastUsedAt: now } });
+    }
+    const actorHeader = request.headers['x-app-actor'];
+    const onBehalfOf =
+      typeof actorHeader === 'string'
+        ? safeDecode(actorHeader)
+            .replace(/[\r\n]/g, ' ')
+            .slice(0, 120) || null
+        : null;
+    request.auth = {
+      sessionId: g.sessionId,
+      companyId: g.user.companyId,
+      kind: 'WEB',
+      userId: g.userId,
+      displayName: g.user.displayName,
+      email: g.user.email,
+      employeeId: g.user.employee?.id ?? null,
+      deviceId: null,
+      permissions,
+      expiresAt: row.expiresAt,
+      billingLocked: billingLocked(g.user.company, env),
+      app: {
+        grantId: g.id,
+        clientName: g.client.name,
+        externalLabel: g.externalLabel,
+        scopes: g.scopes,
+        onBehalfOf,
+      },
+    };
+  }
+
+  function bindCompany(request: FastifyRequest) {
+    const companyId = request.auth?.companyId ?? request.device?.companyId ?? null;
+    if (request.auth && request.device && request.device.companyId !== request.auth.companyId) {
+      // Sessão de uma empresa num tablet de outra: nunca deveria acontecer; nega tudo.
+      request.auth = null;
+      request.device = null;
+      return;
+    }
+    if (request.tenant) request.tenant.companyId = companyId;
+  }
+
   function enforce(request: FastifyRequest, access: AccessRule) {
-    if ('public' in access) return;
+    if ('public' in access || 'webhook' in access || 'platform' in access) return;
     if ('device' in access) {
       if (!request.device) throw Errors.deviceRequired();
+      if (request.device.billingLocked) throw subscriptionRequired(true);
       return;
     }
     const auth = request.auth;
     if (!auth) throw Errors.unauthenticated();
+    // Cobrança: assinatura vencida (passada a tolerância). Só a assinatura, /auth/me e sair.
+    if (auth.billingLocked && !access.billingExempt && !access.surfaceExempt)
+      throw subscriptionRequired(auth.kind === 'DEVICE');
     if (access.session !== 'any' && auth.kind !== access.session) {
       throw Errors.forbidden(
         access.session === 'WEB'
@@ -187,3 +403,11 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     }
   }
 });
+
+function safeDecode(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}

@@ -1,5 +1,28 @@
 @import 'tailwindcss';
 
+/* Melhoria 135: a Inter vem do próprio sistema (sem Google), para todo aparelho mostrar a mesma letra. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/inter-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @theme {
   --font-sans:
     'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
@@ -12,16 +35,18 @@
   --color-line-strong: #cfcac0;
   --color-ink: #1d2523;
   --color-ink-soft: #4a5552;
-  --color-ink-muted: #7a8481;
+  /* LGPD/acessibilidade (2026-11-25): #7a8481 tinha contraste 3,5:1; agora passa de 4,5:1 (WCAG AA). */
+  --color-ink-muted: #646e6b;
 
   /* Marca: verde petróleo profundo + bronze (couro/estofado) */
-  --color-brand-50: #eef5f4;
-  --color-brand-100: #d6e7e4;
-  --color-brand-200: #aed0ca;
-  --color-brand-500: #2f6f68;
-  --color-brand-600: #245a54;
-  --color-brand-700: #1d4a45;
-  --color-brand-800: #173b37;
+  /* Melhoria 136: escala montada a partir do verde da logo do sofá (#064a4b = brand-700). */
+  --color-brand-50: #ecf5f5;
+  --color-brand-100: #d2e7e7;
+  --color-brand-200: #a6cfce;
+  --color-brand-500: #1b6e6e;
+  --color-brand-600: #0f5a5b;
+  --color-brand-700: #064a4b;
+  --color-brand-800: #043b3c;
   --color-bronze-100: #f5ebdf;
   --color-bronze-500: #a8743f;
   --color-bronze-600: #8d5f31;
@@ -34,6 +59,9 @@
   --color-danger-50: #fdeeee;
   --color-danger-600: #b42323;
   --color-danger-700: #911b1b;
+  /* Gráficos do Início (validados para daltonismo e contraste; 2026-11-18). */
+  --color-chart-1: #00908a;
+  --color-chart-2: #c27526;
   --color-info-50: #eef3fb;
   --color-info-600: #2c5ea8;
 
@@ -41,6 +69,70 @@
   --radius-2xl: 1.125rem;
   --shadow-card: 0 1px 2px rgb(29 37 35 / 0.04), 0 1px 3px rgb(29 37 35 / 0.06);
   --shadow-pop: 0 10px 30px rgb(29 37 35 / 0.12), 0 2px 6px rgb(29 37 35 / 0.06);
+}
+
+/* Melhoria 87: modo escuro do painel (só na tela; a impressão continua clara). */
+@media screen {
+  html[data-tema='escuro'] {
+    color-scheme: dark;
+    --color-canvas: #121615;
+    --color-surface: #1a1f1e;
+    --color-subtle: #232a28;
+    --color-line: #2e3634;
+    --color-line-strong: #45504d;
+    --color-ink: #e8ecea;
+    --color-ink-soft: #b8c2bf;
+    --color-ink-muted: #8a9592;
+    --color-brand-50: #102e2f;
+    --color-brand-100: #163b3c;
+    --color-brand-200: #225758;
+    --color-brand-500: #5eaaa9;
+    --color-brand-600: #4b9b9b;
+    --color-brand-700: #52a3a3;
+    --color-brand-800: #2f7576;
+    --color-bronze-100: #2e2418;
+    --color-bronze-500: #c8925a;
+    --color-bronze-600: #d6a06a;
+    --color-ok-50: #12291c;
+    --color-ok-600: #5cc48a;
+    --color-warn-50: #2e2310;
+    --color-warn-600: #e0a54a;
+    --color-danger-50: #331617;
+    --color-danger-600: #e06262;
+    --color-danger-700: #b83c3c;
+    --color-chart-1: #1aa59e;
+    --color-chart-2: #c97a2c;
+    --color-info-50: #152238;
+    --color-info-600: #7aa7e6;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.35);
+    --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  }
+  html[data-tema='escuro'] img {
+    color-scheme: light;
+  }
+  /* Melhoria 169: no escuro, o brand-700 claro serve para texto; atrás de letra branca
+     (botão principal, selos cheios) o fundo fica num verde mais fechado, legível. */
+  /* Melhoria 136: logo no modo escuro — o quadrado clareia um pouco para não sumir no fundo. */
+  html[data-tema='escuro'] .logo-mark-bg {
+    fill: #11696a;
+  }
+  html[data-tema='escuro'] .bg-brand-700 {
+    background-color: #146566;
+  }
+  html[data-tema='escuro'] .hover\:bg-brand-800:hover,
+  html[data-tema='escuro'] .active\:bg-brand-800:active {
+    background-color: #0f5354;
+  }
+}
+
+/* Celular e tablet: campo com letra menor que 16px faz o iPhone dar zoom sozinho ao tocar (e o
+   zoom ficava preso). Em tela de toque todo campo usa 16px; no computador continua igual. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
 }
 
 @layer base {
@@ -97,6 +189,12 @@
   .input {
     @apply block w-full rounded-xl border border-line-strong bg-surface px-3.5 text-[15px] leading-5 text-ink placeholder:text-ink-muted transition outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:bg-subtle disabled:text-ink-muted aria-[invalid=true]:border-danger-600 aria-[invalid=true]:ring-danger-50;
   }
+  /* Campo calculado/definido em outro lugar (readonly): mesmo visual do campo desligado, para
+     ficar claro que não se digita ali. */
+  input.input[readonly],
+  textarea.input[readonly] {
+    @apply cursor-default bg-subtle text-ink-soft focus:border-line-strong focus:ring-0;
+  }
   /* Campos de uma linha: altura FIXA (o tamanho nativo de date/time/select varia por navegador). */
   input.input,
   select.input {
@@ -115,15 +213,24 @@
   .input-num {
     @apply tabular-nums;
   }
-  /* iOS/Safari: data e hora alinhadas à esquerda e sem encolher quando vazias. */
+  /* Data e hora: texto no meio do campo em todos os navegadores. O Safari centraliza a data
+     com "display: inline-flex + align-items: center" (estilo próprio do navegador); o "block"
+     do .input tirava isso e a data subia para o topo. "flex" ocupa a largura toda como o block.
+     iOS/Safari: alinhada à esquerda e sem encolher quando vazia. */
   input.input[type='date'],
   input.input[type='time'],
-  input.input[type='datetime-local'] {
-    @apply appearance-none;
+  input.input[type='datetime-local'],
+  input.input[type='month'] {
+    @apply flex appearance-none items-center;
   }
   input.input::-webkit-date-and-time-value {
     text-align: left;
     min-height: 1.25rem;
+  }
+  input.input::-webkit-datetime-edit,
+  input.input::-webkit-datetime-edit-fields-wrapper {
+    padding-top: 0;
+    padding-bottom: 0;
   }
   /* Variante compacta (mesma família visual; 36 px). */
   input.input.input-sm,
@@ -217,5 +324,44 @@
   /* Valores monetários: algarismos tabulares e sem quebra. */
   .money {
     @apply tabular-nums whitespace-nowrap;
+  }
+}
+
+/* Impressão de documentos do painel (proposta, contrato e O.S. do orçamento): `printArea()` marca
+   o que não faz parte do documento; cada `.print-page` (menos a primeira) começa numa folha nova. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  [data-print-hidden] {
+    display: none !important;
+  }
+  [data-print-ancestor] {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+  body {
+    background: #fff;
+  }
+  main#conteudo {
+    max-width: none;
+    padding: 0;
+  }
+  .print-page:not([data-print-first]) {
+    break-before: page;
+  }
+  /* Um cartão, uma cláusula ou o bloco de assinaturas nunca fica cortado entre duas folhas: se não
+     couber no fim da folha, passa inteiro para a próxima. */
+  .print-page section,
+  .print-keep {
+    break-inside: avoid;
+  }
+  .print-flat {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

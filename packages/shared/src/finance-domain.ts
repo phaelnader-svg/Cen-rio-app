@@ -5,7 +5,7 @@
  * fiscal: tributos são estimativas configuradas pelo gestor.
  */
 import { formatNumber } from './domain';
-import { formatCents } from './purchasing-domain';
+import { formatCents } from './materials-domain';
 
 export const receivableCode = (n: number) => formatNumber('RC', n);
 export const payableCode = (n: number) => formatNumber('CPG', n);
@@ -139,7 +139,18 @@ export function effectiveDueDate(r: {
   dueDate: string | null;
   eventDate: string | null;
 }): string | null {
-  return r.dueTrigger === 'DATA' ? r.dueDate : r.eventDate;
+  if (r.dueTrigger === 'DATA') return r.dueDate;
+  // 2026-11-26 (Raphael): o Pix dos 50% "na retirada" costuma vir depois, outro dia — vence 3 dias
+  // depois que a peça chegou (ou do serviço feito no local); até lá fica só "a cobrar".
+  if (r.dueTrigger === 'RETIRADA' && r.eventDate)
+    return addDaysIso(r.eventDate, PICKUP_PAYMENT_GRACE_DAYS);
+  return r.eventDate;
+}
+export const PICKUP_PAYMENT_GRACE_DAYS = 3;
+function addDaysIso(iso: string, n: number) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -154,7 +165,7 @@ export function receivableOverdue(r: {
   today: string;
 }) {
   if (r.cancelled || r.openCents <= 0 || !r.effectiveDue) return { overdue: false, daysOverdue: 0 };
-  const overdue = r.dueTrigger === 'DATA' ? r.effectiveDue < r.today : r.effectiveDue <= r.today;
+  const overdue = r.dueTrigger === 'ENTREGA' ? r.effectiveDue <= r.today : r.effectiveDue < r.today;
   if (!overdue) return { overdue: false, daysOverdue: 0 };
   const days = Math.round(
     (Date.parse(`${r.today}T00:00:00Z`) - Date.parse(`${r.effectiveDue}T00:00:00Z`)) / 86_400_000,
@@ -164,6 +175,7 @@ export function receivableOverdue(r: {
 
 /** Modelos de condição do Novo serviço: geram as cobranças (sem entidade de plano). */
 export const PAYMENT_MODELS = [
+  'METADE_RETIRADA_ENTREGA',
   'ENTRADA_ENTREGA',
   'PIX_100',
   'CARTAO_100',
@@ -172,6 +184,7 @@ export const PAYMENT_MODELS = [
 ] as const;
 export type PaymentModel = (typeof PAYMENT_MODELS)[number];
 export const PAYMENT_MODEL_LABEL: Record<PaymentModel, string> = {
+  METADE_RETIRADA_ENTREGA: 'À vista: 50% na retirada e 50% na entrega',
   ENTRADA_ENTREGA: 'Entrada + saldo na entrega',
   PIX_100: '100% Pix',
   CARTAO_100: 'Cartão 100% (parcelado)',
@@ -204,11 +217,37 @@ export function paymentPlan(
     installments?: number | null;
   },
   today: string,
+  /** Sem retirada (o cliente traz as peças): a metade "da retirada" vence hoje. */
+  ctx: { customerDropOff?: boolean } = {},
 ): ReceivableDraft[] {
   const n = p.installments ?? 1;
   switch (p.model) {
     case 'MANUAL':
       return [];
+    case 'METADE_RETIRADA_ENTREGA': {
+      // 2026-11-18 (Raphael): à vista = metade na retirada e metade na entrega.
+      const first = totalCents - Math.floor(totalCents / 2);
+      const out: ReceivableDraft[] = [
+        {
+          description: ctx.customerDropOff ? '50% ao deixar as peças' : '50% na retirada',
+          amountCents: first,
+          dueTrigger: ctx.customerDropOff ? 'DATA' : 'RETIRADA',
+          dueDate: ctx.customerDropOff ? today : null,
+          expectedMethod: p.entryMethod ?? 'PIX',
+          installments: null,
+        },
+      ];
+      if (totalCents - first > 0)
+        out.push({
+          description: '50% na entrega',
+          amountCents: totalCents - first,
+          dueTrigger: 'ENTREGA',
+          dueDate: null,
+          expectedMethod: p.balanceMethod ?? p.entryMethod ?? 'PIX',
+          installments: null,
+        });
+      return out;
+    }
     case 'ENTRADA_ENTREGA': {
       const entry = p.entryCents ?? totalCents - Math.floor(totalCents / 2);
       const out: ReceivableDraft[] = [
@@ -488,6 +527,36 @@ export const PAYABLE_CATEGORY_LABEL: Record<PayableCategory, string> = {
   SERVICOS: 'Serviços de terceiros',
 };
 
+/**
+ * Categorias de despesa da empresa (2026-11-18): além das fixas acima, cada empresa cadastra as
+ * suas. A categoria cadastrada é gravada pelo próprio nome (até 30 letras) na despesa, na
+ * recorrente e na conta a pagar; as fixas continuam gravadas pelo código.
+ */
+export const EXPENSE_CATEGORY_NAME_MAX = 30;
+const isFixedExpense = (c: string): c is ExpenseCategory => c in EXPENSE_CATEGORY_LABEL;
+const isFixedPayable = (c: string): c is PayableCategory => c in PAYABLE_CATEGORY_LABEL;
+/** Nome para mostrar de uma categoria de despesa (fixa pelo código, cadastrada pelo nome). */
+export const expenseCategoryLabel = (c: string) =>
+  isFixedExpense(c) ? EXPENSE_CATEGORY_LABEL[c] : c;
+/** Nome para mostrar de uma categoria de conta a pagar (fixas + cadastradas pela empresa). */
+export const payableCategoryLabel = (c: string) =>
+  isFixedPayable(c) ? PAYABLE_CATEGORY_LABEL[c] : c;
+/** Forma de comparar nomes de categoria (sem acento, maiúsculas, espaços simples). */
+export const categoryKey = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+/** O nome escolhido para uma categoria nova repete uma fixa (pelo código ou pelo nome)? */
+export const clashesWithFixedCategory = (name: string) => {
+  const k = categoryKey(name);
+  return (Object.entries(PAYABLE_CATEGORY_LABEL) as [string, string][]).some(
+    ([code, label]) => categoryKey(code) === k || categoryKey(label) === k,
+  );
+};
+
 /** Primeiro dia do mês (AAAA-MM-01) de uma data AAAA-MM-DD. */
 export const monthOf = (iso: string) => `${iso.slice(0, 7)}-01`;
 /** Data do vencimento de uma recorrência no mês (dia limitado ao último dia do mês). */
@@ -662,7 +731,7 @@ export function reviewResolutionProblem(
   lines: readonly { professionalUserId: string; amountCents: number }[],
   existing: readonly { professionalUserId: string; dueCents: number; paidCents: number }[],
 ): string | null {
-  if (!lines.length) return 'Informe o valor devido a cada profissional.';
+  if (!lines.length) return 'Informe o valor devido a cada funcionário.';
   const seen = new Set<string>();
   for (const l of lines) {
     if (seen.has(l.professionalUserId)) return 'Cada profissional aparece uma única vez.';
@@ -672,13 +741,13 @@ export function reviewResolutionProblem(
   }
   for (const e of existing) {
     const l = lines.find((x) => x.professionalUserId === e.professionalUserId);
-    if (!l) return 'Inclua todos os profissionais que já têm valor combinado nesta peça/OS.';
+    if (!l) return 'Inclua todos os funcionários que já têm valor combinado nesta peça/OS.';
     if (l.amountCents < e.paidCents)
       return `O valor devido não pode ficar abaixo do já pago (${formatCents(e.paidCents)}).`;
   }
   for (const l of lines)
     if (!existing.some((e) => e.professionalUserId === l.professionalUserId) && l.amountCents === 0)
-      return 'Novo profissional só com valor maior que zero.';
+      return 'Novo funcionário só com valor maior que zero.';
   return null;
 }
 

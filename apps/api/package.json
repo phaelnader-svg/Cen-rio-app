@@ -9,9 +9,11 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "perf": "vitest run -c vitest.perf.config.ts"
+    "perf": "vitest run -c vitest.perf.config.ts",
+    "app-client": "tsx --env-file-if-exists=../../.env src/cli/app-client.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@cenario/db": "workspace:*",
     "@cenario/shared": "workspace:*",
     "@fastify/cookie": "11.1.2",
@@ -24,11 +26,14 @@
     "fastify": "5.12.5",
     "fastify-plugin": "5.1.0",
     "pg": "8.23.1",
+    "sharp": "0.35.5",
+    "web-push": "3.6.7",
     "zod": "4.1.13"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
     "@types/pg": "8.23.1",
+    "@types/web-push": "3.6.4",
     "@types/ws": "8.18.2",
     "pino-pretty": "13.2.0",
     "tsup": "8.5.1",

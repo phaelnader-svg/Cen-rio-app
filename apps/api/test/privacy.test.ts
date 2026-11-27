@@ -59,8 +59,10 @@ describe('Privacidade do cliente no tablet (Fase 8)', () => {
     const { admin, plan, tabs } = await workshop();
     const ws = await WsClient.connect(app, tabs.joao!);
     sockets.push(ws);
-    const queue = (await tabs.joao!.get('/api/v1/production-tasks/mine/queue')).body;
-    const next = queue.next.id as string;
+    // Preparação livre: o João pega a primeira tarefa livre no tablet (só o nome curto aparece).
+    const joaoMine = (await tabs.joao!.get('/api/v1/production-tasks/mine')).body;
+    expect(joaoMine.free[0].customerName).toBe(SHORT);
+    const next = joaoMine.free[0].id as string;
     const started = await act(tabs.joao!, next, 'start');
     expect(started.status).toBe(200);
     expect(started.body.customerName).toBe(SHORT);
@@ -74,8 +76,6 @@ describe('Privacidade do cliente no tablet (Fase 8)', () => {
       `/api/v1/production-tasks/${next}`,
       `/api/v1/production-tasks/${ricQueue.items[0].task.id}`,
       '/api/v1/notifications?limit=50',
-      '/api/v1/help-requests/mine',
-      '/api/v1/help-requests/support-options',
       '/api/v1/issues/mine',
     ];
     let checked = 0;

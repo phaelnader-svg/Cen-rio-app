@@ -1,5 +1,7 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
+  PICKUP_KIND_LABEL,
   type PickupStatus,
   type PickupTeam,
   type createPickupSchema,
@@ -13,6 +15,7 @@ import { Errors } from '../../lib/errors';
 import {
   activeAddress,
   asSnapshot,
+  dateOnly,
   lockOrder,
   lockOrderItems,
   orderCode,
@@ -22,6 +25,7 @@ import {
 } from '../commercial/common';
 import { itemAllocations, refreshOrderStatus } from '../commercial/status';
 import { upsertTripCost } from '../finance/trip-costs';
+import { followPickupDate } from '../deadlines/promise';
 import { notify } from '../notifications/notify';
 import { emitOrderEvent } from '../orders/routes';
 import { emitPickupEvent } from './routes';
@@ -61,7 +65,7 @@ export async function validatePickupItems(
     const available = oi.quantity - oi.receivedQuantity - reservedElsewhere;
     if (it.quantity > available) {
       throw Errors.business(
-        `"${oi.description}": ${available} peça(s) disponível(is) para retirada (já recebidas ou em outra retirada).`,
+        `"${oi.description}": ${plural(available, 'peça disponível', 'peças disponíveis')} para retirada (já recebidas ou em outra retirada).`,
       );
     }
   }
@@ -159,6 +163,7 @@ export async function createPickup(
   const pickup = await tx.pickupRequest.create({
     data: {
       orderId: order.id,
+      kind: input.kind ?? 'RETIRADA',
       addressId: address?.id ?? order.pickupAddressId,
       addressSnapshot: snapshot as unknown as Prisma.InputJsonValue,
       scheduledDate: parseDateOnly(input.scheduledDate),
@@ -168,6 +173,9 @@ export async function createPickup(
       teamNotes: input.teamNotes ?? null,
       instructions: input.instructions ?? null,
       externalReference: input.externalReference ?? null,
+      bringSamples: input.bringSamples ?? false,
+      samplesDescription: input.bringSamples ? (input.samplesDescription ?? null) : null,
+      bringCardMachine: input.bringCardMachine ?? false,
       logisticsUserId: executor?.id ?? null,
       status,
       createdById: actor.userId,
@@ -210,13 +218,21 @@ export async function createPickup(
     input.participantUserIds ?? input.tripCost?.participantUserIds ?? [],
     executor?.id ?? null,
   );
+  // 2026-11-26: agendado depois do fechamento (o cliente ia trazer) — o prazo segue a mesma
+  // regra do fechamento: No local = dia do serviço; Retirada = dias úteis contados do dia dela.
+  await followPickupDate(tx, order.id, input.scheduledDate ?? null, pickup.kind);
   await refreshOrderStatus(tx, order.id);
   await audit(tx, actor, {
     action: 'pickup.created',
     entityType: 'pickup_request',
     entityId: pickup.id,
-    summary: `Retirada ${pickupCode(pickup.number)} solicitada para o pedido ${orderCode(order.number)}.`,
-    changes: { status, scheduledDate: input.scheduledDate ?? null, team: input.team },
+    summary: `${PICKUP_KIND_LABEL[pickup.kind]} ${pickupCode(pickup.number)} solicitada para o pedido ${orderCode(order.number)}.`,
+    changes: {
+      status,
+      kind: pickup.kind,
+      scheduledDate: input.scheduledDate ?? null,
+      team: input.team,
+    },
   });
   if (executor)
     await notify(tx, actor, [
@@ -224,11 +240,65 @@ export async function createPickup(
         userId: executor.id,
         kind: 'ENTREGA_ATRIBUIDA',
         dedupeKey: `RETIRADA_ATRIBUIDA:${pickup.id}:${pickup.version}`,
-        body: `Retirada ${pickupCode(pickup.number)}${input.scheduledDate ? ` em ${input.scheduledDate.split('-').reverse().join('/')}${input.windowStart ? `, chegada ${input.windowStart}` : ''}` : ''}.`,
+        body: `${pickup.kind === 'NO_LOCAL' ? 'Serviço no local' : 'Retirada'} ${pickupCode(pickup.number)}${input.scheduledDate ? ` em ${input.scheduledDate.split('-').reverse().join('/')}${input.windowStart ? `, chegada ${input.windowStart}` : ''}` : ''}.`,
         includeActor: true,
       },
     ]);
   await emitPickupEvent(tx, actor, pickup.id, EVENT_TYPES.PICKUP_CREATED);
   await emitOrderEvent(tx, actor, order.id);
   return pickup;
+}
+
+/**
+ * 2026-11-26: o responsável pela retirada / serviço no local (e quem vai junto) fica sabendo,
+ * no celular, quando ela muda de dia/horário ou é cancelada — como já acontece com as entregas.
+ */
+export async function announcePickupChange(
+  tx: Tx,
+  actor: ActorContext,
+  pickupId: string,
+  change: 'REAGENDADA' | 'CANCELADA',
+  reason?: string | null,
+) {
+  const p = await tx.pickupRequest.findUniqueOrThrow({
+    where: { id: pickupId },
+    include: {
+      order: { include: { customer: { select: { name: true } } } },
+      tripParticipants: { select: { userId: true } },
+    },
+  });
+  const users = [p.logisticsUserId, ...p.tripParticipants.map((t) => t.userId)].filter(
+    (u): u is string => Boolean(u),
+  );
+  if (!users.length) return;
+  const what = p.kind === 'NO_LOCAL' ? 'Serviço no local' : 'Retirada';
+  const day = dateOnly(p.scheduledDate);
+  const when = day
+    ? `${day.split('-').reverse().join('/')}${p.windowStart ? `, chegada ${p.windowStart}` : ''}`
+    : 'sem data';
+  const body =
+    change === 'CANCELADA'
+      ? `${what} ${pickupCode(p.number)} de ${p.order.customer.name} foi ${p.kind === 'NO_LOCAL' ? 'cancelado' : 'cancelada'}${reason ? `: ${reason}` : ''}.`
+      : `${what} ${pickupCode(p.number)} de ${p.order.customer.name} mudou para ${when}.`;
+  await notify(
+    tx,
+    actor,
+    [...new Set(users)].map((userId) =>
+      change === 'CANCELADA'
+        ? {
+            userId,
+            kind: 'RETIRADA_CANCELADA' as const,
+            dedupeKey: `RETIRADA_CANCELADA:${p.id}:${userId}`,
+            body,
+            includeActor: false,
+          }
+        : {
+            userId,
+            kind: 'ENTREGA_ATRIBUIDA' as const,
+            dedupeKey: `RETIRADA_ATRIBUIDA:${p.id}:${p.version}:${userId}`,
+            body,
+            includeActor: false,
+          },
+    ),
+  );
 }

@@ -33,10 +33,15 @@ describe('Documentos e valores', () => {
 });
 
 describe('Regras do fluxo', () => {
-  it('"Recebida na oficina" nunca é transição manual', () => {
-    for (const targets of Object.values(PICKUP_TRANSITIONS)) {
-      expect(targets).not.toContain('RECEBIDA_NA_OFICINA');
-    }
+  it('"Recebida na oficina" é marcada na retirada, só depois de realizada (ou da ocorrência)', () => {
+    // Recebimentos removidos: a chegada à oficina é a última transição da própria retirada.
+    const into = Object.entries(PICKUP_TRANSITIONS)
+      .filter(([, targets]) => targets.includes('RECEBIDA_NA_OFICINA'))
+      .map(([from]) => from)
+      .sort();
+    expect(into).toEqual(['COM_OCORRENCIA', 'RETIRADA_REALIZADA']);
+    // 2026-11-26: só "A retirada não aconteceu" (volta para com ocorrência).
+    expect(PICKUP_TRANSITIONS.RECEBIDA_NA_OFICINA).toEqual(['COM_OCORRENCIA']);
     expect(PICKUP_TRANSITIONS.CANCELADA).toEqual([]);
   });
   it('tecido é sempre comprado para a OS', () => {

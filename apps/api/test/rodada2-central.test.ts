@@ -10,7 +10,7 @@ import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import { panelUserWith } from './commercial-helpers';
 import type { Client } from './helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase, setupTablet } from './helpers';
+import { createTestApp, db, loginAdmin, resetDatabase } from './helpers';
 import {
   F,
   PINS,
@@ -24,23 +24,7 @@ import {
   row,
   scenario,
 } from './labor-helpers';
-import {
-  createMeasurement,
-  fillAndSubmit,
-  gestorUserId,
-  nextFriday,
-  openServiceOrder,
-} from './measurement-helpers';
 import { day, today } from './production-helpers';
-import {
-  approvedNeeds,
-  confirmPurchase,
-  createPurchase,
-  createSupplier,
-  linen,
-  ok,
-  receive,
-} from './purchasing-helpers';
 import { qualityKit } from './quality-helpers';
 
 /**
@@ -80,263 +64,6 @@ const overview = async (c: Client) => {
   expect(r.status, JSON.stringify(r.body)).toBe(200);
   return r.body as OverviewDto;
 };
-
-// ─────────────────────────── F10-08 / F10-13d — compras aguardando entrega ───────────────────
-
-/** Pedido de tecido exclusivo da OS, confirmado (ou só rascunho), com previsão de entrega. */
-async function fabricOrder(
-  admin: Client,
-  supplierId: string,
-  requirementId: string,
-  quantity: number,
-  opts: { confirm?: boolean; expectedDate?: string } = {},
-) {
-  const po = await createPurchase(admin, {
-    supplierId,
-    expectedDate: opts.expectedDate ?? day(5),
-    items: [
-      {
-        sourcing: 'EXCLUSIVO_OS',
-        allocations: [{ materialRequirementId: requirementId, quantity }],
-        quantity,
-        unitPriceCents: 4500,
-      },
-    ],
-  });
-  expect(po.status, JSON.stringify(po.body)).toBe(201);
-  if (opts.confirm === false)
-    return po.body as { id: string; version: number; items: { id: string }[] };
-  const c = await confirmPurchase(admin, po.body);
-  expect(c.status, JSON.stringify(c.body)).toBe(200);
-  return c.body as { id: string; version: number; items: { id: string }[] };
-}
-const awaitingKey = (poId: string) => `MATERIAL:aguardando-entrega:${poId}`;
-
-describe('F10-08/F10-13d — compras aguardando entrega', () => {
-  it('confirmada sem recebimento aparece; parcial continua pelo saldo; total some', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const a = await approvedNeeds(admin, 'Cliente Aguardando', (s) => [linen(s.items[0].id, 10)]);
-    const po = await fabricOrder(admin, supplier.id, a.reqs[0]!.id, 10);
-    let it = await itemOf(admin, awaitingKey(po.id));
-    expect(it).toMatchObject({
-      type: 'MATERIAL',
-      category: 'INFO',
-      status: 'CONFIRMADO',
-      statusLabel: 'Aguardando entrega',
-      deadline: day(5),
-      link: `/painel/compras/${po.id}`,
-      serviceOrder: { id: a.so.id },
-    });
-    expect(it!.title).toMatch(/aguardando entrega/);
-    expect(it!.description).toMatch(/1 item\(ns\) com saldo a receber/);
-    // Sem preço no item (a Central não mostra valores de compra).
-    expect(JSON.stringify(it)).not.toMatch(/4500|Cents|price/i);
-    // Recebimento parcial: continua, pelo saldo.
-    expect((await receive(admin, po.id, [ok(po.items[0]!.id, 4)])).status).toBe(201);
-    it = await itemOf(admin, awaitingKey(po.id));
-    expect(it).toMatchObject({ status: 'PARCIALMENTE_RECEBIDO' });
-    expect(it!.description).toMatch(/recebimento parcial/);
-    // Recebimento do saldo: some.
-    expect((await receive(admin, po.id, [ok(po.items[0]!.id, 6)])).status).toBe(201);
-    expect(await itemOf(admin, awaitingKey(po.id))).toBeUndefined();
-    expect((await db().purchaseOrder.findUniqueOrThrow({ where: { id: po.id } })).status).toBe(
-      'RECEBIDO',
-    );
-  });
-
-  it('rascunho não entra; cancelado e saldo encerrado somem; previsão vencida vira atenção', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const a = await approvedNeeds(admin, 'Cliente Rascunho', (s) => [linen(s.items[0].id, 10)]);
-    const draft = await fabricOrder(admin, supplier.id, a.reqs[0]!.id, 10, { confirm: false });
-    expect(await itemOf(admin, awaitingKey(draft.id))).toBeUndefined();
-    // Confirmado e depois cancelado (mecanismo existente): sai da Central.
-    const b = await approvedNeeds(admin, 'Cliente Cancela', (s) => [linen(s.items[0].id, 8)]);
-    const cancelled = await fabricOrder(admin, supplier.id, b.reqs[0]!.id, 8);
-    expect(await itemOf(admin, awaitingKey(cancelled.id))).toBeDefined();
-    const cur = (await admin.get(`/api/v1/purchase-orders/${cancelled.id}`)).body;
-    const c = await admin.post(`/api/v1/purchase-orders/${cancelled.id}/cancel`, {
-      reason: 'Fornecedor sem prazo',
-      version: cur.version,
-    });
-    expect(c.status, JSON.stringify(c.body)).toBe(200);
-    expect(await itemOf(admin, awaitingKey(cancelled.id))).toBeUndefined();
-    // Parcial com o saldo encerrado (concluído pelo domínio): sai da Central.
-    const d = await approvedNeeds(admin, 'Cliente Encerra', (s) => [linen(s.items[0].id, 10)]);
-    const closed = await fabricOrder(admin, supplier.id, d.reqs[0]!.id, 10, {
-      expectedDate: day(-2),
-    });
-    const late = await itemOf(admin, awaitingKey(closed.id));
-    expect(late).toMatchObject({
-      category: 'ATENCAO',
-      priority: 'ALTA',
-      statusLabel: 'Entrega atrasada',
-    });
-    expect((await receive(admin, closed.id, [ok(closed.items[0]!.id, 6)])).status).toBe(201);
-    expect(await itemOf(admin, awaitingKey(closed.id))).toBeDefined();
-    const now = (await admin.get(`/api/v1/purchase-orders/${closed.id}`)).body;
-    const cb = await admin.post(
-      `/api/v1/purchase-orders/${closed.id}/close-balance`,
-      { reason: 'Fornecedor sem estoque', version: now.version },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(cb.status, JSON.stringify(cb.body)).toBe(200);
-    expect(await itemOf(admin, awaitingKey(closed.id))).toBeUndefined();
-  });
-
-  it('chegada registrada aguardando conferência não aparece duas vezes', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const a = await approvedNeeds(admin, 'Cliente Chegada', (s) => [linen(s.items[0].id, 10)]);
-    const po = await fabricOrder(admin, supplier.id, a.reqs[0]!.id, 10);
-    await db().materialArrival.create({
-      data: {
-        purchaseOrderId: po.id,
-        lines: [{ purchaseOrderItemId: po.items[0]!.id, description: 'Linho', unit: 'METRO' }],
-        receivedById: await gestorUserId(),
-      },
-    });
-    const all = await attention(admin);
-    expect(all.items.find((i) => i.key === awaitingKey(po.id))).toBeUndefined();
-    expect(all.items.find((i) => i.key === 'MATERIAL:conferencia')).toBeDefined();
-  });
-
-  it('permissões: compras vê; Central sem compras, financeiro e tablet não', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const a = await approvedNeeds(admin, 'Cliente Permissão', (s) => [linen(s.items[0].id, 10)]);
-    const po = await fabricOrder(admin, supplier.id, a.reqs[0]!.id, 10);
-    const buyer = await panelUserWith(app, admin, 'comprador', ['ocorrencias.ver', 'compras.ver']);
-    const it = await itemOf(buyer, awaitingKey(po.id));
-    expect(it).toBeDefined();
-    // O link leva a uma tela que o comprador consegue abrir (mesma permissão da compra).
-    expect((await buyer.get(`/api/v1/purchase-orders/${po.id}`)).status).toBe(200);
-    const central = await panelUserWith(app, admin, 'central', ['ocorrencias.ver']);
-    expect(await itemOf(central, awaitingKey(po.id))).toBeUndefined();
-    const fin = await panelUserWith(app, admin, 'fin', ['ocorrencias.ver', 'financeiro.ver']);
-    expect(await itemOf(fin, awaitingKey(po.id))).toBeUndefined();
-    const { tablet } = await setupTablet(app, admin, {
-      name: 'Tablet Compras',
-      employee: 'Thiago',
-      pin: PINS.Thiago!,
-    });
-    expect((await tablet.get('/api/v1/attention')).status).toBe(403);
-  });
-});
-
-// ─────────────────────────── F10-13r — substituição de material ───────────────────────────
-
-type Detail = {
-  id: string;
-  request: { id: string; version: number };
-  items: { id: string }[];
-  substitution: { suggested: Record<string, string | null> } | null;
-};
-async function submitted(admin: Client, soId: string, items: unknown[]) {
-  const m = await createMeasurement(admin, {
-    serviceOrderId: soId,
-    kind: 'EXTRAORDINARIA',
-    reason: 'Nova medição',
-    assigneeUserId: await gestorUserId(),
-    dueDate: nextFriday(),
-  });
-  expect(m.status, JSON.stringify(m.body)).toBe(201);
-  const sub = await fillAndSubmit(admin, m.body, { items });
-  expect(sub.status, JSON.stringify(sub.body)).toBe(200);
-  return (await admin.get(`/api/v1/measurements/${m.body.id}`)).body as Detail;
-}
-const subKey = (measurementId: string) => `MATERIAL:substituicao:${measurementId}`;
-
-describe('F10-13r — substituição de material aguardando decisão', () => {
-  it('pendente aparece com link da decisão; aprovação (substituição decidida) some', async () => {
-    const admin = await loginAdmin(app);
-    const a = await approvedNeeds(admin, 'Cliente Substitui', (s) => [linen(s.items[0].id, 10)]);
-    const d = await submitted(admin, a.so.id, [linen(a.so.items[0].id, 12)]);
-    const it = await itemOf(admin, subKey(d.id));
-    expect(it).toMatchObject({
-      type: 'MATERIAL',
-      category: 'ACAO',
-      statusLabel: 'Aguardando decisão',
-      link: `/painel/medicoes/${d.id}`,
-      serviceOrder: { id: a.so.id },
-    });
-    expect(it!.description).toMatch(/1 necessidade\(s\)/);
-    const substitutions = Object.entries(d.substitution?.suggested ?? {})
-      .filter((e): e is [string, string] => Boolean(e[1]))
-      .map(([requestItemId, replacesRequirementId]) => ({ requestItemId, replacesRequirementId }));
-    expect(substitutions).toHaveLength(1);
-    const r = await admin.post(
-      `/api/v1/measurements/${d.id}/request/approve`,
-      { version: d.request.version, substitutions },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(r.status, JSON.stringify(r.body)).toBe(200);
-    expect(await itemOf(admin, subKey(d.id))).toBeUndefined();
-  });
-
-  it('recusa (devolução) some; obsoleta (necessidade cancelada) some; sem candidata não aparece', async () => {
-    const admin = await loginAdmin(app);
-    const a = await approvedNeeds(admin, 'Cliente Recusa', (s) => [linen(s.items[0].id, 10)]);
-    const d = await submitted(admin, a.so.id, [linen(a.so.items[0].id, 12)]);
-    expect(await itemOf(admin, subKey(d.id))).toBeDefined();
-    const back = await admin.post(`/api/v1/measurements/${d.id}/request/return`, {
-      reason: 'Refazer a medição do braço',
-      version: d.request.version,
-    });
-    expect(back.status, JSON.stringify(back.body)).toBe(200);
-    expect(await itemOf(admin, subKey(d.id))).toBeUndefined();
-    // Obsoleta: a necessidade que seria substituída deixou de estar ATIVA.
-    const b = await approvedNeeds(admin, 'Cliente Obsoleta', (s) => [linen(s.items[0].id, 10)]);
-    const e = await submitted(admin, b.so.id, [linen(b.so.items[0].id, 12)]);
-    expect(await itemOf(admin, subKey(e.id))).toBeDefined();
-    const cancel = await admin.post(
-      `/api/v1/material-requirements/${b.reqs[0]!.id}/cancel`,
-      { reason: 'Cliente desistiu do tecido' },
-      { 'idempotency-key': idemKey() },
-    );
-    expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
-    expect(await itemOf(admin, subKey(e.id))).toBeUndefined();
-    // Primeira medição de uma OS (nada a substituir): não é decisão de substituição.
-    const fresh = await openServiceOrder(admin, 'Cliente Sem Candidata');
-    const m = await createMeasurement(admin, {
-      serviceOrderId: fresh.id,
-      kind: 'ROTINA',
-      assigneeUserId: await gestorUserId(),
-      dueDate: nextFriday(),
-    });
-    const sub = await fillAndSubmit(admin, m.body, { items: [linen(fresh.items[0].id, 5)] });
-    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
-    expect(await itemOf(admin, subKey(m.body.id))).toBeUndefined();
-  });
-
-  it('duas propostas na mesma OS: um item por medição (chaves únicas)', async () => {
-    const admin = await loginAdmin(app);
-    const a = await approvedNeeds(admin, 'Cliente Duas', (s) => [linen(s.items[0].id, 10)]);
-    const d1 = await submitted(admin, a.so.id, [linen(a.so.items[0].id, 12)]);
-    const d2 = await submitted(admin, a.so.id, [linen(a.so.items[0].id, 14)]);
-    const all = await attention(admin);
-    const subs = all.items.filter((i) => i.key.startsWith('MATERIAL:substituicao:'));
-    expect(subs.map((i) => i.key).sort()).toEqual([subKey(d1.id), subKey(d2.id)].sort());
-    expect(new Set(all.items.map((i) => i.key)).size).toBe(all.items.length);
-  });
-
-  it('permissões: só quem aprova materiais vê; o link abre a medição', async () => {
-    const admin = await loginAdmin(app);
-    const a = await approvedNeeds(admin, 'Cliente Perm Sub', (s) => [linen(s.items[0].id, 10)]);
-    const d = await submitted(admin, a.so.id, [linen(a.so.items[0].id, 12)]);
-    const approver = await panelUserWith(app, admin, 'aprovador', [
-      'ocorrencias.ver',
-      'materiais.aprovar',
-    ]);
-    expect(await itemOf(approver, subKey(d.id))).toBeDefined();
-    expect((await approver.get(`/api/v1/measurements/${d.id}`)).status).toBe(200);
-    const viewer = await panelUserWith(app, admin, 'leitor', ['ocorrencias.ver', 'materiais.ver']);
-    expect(await itemOf(viewer, subKey(d.id))).toBeUndefined();
-    const buyer = await panelUserWith(app, admin, 'compras', ['ocorrencias.ver', 'compras.ver']);
-    expect(await itemOf(buyer, subKey(d.id))).toBeUndefined();
-  });
-});
 
 // ─────────────────── F10-11/F10-13o e F10-12 — confirmação e pagamentos ───────────────────
 
@@ -487,7 +214,7 @@ describe('F10-12 — pagamentos disponíveis', () => {
       status: 'DISPONIVEL',
       link: `/painel/financeiro?tab=fechamento&semana=${WEEK}&profissional=${s.ids.ricardo}`,
     });
-    expect(it!.title).toMatch(/1 pagamento\(s\)/);
+    expect(it!.title).toMatch(/1 pagamento liberado/);
     expect(moneyKeys(it)).toEqual([]);
     // Pagamento parcial: continua disponível pelo saldo.
     expect((await payDirect(s.admin, ric.id, 40000)).status).toBe(200);

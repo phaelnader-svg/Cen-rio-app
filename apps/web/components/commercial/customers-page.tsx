@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { CUSTOMER_KIND_LABEL, formatPhone } from '@cenario/shared';
 import { Contact, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
@@ -8,9 +9,11 @@ import { useDeferredValue, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Input, Select } from '@/components/ui/field';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { ExportLink } from '@/components/ui/export-link';
 import { useCustomers } from '@/lib/commercial';
 import { useCan } from '@/lib/hooks';
 import { CustomerForm } from './customer-form';
+import { CUSTOMER_IMPORT_FIELDS, SheetImportButton } from '@/components/improvements/sheet-import';
 
 export function CustomersPage() {
   const can = useCan();
@@ -32,16 +35,32 @@ export function CustomersPage() {
     <>
       <PageHeader
         title="Clientes"
-        description="Pessoas e empresas atendidas, com endereços, contatos e histórico de serviços."
+        description="Pessoas e empresas atendidas."
+        help="Todo cliente que entra por um orçamento fica aqui sozinho, com os serviços e os pagamentos dele. Abra o cliente para ver o histórico e falar com ele pelo WhatsApp."
         actions={
-          can('clientes.gerenciar') && (
-            <Button
-              icon={<Plus className="size-4" aria-hidden />}
-              onClick={() => setCreating(true)}
-            >
-              Novo cliente
-            </Button>
-          )
+          <>
+            <ExportLink href="/api/v1/export/clientes.csv" testId="export-clientes" />
+            {can('clientes.gerenciar') && (
+              <SheetImportButton
+                title="Importar clientes de uma planilha"
+                description="Cada linha vira um cliente, com as mesmas regras do cadastro manual. Telefone ou documento repetido não entra de novo."
+                fields={CUSTOMER_IMPORT_FIELDS}
+                endpoint="/api/v1/customers/import"
+                invalidate={['customers']}
+                resultText={(r) =>
+                  `${plural(r.created, 'cliente importado', 'clientes importados')}.${r.problems.length ? ` ${plural(r.problems.length, 'linha', 'linhas')} não entraram.` : ''}`
+                }
+              />
+            )}
+            {can('clientes.gerenciar') && (
+              <Button
+                icon={<Plus className="size-4" aria-hidden />}
+                onClick={() => setCreating(true)}
+              >
+                Novo cliente
+              </Button>
+            )}
+          </>
         }
       />
       <Card className="mb-4 p-4">
@@ -97,7 +116,7 @@ export function CustomersPage() {
       ) : (
         <Card className="overflow-hidden">
           <p className="border-b border-line px-5 py-2.5 text-sm text-ink-muted">
-            {customers.data.total} cliente(s)
+            {plural(customers.data.total, 'cliente', 'clientes')}
           </p>
           <ul className="divide-y divide-line">
             {customers.data.items.map((c) => {
@@ -120,7 +139,7 @@ export function CustomersPage() {
                       </p>
                     </div>
                     <span className="text-sm text-ink-muted">
-                      {c.orderCount} pedido(s) · {c.serviceOrderCount} OS
+                      {plural(c.orderCount, 'pedido', 'pedidos')} · {c.serviceOrderCount} OS
                     </span>
                   </Link>
                 </li>

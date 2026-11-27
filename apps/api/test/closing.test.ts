@@ -12,13 +12,14 @@ import {
   resetDatabase,
   setupTablet,
   withoutOwnChanged,
+  ownerDb,
 } from './helpers';
 import {
   createCustomer,
   createOrder,
   createPickup,
   panelUserWith,
-  receiptBody,
+  markArrived,
 } from './commercial-helpers';
 import { grant, openServiceOrder } from './measurement-helpers';
 import { day, tabletOf, today, userIdOf } from './production-helpers';
@@ -341,12 +342,9 @@ async function sameCustomer(admin: Client, n: number) {
     const order = await createOrder(admin, customer, [
       { pieceType: 'POLTRONA', description: `Poltrona ${k}`, quantity: 1 },
     ]);
-    await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]),
-    );
+    await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
     const so = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: order.id,
       items: [
         {
@@ -808,7 +806,8 @@ describe('Conferência com leitura consistente (estabilização — corrida do C
     });
     for (let i = 0; i < 400; i++) {
       if (done) return 'terminou';
-      const [r] = await db().$queryRaw<{ n: bigint }[]>`
+      // Dono das tabelas: o papel cenario_app não enxerga a espera das outras conexões.
+      const [r] = await ownerDb().$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM pg_stat_activity
          WHERE datname = current_database() AND wait_event_type = 'Lock'`;
       if (r!.n > 0n) return 'esperando trava';

@@ -7,9 +7,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   SCREENS,
+  SIGNUP_PATH,
   SITE,
   annualOffer,
   pendingItems,
+  siteMetadata,
   siteMode,
   whatsappUrl,
 } from '../components/site/config';
@@ -20,6 +22,7 @@ const SITE_FILES = [
   'components/site/config.ts',
   'app/(site)/layout.tsx',
   'app/(site)/conheca/page.tsx',
+  'app/page.tsx',
 ];
 
 describe('ativação da landing', () => {
@@ -60,10 +63,30 @@ describe('ativação da landing', () => {
   });
 
   it('a indexação só é liberada com a landing publicada', () => {
-    expect(src('app/(site)/layout.tsx')).toMatch(
-      /siteMode\(\) === 'live' \? \{ index: true, follow: true \} : \{ index: false, follow: false \}/,
-    );
+    expect(src('app/(site)/layout.tsx')).toMatch(/siteMetadata\(siteMode\(\) === 'live'\)/);
+    expect(siteMetadata(true).robots).toEqual({ index: true, follow: true });
+    expect(siteMetadata(false).robots).toEqual({ index: false, follow: false });
     expect(src('app/layout.tsx')).toMatch(/robots: \{ index: false, follow: false \}/);
+  });
+});
+
+describe('compartilhamento e Google', () => {
+  it('/ e /conheca apontam para o mesmo endereço principal e têm prévia com imagem', () => {
+    const m = siteMetadata(true);
+    expect(m.alternates.canonical).toBe('/');
+    expect(m.metadataBase.toString()).toBe('https://cenariogestao.com.br/');
+    expect(m.openGraph.images[0]).toMatchObject({ url: '/site/og.png', width: 1200, height: 630 });
+    expect(src('app/page.tsx')).toMatch(/siteMetadata\(true\)/);
+  });
+
+  it('robots.txt e sitemap.xml existem e deixam o painel fora', () => {
+    expect(src('lib/robots.ts')).toMatch(/ROBOTS_DISALLOW = \[\s*'\/painel'/);
+    expect(src('app/sitemap.ts')).toMatch(/SITE_URL/);
+  });
+
+  it('o botão Criar minha conta abre a tela de entrar já no Criar conta', () => {
+    expect(SIGNUP_PATH).toBe('/entrar?criar=1');
+    expect(src('components/admin/login.tsx')).toMatch(/params\.get\('criar'\) === '1'/);
   });
 });
 
@@ -77,21 +100,53 @@ describe('isolamento e promessas', () => {
 
   it('não promete nada que ainda não foi decidido', () => {
     expect(code).not.toMatch(
-      /grátis|gratuit|ilimitad|fidelidade|promoç|plano (básico|profissional|premium)/i,
+      /gratuit|ilimitad|fidelidade|promoç|plano (básico|profissional|premium)/i,
     );
+    // Teste grátis: só o decidido pelo proprietário (7 dias), vindo da configuração.
+    expect(src('components/site/landing.tsx')).not.toMatch(/grátis/i);
+    expect(SITE.trialDays).toBe(7);
     // Desconto só o anual decidido pelo proprietário, calculado da configuração.
     expect(src('components/site/landing.tsx')).not.toMatch(/desconto|anual/i);
   });
 
   it('o plano anual é calculado a partir da mensalidade e do desconto', () => {
-    expect(annualOffer()).toBe(
-      'No plano anual, 15% de desconto: R$ 339,15 por mês, ou R$ 4.069,80 no ano.',
-    );
+    expect(annualOffer()).toBe('No anual, R$ 339,15 por mês (R$ 718,20 a menos no ano).');
     expect(annualOffer({ ...SITE, annualDiscountPct: null })).toBeNull();
     expect(annualOffer({ ...SITE, monthlyPrice: null })).toBeNull();
   });
 
-  it('a raiz do sistema continua indo para o painel', () => {
-    expect(src('app/page.tsx')).toMatch(/redirect\('\/painel'\)/);
+  it('a raiz mostra a landing só quando publicada; senão continua indo para o painel', () => {
+    const root = src('app/page.tsx');
+    expect(root).toMatch(/if \(siteMode\(\) !== 'live'\) redirect\('\/painel'\)/);
+    expect(root).toMatch(/<Landing\s+preview=\{false\}\s+blogOrigem=/);
+    expect(root).toMatch(/force-dynamic/);
+  });
+
+  it('o topo da landing tem Criar conta (principal) e, do lado, Entrar indo para /entrar', () => {
+    const landing = src('components/site/landing.tsx');
+    expect(landing).toMatch(
+      /href="\/entrar"[\s\S]{0,200}BUTTON_VARIANTS\.secondary[\s\S]{0,200}Entrar/,
+    );
+    expect(landing).toMatch(/<SignupLink size="sm"[\s\S]{0,80}Criar conta[\s\S]{0,80}<LoginLink/);
+  });
+
+  it('a tarja do topo leva ao WhatsApp, fecha no X e não volta para quem fechou', () => {
+    const bar = src('components/site/top-bar.tsx');
+    expect(bar).toMatch(/localStorage\.setItem\(KEY, '1'\)/);
+    expect(bar).toMatch(/Agende uma demonstração/);
+    expect(bar).not.toMatch(/Fale com quem usa/);
+    expect(bar).not.toMatch(/sticky|fixed/);
+    expect(src('components/site/landing.tsx')).toMatch(/<TopBar href=\{demo\}/);
+  });
+
+  it('o botão Agendar demonstração fica flutuando no canto de baixo, à direita (item 44: abre a janela de marcar)', () => {
+    const landing = src('components/site/landing.tsx');
+    const demoSrc = src('components/site/demo.tsx');
+    expect(demoSrc).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Agendar demonstração/);
+    expect(demoSrc).toMatch(/onClick=\{openDemo\}/);
+    expect(landing).toMatch(/const demo = demoWhatsappUrl\(/);
+    expect(landing).toMatch(/<DemoFloat\s+href=\{demo\}/);
+    expect(landing).toMatch(/<DemoDialogHost whatsappUrl=\{demo\}/);
+    expect(landing).not.toMatch(/subtitle="Cenário Estofados"/);
   });
 });

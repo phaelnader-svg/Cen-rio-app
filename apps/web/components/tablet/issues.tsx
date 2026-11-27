@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { useMyIssues } from '@/lib/issues';
+import { uploadPhoto } from '@/lib/photos';
 import { useOnline } from './tasks';
 
 /**
@@ -186,12 +187,13 @@ function ProblemForm({
   const [description, setDescription] = useState('');
   const [impact, setImpact] = useState<IssueImpact | null>(null);
   const [canContinue, setCanContinue] = useState<boolean | null>(null);
-  const [requirementId, setRequirementId] = useState<string | null>(null);
+  // Atalhos: materiais da lista simples da OS (o nome vira a descrição do problema).
+  const [picked, setPicked] = useState<string | null>(null);
   const [other, setOther] = useState('');
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState<MaterialUnit>('METRO');
   const [photo, setPhoto] = useState<File | null>(null);
-  const materials = t.materials;
+  const materials = [...new Set((t.osMaterials ?? []).map((l) => l.description))];
 
   const send = () => {
     if (kind === 'OUTRO') {
@@ -201,8 +203,7 @@ function ProblemForm({
     if (kind === 'TECNICO' && description.trim().length < 3)
       return setError('Descreva o problema.');
     if (kind === 'MATERIAL') {
-      if (!requirementId && other.trim().length < 2)
-        return setError('Escolha ou descreva o material.');
+      if (!picked && other.trim().length < 2) return setError('Escolha ou descreva o material.');
       if (!(Number(quantity.replace(',', '.')) > 0)) return setError('Informe a quantidade.');
     }
     m.mutate({
@@ -217,8 +218,7 @@ function ProblemForm({
             ...(kind === 'MATERIAL'
               ? {
                   material: {
-                    requirementId,
-                    description: requirementId ? undefined : other,
+                    description: picked ?? other,
                     quantity: Number(quantity.replace(',', '.')),
                     unit,
                   },
@@ -228,11 +228,7 @@ function ProblemForm({
           idempotencyKey: key,
         });
         if (photo) {
-          const fd = new FormData();
-          fd.append('entityType', 'PRODUCTION_ISSUE');
-          fd.append('entityId', issue.id);
-          fd.append('file', photo);
-          await api('/api/v1/attachments', { method: 'POST', body: fd });
+          await uploadPhoto({ entityType: 'PRODUCTION_ISSUE', entityId: issue.id, file: photo });
         }
         return issue;
       },
@@ -251,23 +247,16 @@ function ProblemForm({
           <div>
             <p className="mb-2 text-base font-semibold text-ink-soft">Qual material?</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              {materials.map((l) => (
-                <Choice
-                  key={l.requirementId}
-                  active={requirementId === l.requirementId}
-                  onClick={() => {
-                    setRequirementId(l.requirementId);
-                    setUnit(l.unit);
-                  }}
-                >
-                  {l.description}
+              {materials.map((d) => (
+                <Choice key={d} active={picked === d} onClick={() => setPicked(d)}>
+                  {d}
                 </Choice>
               ))}
-              <Choice active={requirementId === null} onClick={() => setRequirementId(null)}>
+              <Choice active={picked === null} onClick={() => setPicked(null)}>
                 Outro material
               </Choice>
             </div>
-            {requirementId === null && (
+            {picked === null && (
               <input
                 className="mt-3 input input-lg"
                 placeholder="Qual material está faltando?"

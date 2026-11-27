@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * Caddyfile de PRODUÇÃO com o Caddy REAL: o sistema interno continua fora dos buscadores
- * (X-Robots-Tag noindex) e só a página comercial pública (/conheca e /site/*) fica sem o
+ * (X-Robots-Tag noindex) e só a página comercial pública (/, /conheca e /site/*) fica sem o
  * cabeçalho — quem decide se ela pode ser indexada é o próprio Next.js (SITE_COMERCIAL).
  *
  * Únicas adaptações para rodar aqui: destinos `api:4000`/`web:3000` trocados por um servidor
@@ -30,9 +30,10 @@ async function freePort(): Promise<number> {
   });
 }
 
-function get(port: number, path: string): Promise<http.IncomingMessage> {
+function get(port: number, path: string, host?: string): Promise<http.IncomingMessage> {
   return new Promise((ok, fail) => {
-    const req = http.request({ host: '127.0.0.1', port, path }, (res) => {
+    const headers = host ? { host } : undefined;
+    const req = http.request({ host: '127.0.0.1', port, path, headers }, (res) => {
       res.resume();
       res.on('end', () => ok(res));
     });
@@ -50,6 +51,8 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
     ...process.env,
     PROD_DOMAIN: `http://127.0.0.1:${port}`,
     PROD_DOMAIN_WWW: `http://www.localhost:${port}`,
+    // Página de status (melhoria 100) na mesma porta, por nome; o padrão (porta 80) não abre aqui.
+    PROD_STATUS_DOMAIN: `http://status.localhost:${port}`,
     XDG_DATA_HOME: dir,
     XDG_CONFIG_HOME: dir,
     ...extra,
@@ -67,8 +70,8 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
     expect(original).toContain('reverse_proxy api:4000');
     expect(original).toContain('reverse_proxy web:3000');
     const adapted = original
-      .replace('reverse_proxy api:4000', `reverse_proxy 127.0.0.1:${backendPort}`)
-      .replace('reverse_proxy web:3000', `reverse_proxy 127.0.0.1:${backendPort}`)
+      .replaceAll('reverse_proxy api:4000', `reverse_proxy 127.0.0.1:${backendPort}`)
+      .replaceAll('reverse_proxy web:3000', `reverse_proxy 127.0.0.1:${backendPort}`)
       .replace(/^\{\n/m, '{\n\tadmin off\n');
     const file = join(dir, 'Caddyfile');
     writeFileSync(file, adapted);
@@ -104,21 +107,57 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
   });
 
   it('o sistema interno continua com noindex', async () => {
-    for (const path of ['/', '/painel', '/tablet', '/entrar', '/api/health', '/conheca-x']) {
+    for (const path of [
+      '/painel',
+      '/tablet',
+      '/entrar',
+      '/entrar/',
+      '/api/health',
+      '/conheca-x',
+      '/x',
+      '/robots.txt.bak',
+      '/blogx',
+      '/mcp',
+    ]) {
       const r = await get(port, path);
       expect(r.headers['x-robots-tag'], path).toBe('noindex, nofollow');
       expect(r.headers['x-content-type-options'], path).toBe('nosniff');
     }
   });
 
-  it('a página comercial e as imagens dela não recebem o noindex do proxy', async () => {
-    for (const path of ['/conheca', '/site/inicio.webp']) {
+  it('a página comercial, as imagens dela, o blog, robots.txt, sitemap.xml e llms.txt não recebem o noindex do proxy', async () => {
+    for (const path of [
+      '/',
+      '/conheca',
+      '/site/inicio.webp',
+      '/blog',
+      '/blog/um-artigo',
+      '/blog-img/um-artigo/capa.webp',
+      '/robots.txt',
+      '/sitemap.xml',
+      '/llms.txt',
+    ]) {
       const r = await get(port, path);
       expect(r.statusCode, path).toBe(200);
       expect(r.headers['x-robots-tag'], path).toBeUndefined();
       // Os demais cabeçalhos de segurança continuam.
       expect(r.headers['x-content-type-options'], path).toBe('nosniff');
       expect(r.headers['referrer-policy'], path).toBe('strict-origin-when-cross-origin');
+    }
+  });
+
+  it('o endereço da página de status só mostra a página de status', async () => {
+    const host = `status.localhost:${port}`;
+    for (const path of ['/', '/status', '/api/public/status', '/api/public/aviso', '/_next/x.js']) {
+      const r = await get(port, path, host);
+      expect(r.statusCode, path).toBe(200);
+      expect(r.headers['x-robots-tag'], path).toBe('noindex, nofollow');
+      expect(r.headers['x-content-type-options'], path).toBe('nosniff');
+    }
+    for (const path of ['/painel', '/api/health', '/api/v1/me', '/entrar']) {
+      const r = await get(port, path, host);
+      expect(r.statusCode, path).toBe(302);
+      expect(r.headers.location, path).toBe('/');
     }
   });
 });

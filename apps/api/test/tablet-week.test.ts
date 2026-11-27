@@ -5,12 +5,6 @@ import { setClock } from '../src/core/clock';
 import type { Client } from './helpers';
 import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 import { openServiceOrder } from './measurement-helpers';
-import {
-  approvedNeeds,
-  confirmedFabricPurchase,
-  createSupplier,
-  linen,
-} from './purchasing-helpers';
 import { act, addOs, createPlan, publish, tabletOf, today, userIdOf } from './production-helpers';
 
 /**
@@ -90,7 +84,13 @@ async function workshop() {
     ],
   });
   expect(r.status).toBe(201);
-  const pub = await publish(admin, (await admin.get(`/api/v1/production-plans/${plan.id}`)).body);
+  await publish(admin, (await admin.get(`/api/v1/production-plans/${plan.id}`)).body);
+  // A preparação nasce livre (2026-11-19); aqui o João já pegou todas, para exercitar a fila dele.
+  await db().productionTask.updateMany({
+    where: { planId: plan.id, stepClass: 'PREPARACAO' },
+    data: { assigneeUserId: ids.joao },
+  });
+  const pub = (await admin.get(`/api/v1/production-plans/${plan.id}`)).body;
   const tabs = {
     joao: await tabletOf(app, admin, 'João', '271828'),
     ricardo: await tabletOf(app, admin, 'Ricardo', '482915'),
@@ -291,15 +291,6 @@ describe('Minha semana (tablet)', () => {
         )
       ).status,
     ).toBe(201);
-    // Pedido de compra com preço aguardando chegada (o tablet confere o recebimento).
-    const { reqs } = await approvedNeeds(admin, 'Cliente Compra', (x) => [linen(x.items[0].id)]);
-    const po = await confirmedFabricPurchase(admin, (await createSupplier(admin)).id, reqs[0]!);
-    const priced = await db().purchaseOrderItem.count({
-      where: { purchaseOrderId: po.id, unitPriceCents: { gt: 0 } },
-    });
-    expect(priced).toBeGreaterThan(0); // há preço no banco; o tablet não pode recebê-lo
-    const pending = (await tabs.joao.get('/api/v1/material-receipts/pending')).body;
-    expect(pending.length).toBeGreaterThan(0);
     const ws = await WsClient.connect(app, tabs.joao);
     sockets.push(ws);
     const q = await queueOf(tabs.joao);
@@ -313,9 +304,7 @@ describe('Minha semana (tablet)', () => {
       `/api/v1/production-tasks/${q.items[1]!.task.id}`,
       '/api/v1/notifications?limit=50',
       '/api/v1/attendance/me',
-      '/api/v1/help-requests/mine',
       '/api/v1/issues/mine',
-      '/api/v1/material-receipts/pending',
     ];
     for (const [name, c] of Object.entries(tabs))
       for (const p of paths) {

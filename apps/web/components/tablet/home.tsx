@@ -1,35 +1,27 @@
 'use client';
 
+import { pluralWord } from '@cenario/shared';
 import type { MeDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import {
-  ArrowLeft,
-  BadgeCheck,
-  Inbox,
-  LogOut,
-  PackageCheck,
-  RadioTower,
-  Ruler,
-  Wallet,
-} from 'lucide-react';
+import { ArrowLeft, BadgeCheck, LogOut, RadioTower, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { SyncPanel } from '@/components/sync-panel';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/misc';
 import { api } from '@/lib/api';
-import { MaterialReceiving } from '@/components/purchasing/material-receiving';
-import { usePendingReceipts } from '@/lib/purchasing';
+import { useModules } from '@/lib/hooks';
 import { useMyAttendance } from '@/lib/attendance';
-import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
-import { ArrivalsCenter, MyTripsToday, useArrivalsCount } from './arrivals';
+import { PushCard } from './install';
+import { MyTripsToday } from './my-trips';
 import { LogisticsJobs } from './logistics';
 import { MyValues } from './my-values';
 import { DepartScreen, PresenceCard } from './presence';
 import { InspectionDetail, MyInspections, useMyInspectionCount } from './quality';
 import { MyQueueAll, MyWeek } from './my-week';
 import { useMyQueue } from '@/lib/production';
+import { QrScanButton } from './qr-scan';
 import {
   MyTaskDetail,
   NotificationsButton,
@@ -43,10 +35,6 @@ type Screen =
   | 'task'
   | 'notifications'
   | 'sync'
-  | 'measurements'
-  | 'measurement'
-  | 'materials'
-  | 'arrivals'
   | 'depart'
   | 'inspections'
   | 'inspection'
@@ -83,39 +71,44 @@ export function TabletHome({ me }: { me: MeDto }) {
   const qc = useQueryClient();
   const [screen, setScreen] = useState<Screen>('home');
   const [leaving, setLeaving] = useState(false);
+  const modules = useModules();
   const clock = useClock(me.company.timezone);
-  const color = me.employee?.color ?? '#1d4a45';
-  const canSync = me.permissions.includes('sincronizacao.diagnosticar');
+  const color = me.employee?.color ?? '#064a4b';
+  // Melhoria 157: o teste de sincronização é ferramenta do suporte, não do tapeceiro.
+  const canSync =
+    me.company.platformCompany && me.permissions.includes('sincronizacao.diagnosticar');
   // Fase 11: só os próprios valores de produção, se o gestor autorizar.
   const canSeeValues = me.permissions.includes('financeiro.producao_propria');
-  const canMeasure =
-    me.permissions.includes('medicoes.extraordinarias') ||
-    me.permissions.includes('medicoes.gerenciar');
-  const canExecute = me.permissions.includes('producao.executar');
-  // Fase 8: quem pede ajuda nas próprias tarefas (tapeceiros e cabeceiras).
-  const canAskHelp = me.permissions.includes('ajuda.solicitar');
+  // 2026-11-24: cada aparelho pode mostrar só a produção ou só as entregas e retiradas (ex.: o
+  // celular do Thiago com a logística e o tablet dele com a produção). Só esconde: nunca mostra
+  // mais do que o cargo da pessoa permite.
+  const shows = me.device?.shows ?? 'TUDO';
+  const personExecutes = me.permissions.includes('producao.executar');
+  const personDrives = me.permissions.includes('logistica.executar');
+  const canExecute = personExecutes && shows !== 'LOGISTICA';
   // Fase 9: "Tenho um problema" nas próprias tarefas.
   const reportUserId = me.permissions.includes('ocorrencias.registrar') ? me.user.id : null;
   // Presença operacional (Fase 7): quem registra a própria chegada e saída.
   const canPresence =
     me.permissions.includes('presenca.registrar') && !me.permissions.includes('presenca.gerenciar');
   const attendance = useMyAttendance(canPresence);
-  const openCount = useMyOpenCount(canMeasure);
   const todayCount = useMyTodayCount(canExecute);
   // Evolução Fase 4: com fila semanal publicada, a tela inicial vira "Minha semana".
   const queue = useMyQueue(canExecute);
   const weekly = Boolean(queue.data && queue.data.total > 0);
-  const [measurementId, setMeasurementId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskFrom, setTaskFrom] = useState<Screen>('home');
   // Fase 10: inspeções de qualidade (Thiago) e logística (André, Izaías).
-  const canInspect = me.permissions.includes('qualidade.inspecionar');
-  const logisticsOnly = me.permissions.includes('logistica.executar') && !canExecute;
+  const canInspect = me.permissions.includes('qualidade.inspecionar') && shows !== 'LOGISTICA';
+  const logisticsOnly = personDrives && (!personExecutes || shows === 'LOGISTICA');
+  // Equipe própria (ex.: Thiago nas retiradas): no aparelho só de entregas, a lista do dia dele.
+  const ownTeamTrips = shows === 'LOGISTICA' && !personDrives && personExecutes;
+  // O aparelho foi separado para uma parte que o cargo desta pessoa não tem.
+  const nothingHere =
+    (shows === 'LOGISTICA' && !personDrives && !personExecutes) ||
+    (shows === 'PRODUCAO' && !personExecutes && personDrives);
   const inspectionCount = useMyInspectionCount(canInspect);
   const [inspectionId, setInspectionId] = useState<string | null>(null);
-  const pendingMaterials = usePendingReceipts(!logisticsOnly);
-  // Simplificação Fase 3: central compartilhada "Aguardando chegada" (peças + materiais).
-  const arrivalsCount = useArrivalsCount(!logisticsOnly);
 
   const openTask = (id: string, from: Screen = 'home') => {
     setTaskId(id);
@@ -165,6 +158,7 @@ export function TabletHome({ me }: { me: MeDto }) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-subtle/60 px-4 py-2.5 sm:px-8">
           <ConnectionIndicator />
           <div className="flex flex-wrap items-center gap-2">
+            {canExecute && <QrScanButton onTask={(id) => openTask(id)} />}
             {(canExecute || logisticsOnly) && (
               <NotificationsButton
                 onClick={() => {
@@ -188,7 +182,24 @@ export function TabletHome({ me }: { me: MeDto }) {
       </header>
 
       <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
-        {screen === 'home' && logisticsOnly ? (
+        {screen === 'home' && <PushCard />}
+        {screen === 'home' && nothingHere ? (
+          <p
+            className="rounded-xl border border-line p-4 text-lg text-ink-soft"
+            data-testid="device-shows-nothing"
+          >
+            {shows === 'LOGISTICA'
+              ? 'Este aparelho está separado para entregas e retiradas, e você não faz entregas. Use o aparelho da produção.'
+              : 'Este aparelho está separado para a produção, e você só faz entregas e retiradas. Use o seu aparelho de entregas.'}
+          </p>
+        ) : screen === 'home' && ownTeamTrips ? (
+          <>
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">
+              Minhas retiradas e entregas de hoje
+            </h1>
+            <MyTripsToday standalone />
+          </>
+        ) : screen === 'home' && logisticsOnly ? (
           <>
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">
               Minhas entregas e retiradas
@@ -204,7 +215,17 @@ export function TabletHome({ me }: { me: MeDto }) {
                 />
               </div>
             )}
-            <LogisticsJobs />
+            {/* Reformulação, Fase 1: com a logística desligada não há roteiro (dados preservados). */}
+            {modules.logistica ? (
+              <LogisticsJobs />
+            ) : (
+              <p
+                className="rounded-xl border border-line p-4 text-ink-soft"
+                data-testid="logistics-off"
+              >
+                A logística está desligada pelo gestor: não há entregas nem retiradas programadas.
+              </p>
+            )}
           </>
         ) : screen === 'home' ? (
           <>
@@ -212,7 +233,8 @@ export function TabletHome({ me }: { me: MeDto }) {
               {canExecute ? (weekly ? 'Minha semana' : 'Meu dia') : 'Início'}
               {canExecute && !weekly && todayCount !== undefined && (
                 <span className="ml-3 align-middle text-base font-normal text-ink-muted">
-                  <span data-testid="tasks-count">{todayCount}</span> tarefa(s) para hoje
+                  <span data-testid="tasks-count">{todayCount}</span>{' '}
+                  {pluralWord(todayCount, 'tarefa', 'tarefas')} para hoje
                 </span>
               )}
             </h1>
@@ -233,7 +255,6 @@ export function TabletHome({ me }: { me: MeDto }) {
                   setScreen('queue');
                   window.scrollTo({ top: 0 });
                 }}
-                canAskHelp={canAskHelp}
                 reportUserId={reportUserId}
               />
             )}
@@ -242,18 +263,6 @@ export function TabletHome({ me }: { me: MeDto }) {
               {canExecute ? 'Outras atividades' : 'Atividades'}
             </h2>
             <ul className="grid gap-4 md:grid-cols-2">
-              <li>
-                <Tile
-                  onClick={() => setScreen('arrivals')}
-                  testId="tile-arrivals"
-                  icon={<Inbox className="size-7" aria-hidden />}
-                  title="Aguardando chegada"
-                  text="Peças de clientes e materiais comprados."
-                  count={arrivalsCount}
-                  countTestId="arrivals-count"
-                  countLabel="aviso(s) aguardando chegada"
-                />
-              </li>
               {canInspect && (
                 <li>
                   <Tile
@@ -264,37 +273,10 @@ export function TabletHome({ me }: { me: MeDto }) {
                     text="Conferir peças prontas, aprovar ou reprovar."
                     count={inspectionCount}
                     countTestId="inspections-count"
-                    countLabel="inspeção(ões) aguardando"
+                    countLabel={`${pluralWord(inspectionCount ?? 0, 'inspeção aguardando', 'inspeções aguardando')}`}
                   />
                 </li>
               )}
-              {canMeasure && (
-                <li>
-                  <Tile
-                    onClick={() => setScreen('measurements')}
-                    testId="tile-measurements"
-                    icon={<Ruler className="size-7" aria-hidden />}
-                    title="Medições atribuídas"
-                    text="Medir peças e informar materiais."
-                    count={openCount}
-                    countTestId="measurements-count"
-                    countLabel="medição(ões) para fazer"
-                  />
-                </li>
-              )}
-              <li>
-                <Tile
-                  onClick={() => setScreen('materials')}
-                  testId="tile-materials"
-                  icon={<PackageCheck className="size-7" aria-hidden />}
-                  title="Recebimento de materiais"
-                  text="Conferir e registrar o que chegou."
-                  count={pendingMaterials.data?.length}
-                  countTestId="materials-count"
-                  countLabel="pedido(s) aguardando chegada"
-                  tone="bronze"
-                />
-              </li>
               {canSync && (
                 <li>
                   <Tile
@@ -317,13 +299,7 @@ export function TabletHome({ me }: { me: MeDto }) {
                 </li>
               )}
             </ul>
-            {canExecute && <MyTripsToday />}
-          </>
-        ) : screen === 'arrivals' ? (
-          <>
-            {back('Voltar ao início', 'home')}
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Aguardando chegada</h1>
-            <ArrivalsCenter />
+            {canExecute && shows !== 'PRODUCAO' && <MyTripsToday />}
           </>
         ) : screen === 'queue' ? (
           <>
@@ -346,7 +322,6 @@ export function TabletHome({ me }: { me: MeDto }) {
             <MyTaskDetail
               key={taskId}
               id={taskId}
-              canAskHelp={canAskHelp}
               reportUserId={reportUserId}
               onOpen={(id) => openTask(id, taskFrom)}
             />
@@ -388,32 +363,6 @@ export function TabletHome({ me }: { me: MeDto }) {
             {back('Voltar ao Meu dia', 'home')}
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">Avisos</h1>
             <NotificationsInbox onOpenTask={(id) => openTask(id, 'notifications')} />
-          </>
-        ) : screen === 'measurements' ? (
-          <>
-            {back('Voltar ao início', 'home')}
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Medições atribuídas</h1>
-            <MyMeasurements
-              onOpen={(id) => {
-                setMeasurementId(id);
-                setScreen('measurement');
-              }}
-            />
-          </>
-        ) : screen === 'materials' ? (
-          <>
-            {back('Voltar ao início', 'home')}
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Recebimento de materiais</h1>
-            <MaterialReceiving large />
-          </>
-        ) : screen === 'measurement' && measurementId ? (
-          <>
-            {back('Voltar às medições', 'measurements')}
-            <MyMeasurementDetail
-              key={measurementId}
-              id={measurementId}
-              onBack={() => setScreen('measurements')}
-            />
           </>
         ) : (
           <>

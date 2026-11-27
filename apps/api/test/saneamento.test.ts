@@ -15,13 +15,22 @@ import { setClock as setCoreClock } from '../src/core/clock';
 import { detectAbsences } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, employeeByName, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  createTestApp,
+  db,
+  employeeByName,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+  naEmpresa1,
+} from './helpers';
 import {
   createCustomer,
   createOrder,
   createPickup,
+  generateOsFromOrder,
   panelUserWith,
-  receiptBody,
+  markArrived,
 } from './commercial-helpers';
 import { addOs, createPlan, day, tabletOf, today, userIdOf } from './production-helpers';
 
@@ -88,16 +97,13 @@ async function os(
     customer,
     pieces.map((p) => ({ pieceType: p.pieceType, description: p.description, quantity: 1 })),
   );
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(
-      order.id,
-      order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-    ),
+  const rec = await markArrived(
+    order.id,
+    order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
   );
   expect(rec.status).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
+    materialPurchased: true,
     orderId: order.id,
     items: order.items.map((i: { id: string }, k: number) => ({
       orderItemId: i.id,
@@ -187,7 +193,7 @@ describe('A. Novo serviço: tipo de serviço por peça', () => {
     promisedDate: day(30),
     items,
   });
-  /** Novo serviço sem retirada (o cliente traz as peças) + chegada → OS automática. */
+  /** Novo serviço sem retirada (o cliente traz as peças) e a OS gerada no pedido. */
   async function newService(admin: Client, name: string, items: Record<string, unknown>[]) {
     const r = await post(admin, '/api/v1/services', {
       customer: customer(name),
@@ -198,20 +204,8 @@ describe('A. Novo serviço: tipo de serviço por peça', () => {
       where: { id: r.body.order.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
-    const rec = await post(admin, '/api/v1/receipts', {
-      orderId: order.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: order.items.map((i) => ({
-        orderItemId: i.id,
-        quantity: i.quantity,
-        condition: 'BOA',
-        location: 'Área de recebimento',
-      })),
-    });
-    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
     const so = await db().serviceOrder.findUniqueOrThrow({
-      where: { id: rec.body.generatedServiceOrder.id },
+      where: { id: (await generateOsFromOrder(admin, r.body.order.id)).id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
     return { order, so };
@@ -387,6 +381,12 @@ describe('B. Ausência: só o trabalho do dia (modo fila)', () => {
     const nextWeek = await plan(admin, nextSo, mondayOf(plusDays(today(), 7)), p.ricardo);
     await publishWeek(admin, week);
     await publishWeek(admin, nextWeek);
+    // A preparação nasce livre (2026-11-19); aqui ela fica com o João, como se ele já tivesse
+    // pegado tudo, para exercitar a ausência de quem tem uma fila.
+    await db().productionTask.updateMany({
+      where: { stepClass: 'PREPARACAO', assigneeUserId: null },
+      data: { assigneeUserId: p.joao },
+    });
     const tablets: Record<string, Client> = {};
     for (const name of ['Ricardo', 'Márcio', 'João', 'Thiago'])
       tablets[name] = await tabletOf(app, admin, name, PINS[name]!);
@@ -428,7 +428,7 @@ describe('B. Ausência: só o trabalho do dia (modo fila)', () => {
   it('profissional presente: nada é analisado nem alterado', async () => {
     const s = await queueScenario(['Ricardo', 'Márcio', 'João', 'Thiago']);
     clock('09:31');
-    await detectAbsences(db());
+    await naEmpresa1(() => detectAbsences(db()));
     expect(await proposals(s.admin)).toEqual([]);
     expect(await db().planningAction.count()).toBe(0);
   });
@@ -578,8 +578,8 @@ describe('B. Ausência: só o trabalho do dia (modo fila)', () => {
     expect(await db().planningAction.count()).toBe(0);
     // João não chegou: ausência presumida às 9h30 só sugere; nunca altera a fila.
     clock('09:31');
-    await detectAbsences(db());
-    await detectAbsences(db());
+    await naEmpresa1(() => detectAbsences(db()));
+    await naEmpresa1(() => detectAbsences(db()));
     const list = await proposals(s.admin);
     expect(list.length).toBeLessThanOrEqual(1);
     for (const p of list) expect(p.affectedTasks.length).toBeLessThanOrEqual(1);
@@ -822,7 +822,8 @@ describe('C. Prioridade única do serviço; prazo não reordena; D9 preservada',
     // Atalho de dados: primeira etapa já em execução (início antes da mudança).
     await db().productionTask.update({
       where: { id: first!.id },
-      data: { status: 'EM_EXECUCAO', startedAt: new Date() },
+      // Preparação livre: quem inicia fica com ela (aqui, o João).
+      data: { status: 'EM_EXECUCAO', startedAt: new Date(), assigneeUserId: p.joao },
     });
     // Dado antigo: item do planejamento divergente da OS (antes do saneamento).
     await db().productionPlanItem.update({

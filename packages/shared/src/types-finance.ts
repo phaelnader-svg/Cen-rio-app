@@ -2,14 +2,12 @@ import type { OrderServiceState } from './domain';
 import type {
   AdjustmentKind,
   EligibilityRule,
-  ExpenseCategory,
   FinancialStatus,
   LaborSituation,
   LaborStatus,
   LogisticsCostKind,
   LogisticsCostStatus,
   TripCostSituation,
-  PayableCategory,
   PayableStatus,
   PaymentMethod,
   DueTrigger,
@@ -175,7 +173,8 @@ export interface PayableDto {
   code: string;
   beneficiary: string;
   supplier: { id: string; name: string } | null;
-  category: PayableCategory;
+  /** Código de uma categoria fixa ou nome de uma cadastrada pela empresa. */
+  category: string;
   description: string;
   amountCents: number;
   paidCents: number;
@@ -262,6 +261,20 @@ export interface MaterialCostSummaryDto {
   unpricedLines: number;
   /** Reservas de estoque ativas (consumo ainda não confirmado: fora do custo realizado). */
   activeReservations: number;
+  /** Fase 1: custo informado nos materiais da OS e já realizado (comprados), incluído no consumido. */
+  informedCents: number;
+  /** Fase 1: materiais da OS marcados como comprados sem custo informado (incluídos em unpricedLines). */
+  informedUnpriced: number;
+  /**
+   * Fase 1: há linha da lista simples com custo informado PENDENTE de conciliação com o custo formal
+   * da OS (possível duplicidade). Linhas vinculadas ou marcadas como distintas não contam.
+   */
+  mixedSources: boolean;
+  /** Fase 1: linhas pendentes de conciliação e quanto do realizado está em risco de duplicidade. */
+  pendingReconciliationLines: number;
+  pendingReconciliationCents: number;
+  /** Fase 1: linhas vinculadas a registro formal que depois teve estorno de recebimento (revisar). */
+  linkedReversedLines: number;
   lines: MaterialCostLineDto[];
 }
 
@@ -417,7 +430,8 @@ export interface ExpenseDto {
   id: string;
   number: number;
   code: string;
-  category: ExpenseCategory;
+  /** Código de uma categoria fixa ou nome de uma cadastrada pela empresa. */
+  category: string;
   description: string;
   amountCents: number;
   competence: string;
@@ -427,9 +441,34 @@ export interface ExpenseDto {
   version: number;
 }
 
+/** Categoria de despesa para os menus: fixas (código) e cadastradas pela empresa (nome). */
+export interface ExpenseCategoryDto {
+  /** O que é gravado na despesa: código da fixa ou o próprio nome da cadastrada. */
+  value: string;
+  label: string;
+  /** Cadastrada pela empresa (pode ser escondida); as fixas não. */
+  custom: boolean;
+  /** Id da cadastrada (null nas fixas). */
+  id: string | null;
+  active: boolean;
+}
+
+/** Conta a pagar com vencimento para o aviso do Resumo e do sininho. */
+export interface BillDueDto {
+  id: string;
+  code: string;
+  beneficiary: string;
+  description: string;
+  category: string;
+  openCents: number;
+  dueDate: string;
+  /** Dias corridos até o vencimento (negativo = dias de atraso). */
+  days: number;
+}
+
 export interface RecurringExpenseDto {
   id: string;
-  category: ExpenseCategory;
+  category: string;
   description: string;
   amountCents: number;
   dayOfMonth: number;
@@ -472,8 +511,21 @@ export interface FinanceDashboardDto {
     laborForecastCents: number;
   };
   inProgress: { orders: number; revenueCents: number; estimatedMarginCents: number };
-  expensesByCategory: { category: ExpenseCategory; amountCents: number }[];
+  expensesByCategory: { category: string; amountCents: number }[];
+  /** Tudo o que foi pago no período, por categoria (equipe = "EQUIPE"). */
+  paidByCategory: { category: string; amountCents: number }[];
+  /** Contas a pagar em atraso e as que vencem nos próximos dias (sempre a partir de hoje). */
+  bills: { overdue: BillDueDto[]; upcoming: BillDueDto[]; upcomingDays: number };
   topServices: { serviceType: string; orders: number; revenueCents: number; marginCents: number }[];
+  /** 2026-11-18: retrabalhos abertos no período e quanto custaram (material, mão de obra...). */
+  reworks: {
+    count: number;
+    costCents: number;
+    materialsCents: number;
+    laborCents: number;
+    logisticsCents: number;
+    extraCents: number;
+  };
   notes: string[];
 }
 

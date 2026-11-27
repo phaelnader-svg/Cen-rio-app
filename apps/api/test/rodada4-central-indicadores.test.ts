@@ -1,29 +1,22 @@
-import { MATERIALS_PENDING_STATES, type AttentionDto, type OverviewDto } from '@cenario/shared';
+import type { AttentionDto, OverviewDto } from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { detectAbsences } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, employeeByName, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  createTestApp,
+  db,
+  employeeByName,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+  naEmpresa1,
+} from './helpers';
 import { createCustomer, createOrder, panelUserWith } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
-import {
-  approvedNeeds,
-  confirmedFabricPurchase,
-  createSupplier,
-  linen,
-  ok,
-  receive,
-} from './purchasing-helpers';
 import { act, day, today, userIdOf } from './production-helpers';
-import {
-  arrive,
-  ask,
-  attendanceAction,
-  prepareCompany,
-  scenario,
-  setClock,
-} from './presence-helpers';
+import { arrive, attendanceAction, prepareCompany, scenario, setClock } from './presence-helpers';
 import { post, qualityKit } from './quality-helpers';
 
 /**
@@ -87,7 +80,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
     // Antes do limite de chegada: Márcio só não chegou, nada de impacto.
     expect((await attention(s.admin, '?type=PRESENCA')).items).toEqual([]);
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(1);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(1);
     const r = await attendanceAction(s.admin, {
       employeeId: marcio.id,
       action: 'CONFIRMAR_AUSENCIA',
@@ -106,7 +99,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
       category: 'ACAO',
       status: 'AUSENCIA_CONFIRMADA',
       employee: { userId: s.ids.marcio, displayName: 'Márcio' },
-      description: `${open.length} impacto(s) em tarefas a encaminhar.`,
+      description: `${open.length} ${open.length === 1 ? 'impacto' : 'impactos'} em tarefas a encaminhar.`,
       link: `/painel/presenca?foco=${att.id}`,
     });
     expect(item(a, `PRESENCA:${att.id}`)!.impacts.join(' ')).toContain(s.marcioTask.code);
@@ -142,7 +135,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
   it('ausência PRESUMIDA (após o limite) gera o item; a chegada da pessoa resolve e ele sai', async () => {
     const s = await scenario(app, { arrive: ['Ricardo', 'João', 'Thiago'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(1); // só Márcio
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(1); // só Márcio
     const marcio = await employeeByName('Márcio');
     const att = await db().operationalAttendance.findUniqueOrThrow({
       where: {
@@ -162,7 +155,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
   it('permissão: só "ocorrencias.ver" NÃO vê a ausência; com "presenca.ver" ou "presenca.gerenciar" vê', async () => {
     const s = await scenario(app, { arrive: ['Ricardo', 'João', 'Thiago'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(1);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(1);
     const key = `PRESENCA:${(await attendanceOf((await employeeByName('Márcio')).id)).id}`;
     expect(item(await attention(s.admin), key)).toBeDefined(); // controle positivo
     const onlyIssues = await panelUserWith(app, s.admin, 'r4-ocorr', ['ocorrencias.ver']);
@@ -186,164 +179,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
 
 // ─────────────────────────── F10-13l ───────────────────────────
 
-describe('F10-13l — Apoio: pedido de ajuda atrasado na Central', () => {
-  it('pedido esperando além do limite aparece com link para o pedido exato; atribuído, sai', async () => {
-    // Só Ricardo chegou: ninguém livre para ajudar → o pedido fica PENDENTE.
-    const s = await scenario(app, { arrive: ['Ricardo'] });
-    const h = await ask(s.tablets.Ricardo!, { taskId: s.main.id, kind: 'PARAFUSAR' });
-    expect(h.status, JSON.stringify(h.body)).toBe(201);
-    expect(h.body.status).toBe('PENDENTE');
-    const key = `AJUDA:${h.body.id}`;
-    // Dentro do limite (20 min, pedido normal): operação normal, não aparece.
-    setClock('09:19');
-    expect(item(await attention(s.admin), key)).toBeUndefined();
-    // Passou do limite: aparece, com o pedido e a tarefa exatos.
-    setClock('09:21');
-    const a = await attention(s.admin, '?type=AJUDA');
-    expect(a.items).toHaveLength(1);
-    expect(item(a, key)).toMatchObject({
-      type: 'AJUDA',
-      category: 'ATENCAO',
-      status: 'PENDENTE',
-      task: { id: s.main.id },
-      employee: { userId: s.ids.ricardo },
-      impacts: ['Aguardando há 21 min'],
-      // F10-14: o link leva ao pedido (foco), não à lista genérica.
-      link: `/painel/ajuda?foco=${h.body.id}`,
-    });
-    expect(item(a, key)!.link).not.toBe('/painel/ajuda');
-    // A tela de origem tem o mesmo pedido (o foco aponta para uma linha que existe).
-    const list = (await s.admin.get('/api/v1/help-requests')).body as { id: string }[];
-    expect(list.map((x) => x.id)).toContain(h.body.id);
-    // Permissão do domínio: só "ocorrencias.ver" não vê; com "producao.planejar" vê.
-    const onlyIssues = await panelUserWith(app, s.admin, 'r4-ajuda-o', ['ocorrencias.ver']);
-    expect(item(await attention(onlyIssues), key)).toBeUndefined();
-    const planner = await panelUserWith(app, s.admin, 'r4-ajuda-p', [
-      'ocorrencias.ver',
-      'producao.planejar',
-    ]);
-    expect(item(await attention(planner), key)).toBeDefined();
-    // Resolvido: João chega e a fila (rota canônica) atribui → sai da Central.
-    setClock('09:25');
-    expect((await arrive(s.tablets.João!)).status).toBe(200);
-    await post(s.admin, '/api/v1/help-requests/process');
-    expect((await db().helpRequest.findUniqueOrThrow({ where: { id: h.body.id } })).status).toBe(
-      'ATRIBUIDA',
-    );
-    expect(item(await attention(s.admin), key)).toBeUndefined();
-  });
-
-  it('pedido urgente sem ajudante livre aparece como CRÍTICO após o limite; cancelado pelo gestor, sai', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo'] });
-    const h = await ask(s.tablets.Ricardo!, {
-      taskId: s.main.id,
-      kind: 'MOVIMENTAR',
-      urgent: true,
-      justification: 'Sofá tombando',
-    });
-    expect(h.status, JSON.stringify(h.body)).toBe(201);
-    const key = `AJUDA:${h.body.id}`;
-    expect(h.body.status).toBe('PENDENTE');
-    // Urgente aparece logo (atenção) e, passado o limite de 5 min, vira crítico.
-    expect(item(await attention(s.admin), key)).toMatchObject({
-      category: 'ATENCAO',
-      priority: 'URGENTE',
-      link: `/painel/ajuda?foco=${h.body.id}`,
-    });
-    setClock('09:06');
-    // A fila (rota canônica) roda e não acha ninguém: continua pendente, sem proposta.
-    expect((await post(s.admin, '/api/v1/help-requests/process')).body).toEqual({ assigned: 0 });
-    expect(await db().rescheduleProposal.count()).toBe(0);
-    expect(item(await attention(s.admin), key)).toMatchObject({
-      category: 'CRITICO',
-      priority: 'URGENTE',
-      impacts: ['Aguardando há 6 min'],
-      link: `/painel/ajuda?foco=${h.body.id}`,
-    });
-    // Encerrado pelo gestor: nada de ajuda na Central.
-    const c = await post(s.admin, `/api/v1/help-requests/${h.body.id}/cancel`, {
-      reason: 'Resolvido no local',
-    });
-    expect(c.status, JSON.stringify(c.body)).toBe(200);
-    expect((await attention(s.admin, '?type=AJUDA')).items).toEqual([]);
-  });
-
-  it('pedido ESCALADO (apoio prolongado) vira UM item: a proposta com link exato; recusada, os dois saem', async () => {
-    const s = await scenario(app, { arrive: ['Ricardo', 'Márcio', 'João', 'Thiago'] });
-    const r = await post(s.tablets.Ricardo!, '/api/v1/help-requests/prolonged', {
-      taskId: s.main.id,
-      helperUserId: s.ids.thiago,
-      estimatedMinutes: 480,
-      justification: 'Sofá de canto: apoio o dia todo',
-    });
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect(r.body.status).toBe('ESCALADA');
-    const p = await db().rescheduleProposal.findFirstOrThrow({
-      where: { helpRequestId: r.body.id, status: 'PENDENTE' },
-    });
-    setClock('10:00');
-    const a = await attention(s.admin);
-    // Sem item AJUDA duplicado: a decisão é a proposta.
-    expect(item(a, `AJUDA:${r.body.id}`)).toBeUndefined();
-    expect(item(a, `PROPOSTA:${p.id}`)).toMatchObject({
-      type: 'PROPOSTA',
-      link: `/painel/reprogramacao?foco=${p.id}`,
-    });
-    const rej = await post(s.admin, `/api/v1/reschedule-proposals/${p.id}/reject`, {
-      note: 'Sem gente sobrando hoje',
-    });
-    expect(rej.status, JSON.stringify(rej.body)).toBe(200);
-    const after = await attention(s.admin);
-    expect(item(after, `PROPOSTA:${p.id}`)).toBeUndefined();
-    expect(item(after, `AJUDA:${r.body.id}`)).toBeUndefined();
-  });
-});
-
 // ─────────────────────────── F10-21d ───────────────────────────
-
-describe('F10-21d — Início: aguardando material (número exato)', () => {
-  it('3 OS com necessidade aprovada sem material + 1 sem necessidade → 3; material recebido em uma → 2', async () => {
-    const admin = await loginAdmin(app);
-    const needs = [];
-    for (const n of ['A', 'B', 'C'])
-      needs.push(
-        await approvedNeeds(admin, `Cliente Material ${n}`, (x) => [linen(x.items[0]!.id)]),
-      );
-    await openServiceOrder(admin, 'Cliente Sem Material');
-    // Cada uma das 3 está num estado pendente canônico.
-    const pendingSet = new Set<string>(MATERIALS_PENDING_STATES);
-    for (const n of needs)
-      expect(
-        pendingSet.has(
-          (await db().serviceOrder.findUniqueOrThrow({ where: { id: n.so.id } }))
-            .materialsReadiness,
-        ),
-      ).toBe(true);
-    // Mesma fonte da tela "Prontidão de materiais".
-    const readinessPending = async () =>
-      (
-        (await admin.get('/api/v1/material-readiness')).body as {
-          serviceOrder: { id: string };
-          state: string;
-        }[]
-      ).filter((r) => pendingSet.has(r.state)).length;
-    expect(await readinessPending()).toBe(3);
-    expect((await overview(admin)).operations!.awaitingMaterials).toBe(3);
-    // Compra confirmada e recebida por inteiro (rotas reais) para a OS A → sai.
-    const sup = await createSupplier(admin);
-    const po = await confirmedFabricPurchase(admin, sup.id, needs[0]!.reqs[0]!);
-    const rec = await receive(admin, po.id, [ok(po.items[0].id, 12)]);
-    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
-    expect(
-      pendingSet.has(
-        (await db().serviceOrder.findUniqueOrThrow({ where: { id: needs[0]!.so.id } }))
-          .materialsReadiness,
-      ),
-    ).toBe(false);
-    expect(await readinessPending()).toBe(2);
-    expect((await overview(admin)).operations!.awaitingMaterials).toBe(2);
-  });
-});
 
 // ─────────────────────────── F10-21e/g/n ───────────────────────────
 

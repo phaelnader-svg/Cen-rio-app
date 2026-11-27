@@ -2,28 +2,61 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { KeyRound, Lock, LogOut, Menu, X } from 'lucide-react';
+import { KeyRound, LifeBuoy, Lock, LogOut, Menu, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { screenKeyFor } from '@cenario/shared';
+import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { PanelNotifications } from './panel-notifications';
+import {
+  ClientErrorReporter,
+  CommandPalette,
+  FeedbackButton,
+  MaintenanceBanner,
+  ThemeToggle,
+  WhatsNew,
+} from '@/components/improvements/panel-tools';
+import { SetupRedirect } from '@/components/onboarding/getting-started';
+import { WelcomeDialog } from './welcome-dialog';
+import { useThemeScope } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
-import { useMe } from '@/lib/hooks';
+import { FirmaHeaderButton } from '@/components/billing/firma-trial';
+import { useMe, useModules } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
-import { NAV, NAV_GROUPS, UPCOMING, navGroupOf } from './nav';
+import { UPCOMING, currentPage, familyTabs, visibleNav, visiblePages } from './nav';
+import { supportUrl } from '@/components/site/config';
+import {
+  BillingLocked,
+  BillingNotices,
+  SUBSCRIPTION_PATH,
+} from '@/components/billing/billing-notice';
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
+  const locked = me.data?.company.subscription?.locked ?? false;
+  // Assinatura vencida: as rotas respondem 402; nada além do que a tela de assinatura precisa.
+  const modules = useModules(me.isSuccess && !locked);
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
+  const saindo = useRef(false);
+  useThemeScope();
 
   useEffect(() => setDrawer(false), [pathname]);
+  // Item 49 (2026-11-27): conta a tela aberta (só o nome da tela, por dia) para o dono da
+  // plataforma saber o que ninguém usa. Falha não atrapalha nada.
+  const signedIn = me.isSuccess;
+  useEffect(() => {
+    if (!signedIn) return;
+    const screen = screenKeyFor(pathname);
+    if (screen)
+      void api('/api/v1/usage/screen', { method: 'POST', body: { screen } }).catch(() => undefined);
+  }, [pathname, signedIn]);
 
   const unauthenticated = me.error instanceof ApiError && me.error.status === 401;
   useEffect(() => {
@@ -65,11 +98,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const items = NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
-    .map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))
-    .sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n);
+  // Cobrança desligada: o item Assinatura não aparece.
+  const billingOn = data.company.subscription.billingEnabled;
+  const items = visibleNav(perms, modules, data.company.platformOwner, billingOn);
+  // Revisão geral (item 3): todas as telas que o perfil abre (menu + abas), para a busca e as abas.
+  const pages = visiblePages(perms, modules, data.company.platformOwner, billingOn);
+  const tabs = familyTabs(pathname, pages);
+  const currentHref = currentPage(pathname, pages)?.href;
+  // Suporte do Cenário para as empresas clientes (a Cenário Estofados é a própria dona).
+  const help = data.company.platformOwner ? null : supportUrl(data.company.tradeName);
 
   async function logout() {
+    // B4: a saída encerra a sessão, e o tempo real avisa "sessão encerrada" — que aqui é esperado.
+    saindo.current = true;
     try {
       await api('/api/auth/logout', { method: 'POST' });
     } finally {
@@ -81,16 +122,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const sidebar = (
     <nav aria-label="Navegação principal" className="flex h-full flex-col">
       <div className="px-5 pt-5 pb-6">
-        <BrandMark />
+        <BrandMark subtitle={data.company.tradeName} />
       </div>
       <ul className="space-y-0.5 px-3">
         {items.map((item, idx) => {
-          // Item ativo: o de prefixo mais longo (ex.: /painel/producao/planejamento).
-          const matches = (href: string) =>
-            href === '/painel' ? pathname === '/painel' : pathname.startsWith(href);
-          const active =
-            matches(item.href) &&
-            !items.some((o) => o.href.length > item.href.length && matches(o.href));
+          // Item ativo: a família da tela de prefixo mais longo (ex.: Quadro de produção marca
+          // "Semana da oficina").
+          const active = !!currentHref && item.also.includes(currentHref);
           const header = idx === 0 || items[idx - 1]!.group !== item.group;
           return (
             <li key={item.href}>
@@ -140,10 +178,32 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </>
       )}
       <div className="mt-auto border-t border-line p-4">
+        <div className="mb-1 flex items-center gap-1 sm:hidden">
+          <WhatsNew />
+          <ThemeToggle />
+        </div>
+        {!data.user.supportAgent && <FeedbackButton className="mb-1" />}
+        <Link
+          href="/painel/lixeira"
+          className="mb-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-ink-soft hover:bg-subtle"
+        >
+          <Trash2 className="size-4" aria-hidden /> Lixeira
+        </Link>
+        {help && (
+          <a
+            href={help}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="ajuda-suporte"
+            className="mb-3 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-ink-soft hover:bg-subtle"
+          >
+            <LifeBuoy className="size-4" aria-hidden /> Ajuda e suporte (WhatsApp)
+          </a>
+        )}
         <div className="flex items-center gap-3">
           <Avatar
             name={data.user.displayName}
-            color={data.employee?.color ?? '#1d4a45'}
+            color={data.employee?.color ?? '#064a4b'}
             photoUrl={data.employee?.photoUrl}
             size={36}
           />
@@ -175,7 +235,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <RealtimeProvider onSessionEnded={() => router.replace('/entrar?motivo=sessao-encerrada')}>
+    <RealtimeProvider
+      onSessionEnded={() => {
+        if (!saindo.current) router.replace('/entrar?motivo=sessao-encerrada');
+      }}
+    >
+      <ClientErrorReporter />
+      <MaintenanceBanner />
+      {data.user.supportAgent && (
+        <div className="bg-info-50 px-4 py-2 text-center text-sm font-medium text-info-600">
+          Você está no acesso de suporte autorizado por {data.company.tradeName}. Tudo o que for
+          feito aqui fica registrado na Auditoria da empresa.
+        </div>
+      )}
       <div className="min-h-dvh lg:grid lg:grid-cols-[272px_1fr]">
         <aside className="sticky top-0 hidden h-dvh overflow-y-auto border-r border-line bg-surface lg:block">
           {sidebar}
@@ -215,13 +287,67 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <Menu className="size-5" aria-hidden />
             </button>
             <p className="truncate text-sm font-medium text-ink-muted">{data.company.tradeName}</p>
-            <div className="ml-auto flex items-center gap-2">
-              <PanelNotifications />
-              <ConnectionIndicator compact />
+            <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+              {!locked && (
+                <CommandPalette
+                  nav={[
+                    ...pages.map((i) => ({ href: i.href, label: i.label, group: i.group })),
+                    { href: '/painel/resumo', label: 'Resumo da semana', group: 'Início' },
+                    { href: '/painel/lixeira', label: 'Lixeira', group: 'Administração' },
+                    { href: '/painel/conta', label: 'Minha conta', group: 'Administração' },
+                  ]}
+                  canNewService={perms.has('orcamentos.gerenciar')}
+                />
+              )}
+              {/* Complemento "Ambiente interativo" (só o dono, quem configura a empresa): Firma Viva em
+                  outra guia; no plano de R$ 399, o teste de 7 dias (item 34 da lista de 53). */}
+              <FirmaHeaderButton
+                gameOn={modules.ambiente_interativo}
+                enabled={!locked && perms.has('empresa.configurar')}
+              />
+              {/* No celular, Novidades e Tema ficam no menu lateral (o topo não cabe em 390 px). */}
+              <div className="hidden items-center gap-2 sm:flex">
+                <WhatsNew />
+                <ThemeToggle />
+              </div>
+              {!locked && <PanelNotifications />}
+              {!locked && <ConnectionIndicator compact />}
             </div>
           </header>
           <main id="conteudo" className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-10">
-            {children}
+            <BillingNotices me={data} canManage={perms.has('empresa.configurar')} />
+            {locked && !pathname.startsWith(SUBSCRIPTION_PATH) ? (
+              <BillingLocked canManage={perms.has('empresa.ver')} />
+            ) : (
+              <>
+                {tabs && (
+                  <nav
+                    aria-label="Telas desta área"
+                    className="-mx-1 mb-6 flex gap-1 overflow-x-auto border-b border-line px-1"
+                    data-testid="family-tabs"
+                  >
+                    {tabs.tabs.map((t) => (
+                      <Link
+                        key={t.href}
+                        href={t.href}
+                        aria-current={t.href === tabs.active ? 'page' : undefined}
+                        className={clsx(
+                          '-mb-px shrink-0 border-b-2 px-3 py-2.5 text-[15px] font-medium whitespace-nowrap',
+                          t.href === tabs.active
+                            ? 'border-brand-700 text-brand-700'
+                            : 'border-transparent text-ink-soft hover:text-ink',
+                        )}
+                      >
+                        {t.label}
+                      </Link>
+                    ))}
+                  </nav>
+                )}
+                {children}
+              </>
+            )}
+            <WelcomeDialog me={data} />
+            <SetupRedirect ready={!data.company.needsWelcome && !data.company.needsWhatsapp} />
           </main>
         </div>
       </div>

@@ -9,8 +9,6 @@ import type {
   InspectionStatus,
   LogisticsKind,
   LogisticsStatus,
-  PackagingStatus,
-  Protection,
   ReadinessCheck,
   ReturnStatus,
 } from './quality-domain';
@@ -87,6 +85,8 @@ export interface InspectionDto {
   decidedAt: string | null;
   decidedBy: string | null;
   decisionNote: string | null;
+  /** Reformulação Fase 3 (D4): justificativa do gestor que aprovou a própria execução. */
+  selfApprovalReason: string | null;
   invalidatedAt: string | null;
   invalidReason: string | null;
   items: InspectionItemDto[];
@@ -95,7 +95,14 @@ export interface InspectionDto {
   /** Etapas de produção da peça (histórico para o inspetor). */
   production: InspectionTaskDto[];
   photos: number;
-  can: { start: boolean; check: boolean; decide: boolean; decideReason: string | null };
+  can: {
+    start: boolean;
+    check: boolean;
+    decide: boolean;
+    decideReason: string | null;
+    /** Fase 3 (D4): quem decide executou o serviço — aprovar exige justificativa. */
+    selfApproval: boolean;
+  };
   version: number;
   createdAt: string;
 }
@@ -116,26 +123,6 @@ export interface QualityTemplateDto {
   version: number;
 }
 
-export interface PackagingDto {
-  id: string;
-  number: number;
-  code: string;
-  status: PackagingStatus;
-  piece: PieceRefDto;
-  inspectionCode: string;
-  assignee: PersonRefDto | null;
-  tapeceiroAuthorized: boolean;
-  taskId: string | null;
-  protection: Protection | null;
-  location: { id: string; label: string } | null;
-  notes: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  completedBy: string | null;
-  invalidReason: string | null;
-  version: number;
-}
-
 export interface LocationDto {
   id: string;
   key: string;
@@ -148,7 +135,6 @@ export interface LocationDto {
 export interface PieceStatusDto extends PieceRefDto {
   readiness: { ready: boolean; missing: ReadinessCheck[] };
   inspection: { id: string; code: string; status: InspectionStatus; round: number } | null;
-  packaging: { id: string; code: string; status: PackagingStatus } | null;
   delivery: { id: string; code: string; status: DeliveryStatus; scheduledDate: string } | null;
   labelPayload: string;
   history?: QualityHistoryDto[];
@@ -194,6 +180,10 @@ export interface DeliveryDto {
   number: number;
   code: string;
   status: DeliveryStatus;
+  /** Reformulação, Fase 1: LOGISTICA (roteiro/viagem) ou DIRETA (confirmada pela OS, sem viagem). */
+  origin: 'LOGISTICA' | 'DIRETA';
+  /** Reformulação Fase 3 (D5): entrega direta desfeita (continua registrada). */
+  reverted?: { at: string; reason: string } | null;
   provisional: boolean;
   customer: { id: string; name: string };
   address: DeliveryAddressDto;
@@ -246,6 +236,8 @@ export interface PaymentInstructionDto {
 export interface LogisticsJobDto {
   id: string;
   kind: 'ENTREGA' | 'RETIRADA';
+  /** 2026-11-25: parada "No local" (serviço feito na casa do cliente; a peça não vem). */
+  onSite?: boolean;
   code: string;
   status: string;
   customerName: string;
@@ -345,19 +337,6 @@ export interface PieceReturnDto {
   }[];
   /** Fase 12: o que ficou para o gestor revisar depois da confirmação. */
   review: {
-    /** Reservas ativas da OS sem peça definida (não são rateadas por suposição). */
-    reservations: { id: string; serviceOrder: string; material: string; quantity: number }[];
-    /**
-     * Etapa 2: necessidades ATIVAS "Toda a OS" de OS com peça devolvida — não são canceladas
-     * automaticamente (podem valer para as peças que ficaram): o gestor revisa.
-     */
-    requirements: {
-      id: string;
-      serviceOrderId: string;
-      serviceOrder: string;
-      material: string;
-      quantity: number;
-    }[];
     /** Valores de produção das peças devolvidas com trabalho executado ou valor devido. */
     laborToReview: number;
   };

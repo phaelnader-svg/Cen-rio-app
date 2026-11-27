@@ -27,7 +27,8 @@ export function RolesPage() {
     <>
       <PageHeader
         title="Funções e permissões"
-        description="Funções agrupam permissões. Toda permissão é verificada no servidor, em cada operação."
+        description="O que cada função pode ver e fazer."
+        help="Cada pessoa da equipe tem uma função, e a função diz o que ela vê e faz no sistema. O tapeceiro, por exemplo, não vê preço nem lucro."
         actions={
           manage && (
             <Button
@@ -70,13 +71,19 @@ export function RolesPage() {
                   </p>
                 </div>
               </div>
-              <ul className="mt-4 flex flex-wrap gap-1.5">
-                {r.permissions.map((p) => (
-                  <li key={p}>
-                    <Badge tone="neutral">{labels.get(p) ?? p}</Badge>
-                  </li>
-                ))}
-              </ul>
+              {/* Melhoria 165: as permissões ficam fechadas; abre ao clicar. */}
+              <details className="mt-4">
+                <summary className="w-fit cursor-pointer text-sm font-medium text-brand-700 hover:underline">
+                  Ver as {r.permissions.length} permissões
+                </summary>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {r.permissions.map((p) => (
+                    <li key={p}>
+                      <Badge tone="neutral">{labels.get(p) ?? p}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              </details>
               {manage && !r.locked && (
                 <div className="mt-auto flex gap-2 pt-4">
                   <Button

@@ -1,5 +1,5 @@
 import type { App } from '../src/app';
-import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, markArrived } from './commercial-helpers';
 import { type Client, db, idemKey, setupTablet } from './helpers';
 
 /** Próxima data (AAAA-MM-DD) com o dia da semana dado (0 = domingo), a partir de amanhã. */
@@ -33,29 +33,25 @@ export async function grant(admin: Client, name: string, permissions: string[]) 
   return e.userId;
 }
 
-/** OS aberta com sofá (1) + poltronas (2), já recebidas. */
+/** OS aberta com sofá (1) + poltronas (2), com as peças já marcadas como na oficina. */
 export async function openServiceOrder(admin: Client, name = 'Cliente Medição') {
   const customer = await createCustomer(admin, { name, phone: null, allowSimilar: true });
   const order = await createOrder(admin, customer, [
     { pieceType: 'SOFA', description: 'Sofá 3 lugares', quantity: 1 },
     { pieceType: 'POLTRONA', description: 'Poltronas', quantity: 2 },
   ]);
-  const rec = await admin.post(
-    '/api/v1/receipts',
-    receiptBody(
-      order.id,
-      order.items.map((i: { id: string; quantity: number }) => ({
-        orderItemId: i.id,
-        quantity: i.quantity,
-      })),
-    ),
-    { 'idempotency-key': idemKey() },
+  await markArrived(
+    order.id,
+    order.items.map((i: { id: string; quantity: number }) => ({
+      orderItemId: i.id,
+      quantity: i.quantity,
+    })),
   );
-  if (rec.status !== 201) throw new Error(`receipt: ${JSON.stringify(rec.body)}`);
   const so = await admin.post(
     '/api/v1/service-orders',
     {
       orderId: order.id,
+      materialPurchased: true,
       items: [
         {
           orderItemId: order.items[0].id,
@@ -96,55 +92,4 @@ export async function tapeceiroTablet(
   const userId = await grant(admin, name, ['medicoes.extraordinarias']);
   const { tablet } = await setupTablet(app, admin, { name: `Tablet ${name}`, employee: name, pin });
   return { tablet, userId };
-}
-
-export const fabric = (overrides: Record<string, unknown> = {}) => ({
-  kind: 'TECIDO',
-  sourcing: 'EXCLUSIVO_OS',
-  description: 'Linho',
-  color: 'Bege',
-  quantity: 12,
-  unit: 'METRO',
-  ...overrides,
-});
-
-export const foam = (overrides: Record<string, unknown> = {}) => ({
-  kind: 'ESPUMA',
-  sourcing: 'EXCLUSIVO_OS',
-  description: 'Espuma',
-  foamDensity: 'D28',
-  thicknessCm: 3,
-  lengthCm: 200,
-  widthCm: 60,
-  quantity: 2,
-  unit: 'PLACA',
-  ...overrides,
-});
-
-export async function createMeasurement(
-  admin: Client,
-  body: Record<string, unknown>,
-  key = idemKey(),
-) {
-  return admin.post('/api/v1/measurements', body, { 'idempotency-key': key });
-}
-
-/** Salva rascunho e envia (como o executor faria). */
-export async function fillAndSubmit(
-  client: Client,
-  m: { id: string; version: number },
-  body: { pieces?: unknown[]; items?: unknown[] },
-) {
-  const draft = await client.put(`/api/v1/measurements/${m.id}/draft`, {
-    pieces: [],
-    items: [],
-    ...body,
-    version: m.version,
-  });
-  if (draft.status !== 200) return draft;
-  return client.post(
-    `/api/v1/measurements/${m.id}/submit`,
-    { version: draft.body.version },
-    { 'idempotency-key': idemKey() },
-  );
 }

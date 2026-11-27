@@ -19,7 +19,6 @@ export interface OverviewDto {
       production: number;
       quality: number;
       rework: number;
-      packaging: number;
       blocked: number;
       ready: number;
       scheduled: number;

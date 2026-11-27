@@ -2,6 +2,7 @@ import { EVENT_TYPES } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
+import { requireCompanyId } from '../../core/tenant';
 
 type Db = Tx | PrismaClient;
 
@@ -117,7 +118,7 @@ export async function laborOwners(
 
 export async function configuredPayee(db: Db) {
   const s = await db.companySettings.findUnique({
-    where: { id: 1 },
+    where: { id: requireCompanyId() },
     select: { logisticsPayeeUserId: true },
   });
   return s?.logisticsPayeeUserId ? [s.logisticsPayeeUserId] : [];

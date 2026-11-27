@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
-import { post } from './os-helpers';
+import { markArrived, post } from './os-helpers';
 
 /**
  * Correção global — fluxos novos no navegador (dados fictícios; nenhum pagamento real):
@@ -76,29 +76,19 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
       { pieceType: 'SOFA', description: 'Sofá 3 lugares', quantity: 1 },
       { pieceType: 'POLTRONA', description: 'Poltronas', quantity: 2 },
     ]);
-    await post(page, '/api/v1/receipts', {
-      orderId: order.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: order.items.map((i: { id: string; quantity: number }) => ({
-        orderItemId: i.id,
-        quantity: i.quantity,
-        condition: 'BOA',
-        location: 'Área de recebimento',
-      })),
-    });
+    await markArrived(page, order.id, order.version);
     await page.goto(`/painel/os/nova?pedido=${order.id}`);
     const form = page.getByTestId('new-service-order');
+    // 2026-11-19: tela em 5 partes, sem os blocos de dinheiro.
     for (const s of [
-      'Informações gerais',
-      'Peças',
-      'Responsável',
-      'Valores comerciais',
-      'Mão de obra',
-      'Resumo',
+      'O serviço',
+      'Tapeceiro',
+      'Prazo e material',
+      'Fotos da peça',
+      'Recado para o tapeceiro',
     ])
-      await expect(form.getByRole('heading', { name: s })).toBeVisible();
-    await expect(page.getByTestId('so-contracted')).toHaveText('R$ 3.000,00');
+      await expect(form.getByRole('heading', { name: s, exact: true })).toBeVisible();
+    await expect(form).not.toContainText('Valores comerciais');
     // Nomes de exibição variam (ex.: "Ricardo S."): escolhe pelo início do nome.
     const pick = async (testId: string, prefix: string) => {
       const sel = page.getByTestId(testId);
@@ -109,11 +99,8 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await pick('so-owner-1', 'Márcio');
     await page.getByTestId('so-labor-value-0').fill('800,00');
     await page.getByTestId('so-labor-value-1').fill('450,00');
-    await expect(page.getByTestId('so-labor-total')).toHaveText('R$ 1.250,00');
-    await expect(page.getByTestId('so-balance')).toHaveText('R$ 1.750,00');
-    await expect(form).toContainText('Não é lucro');
     await evidence(page, '01-nova-os-completa');
-    await page.getByRole('button', { name: 'Criar OS' }).click();
+    await page.getByRole('button', { name: 'Gerar OS' }).click();
     await expect(page).toHaveURL(/\/painel\/os\/[0-9a-f-]{36}$/);
     const soId = page.url().split('/').pop()!;
     const labor = await call(page, 'GET', `/api/v1/finance/service-orders/${soId}/labor`);
@@ -144,10 +131,10 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
       { pieceType: 'CADEIRA', description: 'Cadeira', quantity: 1 },
     ]);
     await page.goto(`/painel/pedidos/${tarde.order.id}`);
-    await page.getByRole('button', { name: 'Solicitar retirada' }).click();
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
     const dlg = page.getByRole('dialog');
-    await dlg.getByLabel('Data do compromisso').fill(day);
-    await expect(dlg.getByRole('button', { name: 'Solicitar e agendar' })).toBeDisabled();
+    await dlg.getByLabel('Data da retirada').fill(day);
+    await expect(dlg.getByRole('button', { name: 'Agendar retirada' })).toBeDisabled();
     await dlg.getByLabel('Horário de chegada ao cliente').fill('16:00');
     await expect(dlg.getByText(/Janela — fim/)).toHaveCount(0);
     await dlg.getByTestId('pickup-executor').selectOption({ label: ANDRE.displayName });
@@ -155,7 +142,7 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await dlg.getByTestId(`trip-participant-${IZAIAS.displayName}`).check();
     await expect(dlg.getByTestId('trip-payee')).toContainText(`${ANDRE.displayName} (100%)`);
     await evidence(page, '02-retirada-horario-de-chegada');
-    await dlg.getByRole('button', { name: 'Solicitar e agendar' }).click();
+    await dlg.getByRole('button', { name: 'Agendar retirada' }).click();
     await expect(page.getByTestId('order-status')).toContainText('Retirada agendada');
     // Segunda parada, mais cedo, pela API (mesmo contrato da tela).
     await post(page, '/api/v1/pickups', {

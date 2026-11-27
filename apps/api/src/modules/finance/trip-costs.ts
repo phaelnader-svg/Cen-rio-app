@@ -64,6 +64,7 @@ import {
   todayIso,
 } from './common';
 import { payableInclude, toPayableDto } from './payables';
+import { requireCompanyId } from '../../core/tenant';
 
 type Db = Tx | PrismaClient;
 export type TripRef = { pickupId?: string | null; deliveryId?: string | null };
@@ -161,7 +162,7 @@ export const loadTripCost = async (db: Db, id: string) =>
 /** Recebedor configurado e se está apto (usuário e cadastro de funcionário ativos). */
 async function configuredPayee(db: Db) {
   const s = await db.companySettings.findUnique({
-    where: { id: 1 },
+    where: { id: requireCompanyId() },
     include: { logisticsPayee: { include: { employee: { select: { active: true } } } } },
   });
   const u = s?.logisticsPayee;
@@ -221,9 +222,9 @@ export async function setLogisticsDefaults(
     if (!u?.active || !u.employee?.active)
       throw Errors.business('O recebedor precisa ser um funcionário ativo.');
   }
-  const before = await tx.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+  const before = await tx.companySettings.findUniqueOrThrow({ where: { id: requireCompanyId() } });
   await tx.companySettings.update({
-    where: { id: 1 },
+    where: { id: requireCompanyId() },
     data: {
       defaultPickupCostCents: input.defaultPickupCostCents,
       defaultDeliveryCostCents: input.defaultDeliveryCostCents,
@@ -275,6 +276,8 @@ type Trip = {
   frustrated: boolean;
   /** Rodada 3 (F2-18): a viagem é da equipe própria (custo só operacional, nunca obrigação). */
   ownTeam: boolean;
+  /** Reformulação, Fase 1: entrega confirmada direto na OS (sem viagem, sem custo de frete). */
+  direct?: boolean;
 };
 
 async function loadTrip(db: Db, ref: TripRef, lock = false): Promise<Trip> {
@@ -310,6 +313,7 @@ async function loadTrip(db: Db, ref: TripRef, lock = false): Promise<Trip> {
     cancelled: d.status === 'CANCELADA',
     frustrated: DELIVERY_FRUSTRATED.includes(d.status),
     ownTeam: d.team === 'EQUIPE_PROPRIA',
+    direct: d.origin === 'DIRETA',
   };
 }
 
@@ -452,6 +456,11 @@ export async function upsertTripCost(
 ) {
   const trip = await loadTrip(tx, input, true);
   if (trip.cancelled) throw Errors.business(`${trip.code} cancelada: não recebe custo.`);
+  // Fase 1: entrega confirmada direto na OS não foi uma viagem — não recebe custo de frete.
+  if (trip.direct)
+    throw Errors.business(
+      `${trip.code} foi confirmada direto na OS (sem viagem): não recebe custo.`,
+    );
   const existing = await liveTripCost(tx, trip);
   if (!existing && (await tx.logisticsFreeTrip.count({ where: tripWhere(trip) })))
     throw Errors.business(`${trip.code} foi confirmada como gratuita: não recebe custo.`);
@@ -960,7 +969,8 @@ export async function logisticsWeekly(
   payeeUserId?: string,
 ): Promise<LogisticsWeeklyDto> {
   const tz =
-    (await db.companySettings.findUnique({ where: { id: 1 } }))?.timezone ?? 'America/Sao_Paulo';
+    (await db.companySettings.findUnique({ where: { id: requireCompanyId() } }))?.timezone ??
+    'America/Sao_Paulo';
   const start = zonedDateTime(from, '00:00', tz);
   const endDay = new Date(`${to}T12:00:00Z`);
   endDay.setUTCDate(endDay.getUTCDate() + 1);

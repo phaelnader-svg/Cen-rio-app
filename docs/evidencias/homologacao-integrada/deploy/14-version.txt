@@ -1,0 +1,19 @@
+• version {} → job cad34fa7-8978-469b-8a2b-80357e927084 (mensagem 22599167708785528)
+runner: 2.2.0
+/opt/cenario (scripts da VM): 5ff1597c0d1c
+etiqueta local (drop-in): 63674f1d116ed86a92dbcc421f2fd702e41b169d
+etiqueta do ambiente da pilha: 63674f1d116ed86a92dbcc421f2fd702e41b169d
+candidata: 341badb59624996cd95c1213808c51631bf34b92
+migrada: 63674f1d116ed86a92dbcc421f2fd702e41b169d
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}}	{{.Image}}
+api	«CENARIO_API_IMAGE-mascarado»
+backup	postgres:16
+caddy	caddy:2.10-alpine
+postgres	postgres:16-alpine
+web	«CENARIO_WEB_IMAGE-mascarado»
+$ docker ps --format {{.Names}}	{{.Image}}	{{.ID}}
+cenario-homolog-web-1	«CENARIO_WEB_IMAGE-mascarado»	2a700ca96357
+cenario-homolog-api-1	«CENARIO_API_IMAGE-mascarado»	5a52e521b753
+cenario-homolog-caddy-1	caddy:2.10-alpine	9b8f3d2ede06
+cenario-homolog-backup-1	postgres:16	6017dc4ab6f2
+cenario-homolog-postgres-1	postgres:16-alpine	d977155c6ab0

@@ -1,7 +1,12 @@
 'use client';
 
+import { plural, pluralWord } from '@cenario/shared';
+import type { Permission, QuoteFunnelDto } from '@cenario/shared';
+import { useQuery } from '@tanstack/react-query';
+
 import {
   AlarmClock,
+  Calculator,
   ClipboardPlus,
   Activity,
   ClipboardList,
@@ -11,10 +16,10 @@ import {
   ArrowRight,
   CheckCircle,
   MonitorSmartphone,
-  RadioTower,
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
+import { api } from '@/lib/api';
 import { Avatar, Badge, Card, Spinner } from '@/components/ui/misc';
 import { relativeTime } from '@/lib/format';
 import { useCan, useMe } from '@/lib/hooks';
@@ -22,7 +27,9 @@ import { todayIso, useOrders, usePickups } from '@/lib/commercial';
 import { useAttention } from '@/lib/issues';
 import { money } from '@/lib/finance';
 import { useDevices, useEmployees, useOverview, useRecentAudit, useSessions } from '@/lib/queries';
-import { useRealtime } from '@/lib/realtime';
+import { GettingStartedCard } from '@/components/onboarding/getting-started';
+import { HomeCharts } from './home-charts';
+import { TodayPanel } from './today-panel';
 
 function greeting(timeZone: string) {
   const h = Number(
@@ -32,6 +39,8 @@ function greeting(timeZone: string) {
   );
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
 }
+
+const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 function Stat({
   icon,
@@ -68,7 +77,16 @@ function Stat({
 export function Dashboard() {
   const me = useMe();
   const can = useCan();
-  const realtime = useRealtime();
+  const canQuotes = can('orcamentos.ver') || can('orcamentos.gerenciar');
+  const funnel = useQuery({
+    queryKey: ['quotes', 'funnel', 'inicio'],
+    queryFn: () =>
+      api<QuoteFunnelDto>(`/api/v1/quotes/funnel?from=${isoDaysAgo(90)}&to=${isoDaysAgo(-1)}`),
+    enabled: canQuotes,
+  });
+  const approvedOpen = funnel.data
+    ? Math.max(0, funnel.data.byStatus.APROVADO.count - funnel.data.converted.count)
+    : null;
   const employees = useEmployees(can('funcionarios.ver'));
   const devices = useDevices(can('dispositivos.ver'));
   const sessions = useSessions(can('sessoes.ver'));
@@ -76,7 +94,6 @@ export function Dashboard() {
   const today = todayIso(me.data?.company.timezone);
   const pickupsToday = usePickups({ from: today, to: today }, can('retiradas.ver'));
   const awaiting = useOrders({ status: 'AGUARDANDO_RETIRADA' }, can('pedidos.ver'));
-  const partial = useOrders({ status: 'RECEBIDO_PARCIAL' }, can('pedidos.ver'));
   // Fase 10: visão do gestor pelas fontes canônicas (seção sem permissão = null, nunca zero).
   const overview = useOverview(
     can('os.ver') || can('entregas.ver') || can('entregas.gerenciar') || can('financeiro.ver'),
@@ -114,81 +131,89 @@ export function Dashboard() {
             {greeting(tz)}, {me.data?.user.displayName}.
           </h1>
         </div>
-        {can('pedidos.gerenciar') && can('retiradas.gerenciar') && (
-          <Link
-            href="/painel/servicos/novo"
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-medium text-white shadow-sm hover:bg-brand-800"
-            data-testid="dashboard-new-service"
-          >
-            <ClipboardPlus className="size-4" aria-hidden />
-            Novo serviço
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {['os.ver', 'entregas.ver', 'financeiro.ver', 'pedidos.ver'].some((p) =>
+            can(p as Permission),
+          ) && (
+            <Link
+              href="/painel/resumo"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-line-strong bg-surface px-4 text-[15px] font-medium hover:bg-subtle"
+              data-testid="dashboard-week"
+            >
+              Resumo da semana
+            </Link>
+          )}
+          {can('orcamentos.gerenciar') && (
+            <Link
+              href="/painel/orcamentos"
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-medium text-white shadow-sm hover:bg-brand-800"
+              data-testid="dashboard-new-quote"
+            >
+              <ClipboardPlus className="size-4" aria-hidden />
+              Novo orçamento
+            </Link>
+          )}
+        </div>
       </div>
 
-      {overview.data?.attention && (
-        <Link
-          href="/painel/atencao"
-          className="block rounded-2xl"
-          data-testid="dashboard-attention"
-        >
-          <Card className="flex flex-wrap items-center gap-x-6 gap-y-1 p-5 transition-shadow hover:shadow-[var(--shadow-pop)]">
-            <span className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-              <AlarmClock className="size-4" aria-hidden />
-              Central de atenção
-            </span>
-            {/* F10-21i: o mesmo total da Central (mesma fonte, mesmo recorte de permissões). */}
-            <span className="text-lg font-semibold tabular-nums">
-              <span data-testid="dashboard-attention-total">{overview.data.attention.total}</span>{' '}
-              pendência(s) ·{' '}
-              <span data-testid="dashboard-attention-critical">
-                {overview.data.attention.critical}
-              </span>{' '}
-              crítica(s) · {overview.data.attention.action} pedem ação
-            </span>
-          </Card>
-        </Link>
-      )}
+      <GettingStartedCard />
 
-      {deadlinesVisible && (
-        <Link
-          href="/painel/atencao?type=PRAZO_OS"
-          className="block rounded-2xl"
-          data-testid="dashboard-deadlines"
-        >
-          <Card className="flex flex-wrap items-center gap-x-6 gap-y-1 p-5 transition-shadow hover:shadow-[var(--shadow-pop)]">
-            <span className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-              <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">
-                <AlarmClock className="size-4" aria-hidden />
-              </span>
-              Prazos
-            </span>
-            <span className="text-lg font-semibold tabular-nums">
-              <span data-testid="dashboard-deadlines-late">
+      {/* 2026-11-19 (Raphael): o Início volta a ter todas as informações de antes e os gráficos;
+          sai só a lista longa de sugestões. Prazos entram no cartão Pendências do "Hoje". */}
+      <TodayPanel
+        deadlines={
+          deadlinesVisible ? (
+            <Link
+              href="/painel/atencao?type=PRAZO_OS"
+              className="block text-sm text-ink-soft hover:underline"
+              data-testid="dashboard-deadlines"
+            >
+              Prazos de OS:{' '}
+              <span
+                className="font-semibold text-ink tabular-nums"
+                data-testid="dashboard-deadlines-late"
+              >
                 {osDeadlines.data?.counts.CRITICO ?? '—'}
               </span>{' '}
-              atrasado(s) ·{' '}
-              <span data-testid="dashboard-deadlines-risk">
+              {pluralWord(osDeadlines.data?.counts.CRITICO ?? 0, 'atrasada', 'atrasadas')} ·{' '}
+              <span
+                className="font-semibold text-ink tabular-nums"
+                data-testid="dashboard-deadlines-risk"
+              >
                 {osDeadlines.data?.counts.ACAO ?? '—'}
               </span>{' '}
               em risco
-            </span>
-            {(orderDeadlines.data?.items.length ?? 0) > 0 && (
-              <span className="text-sm text-ink-muted" data-testid="dashboard-deadlines-orders">
-                {orderDeadlines.data!.items.length} pedido(s) com peça ainda não recebida
-              </span>
-            )}
-          </Card>
-        </Link>
-      )}
+              {(orderDeadlines.data?.items.length ?? 0) > 0 && (
+                <span className="block text-ink-muted" data-testid="dashboard-deadlines-orders">
+                  {plural(orderDeadlines.data!.items.length, 'pedido', 'pedidos')} com peça ainda
+                  não recebida
+                </span>
+              )}
+            </Link>
+          ) : null
+        }
+      />
 
-      {(can('retiradas.ver') || can('pedidos.ver') || can('os.ver')) && (
+      {(canQuotes || can('retiradas.ver') || can('pedidos.ver') || can('os.ver')) && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="flow-stats">
+          {canQuotes && (
+            <Stat
+              href="/painel/orcamentos?tab=salvos"
+              icon={<Calculator className="size-4" aria-hidden />}
+              label="Orçamentos aprovados"
+              value={<span data-testid="dashboard-quotes-approved">{approvedOpen ?? '—'}</span>}
+              detail={
+                funnel.data?.followUpDue
+                  ? `sem fechar o serviço · ${plural(funnel.data.followUpDue, 'cliente', 'clientes')} para cobrar`
+                  : 'sem fechar o serviço'
+              }
+            />
+          )}
           {can('retiradas.ver') && (
             <Stat
               href="/painel/retiradas"
               icon={<Truck className="size-4" aria-hidden />}
-              label="Retiradas de hoje"
+              label="Retiradas e no local hoje"
               value={
                 pickupsToday.data
                   ? pickupsToday.data.filter((p) => p.status !== 'CANCELADA').length
@@ -196,7 +221,10 @@ export function Dashboard() {
               }
               detail={
                 pickupsToday.data
-                  ? `${pickupsToday.data.filter((p) => p.status === 'COM_OCORRENCIA').length} com ocorrência`
+                  ? [
+                      `${pickupsToday.data.filter((p) => p.status !== 'CANCELADA' && p.kind === 'NO_LOCAL').length} no local`,
+                      `${pickupsToday.data.filter((p) => p.status === 'COM_OCORRENCIA').length} com ocorrência`,
+                    ].join(' · ')
                   : ''
               }
             />
@@ -209,13 +237,6 @@ export function Dashboard() {
                 label="Aguardando retirada"
                 value={awaiting.data?.total ?? '—'}
                 detail="pedidos sem retirada agendada"
-              />
-              <Stat
-                href="/painel/recebimentos"
-                icon={<PackageCheck className="size-4" aria-hidden />}
-                label="Recebidos parcialmente"
-                value={partial.data?.total ?? '—'}
-                detail="pedidos com peças pendentes"
               />
             </>
           )}
@@ -231,16 +252,18 @@ export function Dashboard() {
         </div>
       )}
 
+      <HomeCharts />
+
       {ops && (
         <section data-testid="dashboard-operations">
           <h2 className="mb-3 font-semibold">Operação agora</h2>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat
-              href="/painel/prontidao"
+              href="/painel/os"
               icon={<PackageCheck className="size-4" aria-hidden />}
               label="Aguardando material"
               value={<span data-testid="ops-materials">{ops.awaitingMaterials}</span>}
-              detail="OS com material que ainda segura a produção"
+              detail="OS com material da lista ainda fora da oficina"
             />
             <Stat
               href="/painel/producao"
@@ -254,21 +277,21 @@ export function Dashboard() {
               icon={<CheckCircle className="size-4" aria-hidden />}
               label="Na qualidade"
               value={<span data-testid="ops-quality">{ops.pieces.quality}</span>}
-              detail={`${ops.pieces.rework} em retrabalho · ${ops.pieces.packaging} na embalagem`}
+              detail={`${ops.pieces.rework} em retrabalho`}
             />
             <Stat
               href="/painel/producao/a-planejar"
               icon={<ClipboardList className="size-4" aria-hidden />}
               label="A planejar"
               value={<span data-testid="ops-to-plan">{ops.preProduction.toPlan}</span>}
-              detail={`${ops.preProduction.plannedDraft} em rascunho · ${ops.preProduction.plannedPublished} publicada(s) · ${ops.preProduction.awaitingCondition} aguardando condição`}
+              detail={`${ops.preProduction.plannedDraft} em rascunho · ${plural(ops.preProduction.plannedPublished, 'publicada', 'publicadas')} · ${ops.preProduction.awaitingCondition} aguardando condição`}
             />
             <Stat
               href="/painel/producao?status=BLOQUEADA"
               icon={<AlarmClock className="size-4" aria-hidden />}
               label="Bloqueios"
               value={<span data-testid="ops-blocked-tasks">{ops.blockedTasks}</span>}
-              detail={`tarefa(s) de produção bloqueada(s) · ${ops.pieces.blocked} peça(s) com expedição bloqueada · ${ops.pieces.inTransit} em trânsito`}
+              detail={`${pluralWord(ops.blockedTasks, 'tarefa bloqueada', 'tarefas bloqueadas')} · ${plural(ops.pieces.blocked, 'peça', 'peças')} com expedição bloqueada · ${ops.pieces.inTransit} em trânsito`}
             />
             <Stat
               href="/painel/entregas?tab=ready"
@@ -277,8 +300,8 @@ export function Dashboard() {
               value={<span data-testid="ops-ready">{ops.pieces.ready}</span>}
               detail={
                 dl
-                  ? `${dl.upcoming} entrega(s) nos próximos 2 dias${dl.frustrated ? ` · ${dl.frustrated} frustrada(s)` : ''}`
-                  : `${ops.pieces.scheduled} agendada(s)`
+                  ? `${plural(dl.upcoming, 'entrega', 'entregas')} nos próximos 2 dias${dl.frustrated ? ` · ${plural(dl.frustrated, 'frustrada', 'frustradas')}` : ''}`
+                  : `${plural(ops.pieces.scheduled, 'agendada', 'agendadas')}`
               }
             />
           </div>
@@ -296,7 +319,7 @@ export function Dashboard() {
               value={
                 <span data-testid="dl-upcoming">{dl.upcoming + (dl.pickups?.upcoming ?? 0)}</span>
               }
-              detail={`${dl.upcoming} entrega(s)${dl.pickups ? ` · ${dl.pickups.upcoming} retirada(s)` : ''}`}
+              detail={`${plural(dl.upcoming, 'entrega', 'entregas')}${dl.pickups ? ` · ${plural(dl.pickups.upcoming, 'retirada', 'retiradas')}` : ''}`}
             />
             {dl.pickups && (
               <Stat
@@ -327,7 +350,7 @@ export function Dashboard() {
               icon={<FileSignature className="size-4" aria-hidden />}
               label="A receber"
               value={<span data-testid="fin-open">{money(fin.receivables.openCents)}</span>}
-              detail={`${money(fin.receivables.overdueCents)} vencido (${fin.receivables.overdueCount} cobrança(s))`}
+              detail={`${money(fin.receivables.overdueCents)} vencido (${plural(fin.receivables.overdueCount, 'cobrança', 'cobranças')})`}
             />
             <Stat
               href="/painel/financeiro?tab=pagar"
@@ -348,7 +371,7 @@ export function Dashboard() {
               icon={<CheckCircle className="size-4" aria-hidden />}
               label="Pago na semana"
               value={<span data-testid="fin-paid">{money(fin.paid.paidInWeekCents)}</span>}
-              detail="aos profissionais (tapeçaria e logística), estornos descontados"
+              detail="aos funcionários (tapeçaria e logística), estornos descontados"
             />
             {/* F10-14: cada contagem leva à tela onde ESSES itens aparecem. */}
             <Stat
@@ -360,7 +383,7 @@ export function Dashboard() {
                   {fin.decisions.valueRequests + fin.decisions.laborReviews}
                 </span>
               }
-              detail={`${fin.decisions.valueRequests} negociação(ões) · ${fin.decisions.laborReviews} revisão(ões)`}
+              detail={`${plural(fin.decisions.valueRequests, 'negociação', 'negociações')} · ${plural(fin.decisions.laborReviews, 'revisão', 'revisões')}`}
             />
             <Stat
               href="/painel/financeiro?tab=receitas"
@@ -398,7 +421,9 @@ export function Dashboard() {
             icon={<MonitorSmartphone className="size-4" aria-hidden />}
             label="Tablets vinculados"
             value={devices.data ? activeDevices.length : '—'}
-            detail={devices.data ? `${online} conectado(s) agora` : 'Carregando…'}
+            detail={
+              devices.data ? `${plural(online, 'conectado', 'conectados')} agora` : 'Carregando…'
+            }
           />
         )}
         {can('sessoes.ver') && (
@@ -410,19 +435,6 @@ export function Dashboard() {
             detail={sessions.data ? `${tabletSessions} em tablets · ${webSessions} no painel` : ''}
           />
         )}
-        <Stat
-          href={can('sincronizacao.diagnosticar') ? '/painel/sincronizacao' : undefined}
-          icon={<RadioTower className="size-4" aria-hidden />}
-          label="Tempo real"
-          value={
-            realtime.status === 'online' ? (
-              <span className="text-ok-600">Ativo</span>
-            ) : (
-              <span className="text-warn-600">Reconectando</span>
-            )
-          }
-          detail={`Último evento nº ${realtime.lastSeq ?? '—'}`}
-        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">

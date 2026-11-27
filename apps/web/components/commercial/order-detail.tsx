@@ -1,11 +1,11 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { OrderDto, PaymentMethod } from '@cenario/shared';
 import {
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
   PIECE_TYPE_LABEL,
-  RECEIPT_ORIGIN_LABEL,
   cancelOrderSchema,
   formatMoney,
   updateOrderPromisedDateSchema,
@@ -16,6 +16,7 @@ import { Ban, ClipboardPlus, PackageCheck, Pencil, Truck } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { BUTTON_VARIANTS } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { MoneyField, SelectField } from '@/components/ui/form';
@@ -27,7 +28,6 @@ import {
   useNewServiceDefaults,
   useOrder,
   usePickups,
-  useReceipts,
   useServiceOrders,
   arrivalText,
 } from '@/lib/commercial';
@@ -37,11 +37,13 @@ import { addressLines } from './address-form';
 import {
   OrderDeadlineBadge,
   OrderStatusBadge,
+  PickupKindBadge,
   PickupStatusBadge,
+  ReworkBanner,
   ServiceOrderStatusBadge,
   ServiceStateBadge,
 } from './badges';
-import { OrderForecasts } from '@/components/purchasing/order-forecasts';
+import { OsStateBadge } from './os-state';
 import { OrderFinance } from '@/components/finance/revenue';
 import { localToday, money, parseMoney, useFinOrder } from '@/lib/finance';
 import { PhotoGallery } from './photo-gallery';
@@ -56,7 +58,6 @@ export function OrderDetail({ id }: { id: string }) {
   const can = useCan();
   const order = useOrder(id);
   const pickups = usePickups({ orderId: id }, can('retiradas.ver'));
-  const receipts = useReceipts(id);
   const serviceOrders = useServiceOrders({ orderId: id }, can('os.ver'));
   const [requesting, setRequesting] = useState(false);
   const [openPickup, setOpenPickup] = useState<string | null>(null);
@@ -71,12 +72,24 @@ export function OrderDetail({ id }: { id: string }) {
   const pendingPickup = o.items.some(
     (i) => i.quantity - i.receivedQuantity - i.inActivePickups > 0,
   );
-  const pendingReceipt = o.items.some((i) => i.receivedQuantity < i.quantity);
-  const availableForOs = o.items.some((i) => i.receivedQuantity - i.inServiceOrders > 0);
+  // Fluxo da OS (2026-11-18): peça que ainda não chegou na tapeçaria (em retirada ou não).
+  // 2026-11-25: peça com serviço "No local" agendado não vem para a tapeçaria.
+  const pendingArrival = o.items.some(
+    (i) => i.quantity - i.returnedQuantity - i.receivedQuantity - i.inOnSiteVisits > 0,
+  );
+  // Gerar a OS: peça já na tapeçaria (ou com serviço No local agendado) e ainda sem OS.
+  const readyForOs = o.items.some(
+    (i) =>
+      Math.min(i.receivedQuantity + i.inOnSiteVisits, i.quantity - i.returnedQuantity) -
+        i.inServiceOrders >
+      0,
+  );
+  const waitingOs = !readyForOs && pendingArrival && o.items.every((i) => i.inServiceOrders === 0);
 
   return (
     <>
       <BackLink href="/painel/pedidos" label="Pedidos comerciais" />
+      <ReworkBanner rework={o.rework} />
       <PageHeader
         title={`Pedido ${o.code}`}
         description={`${o.customer.name} · criado em ${formatDateTime(o.createdAt)}${o.createdBy ? ` por ${o.createdBy}` : ''}`}
@@ -88,23 +101,17 @@ export function OrderDetail({ id }: { id: string }) {
                   icon={<Truck className="size-4" aria-hidden />}
                   onClick={() => setRequesting(true)}
                 >
-                  Solicitar retirada
+                  Agendar
                 </Button>
               )}
-              {can('recebimentos.registrar') && pendingReceipt && (
-                <Link
-                  href={`/painel/recebimentos/novo?pedido=${o.id}`}
-                  className={`${linkBtn} border border-line-strong bg-surface text-ink hover:bg-subtle`}
-                >
-                  <PackageCheck className="size-4" aria-hidden /> Registrar recebimento
-                </Link>
-              )}
-              {can('os.gerenciar') && availableForOs && (
+              {can('pedidos.gerenciar') && pendingArrival && <MarkArrivedButton order={o} />}
+              {can('os.gerenciar') && readyForOs && (
                 <Link
                   href={`/painel/os/nova?pedido=${o.id}`}
-                  className={`${linkBtn} border border-line-strong bg-surface text-ink hover:bg-subtle`}
+                  className={`${linkBtn} ${BUTTON_VARIANTS.primary}`}
+                  data-testid="order-generate-os"
                 >
-                  <ClipboardPlus className="size-4" aria-hidden /> Criar OS técnica
+                  <ClipboardPlus className="size-4" aria-hidden /> Gerar ordem de serviço
                 </Link>
               )}
               {can('pedidos.gerenciar') && (
@@ -115,7 +122,9 @@ export function OrderDetail({ id }: { id: string }) {
                   <Pencil className="size-4" aria-hidden /> Editar
                 </Link>
               )}
-              {can('pedidos.cancelar') && (
+              {/* 2026-11-26 (Raphael): depois da retirada feita o cliente não cancela. Se a peça
+                  foi marcada sem a retirada acontecer, o caminho é "A retirada não aconteceu". */}
+              {can('pedidos.cancelar') && o.receivedPieces === 0 && (
                 <Button
                   variant="ghost"
                   icon={<Ban className="size-4" aria-hidden />}
@@ -128,30 +137,33 @@ export function OrderDetail({ id }: { id: string }) {
           )
         }
       />
-      {o.autoServiceOrder && pendingReceipt && active && (
-        <div data-testid="order-auto-os" className="mb-4">
-          <Alert tone="info">
-            Serviço registrado pelo Novo serviço: a OS é criada automaticamente quando as peças
-            chegarem à oficina
-            {o.promisedDate
-              ? ` · prazo combinado ${o.promisedDate.split('-').reverse().join('/')}`
-              : ''}
-            .
-          </Alert>
-        </div>
-      )}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <span data-testid="order-status">
-          <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />
+          <OrderStatusBadge
+            status={o.status}
+            customerDropOff={o.customerDropOff}
+            onSite={o.onSite}
+          />
         </span>
         <span data-testid="order-service-state">
           <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
         </span>
         <span className="text-sm text-ink-muted">
-          {o.receivedPieces} de {o.totalPieces} peça(s) na oficina
-          {o.returnedPieces > 0 ? ` · ${o.returnedPieces} devolvida(s) ao cliente` : ''}
+          {o.onSite
+            ? `${plural(o.totalPieces, 'peça', 'peças')} com serviço no local`
+            : `${o.receivedPieces} de ${plural(o.totalPieces, 'peça', 'peças')} na oficina`}
+          {o.returnedPieces > 0
+            ? ` · ${plural(o.returnedPieces, 'devolvida', 'devolvidas')} ao cliente`
+            : ''}
         </span>
       </div>
+      {active && waitingOs && (
+        <Alert tone="info" className="mb-6" data-testid="order-waiting-arrival">
+          A ordem de serviço é gerada aqui depois que a peça chegar na tapeçaria. Com a retirada
+          agendada, isso acontece sozinho 1 hora depois do horário marcado; se chegar antes, use
+          “Peça chegou na tapeçaria”.
+        </Alert>
+      )}
       {o.status === 'CANCELADO' && (
         <Alert
           tone="danger"
@@ -183,7 +195,7 @@ export function OrderDetail({ id }: { id: string }) {
                 data-testid="order-promised"
               >
                 <span>{o.promisedDate ? formatDay(o.promisedDate, true) : 'Sem prazo'}</span>
-                <OrderDeadlineBadge state={o.deadline} />
+                <OrderDeadlineBadge state={o.deadline} onSite={o.onSite} />
                 {active && can('pedidos.gerenciar') && (
                   <Button
                     size="sm"
@@ -223,7 +235,7 @@ export function OrderDetail({ id }: { id: string }) {
             ) : (
               <p className="text-sm text-ink-muted">Valores restritos.</p>
             )}
-            <Detail label="Endereço da retirada">
+            <Detail label={o.onSite ? 'Endereço do serviço' : 'Endereço da retirada'}>
               {o.pickupAddress
                 ? `${o.pickupAddress.label}\n${addressLines(o.pickupAddress)}`
                 : 'Não definido'}
@@ -292,16 +304,7 @@ export function OrderDetail({ id }: { id: string }) {
                 </Button>
               </div>
             )}
-          {can('os.gerenciar') && active && !o.items.some((i) => i.receivedQuantity > 0) && (
-            <p className="border-t border-line px-5 py-3 text-sm text-ink-muted">
-              A OS técnica fica disponível após o registro do recebimento físico das peças.
-            </p>
-          )}
         </Section>
-
-        {(can('materiais.aprovar') || can('materiais.ver') || can('compras.ver')) && (
-          <OrderForecasts orderId={o.id} />
-        )}
 
         {can('financeiro.ver') && (
           <Section title="Financeiro" className="lg:col-span-5">
@@ -310,7 +313,7 @@ export function OrderDetail({ id }: { id: string }) {
         )}
 
         {can('retiradas.ver') && (
-          <Section title="Retiradas" className="lg:col-span-5" bodyClassName="p-0">
+          <Section title="Agendamentos" className="lg:col-span-5" bodyClassName="p-0">
             {pickups.data?.length ? (
               <ul className="divide-y divide-line">
                 {pickups.data.map((p) => (
@@ -321,7 +324,8 @@ export function OrderDetail({ id }: { id: string }) {
                       onClick={() => setOpenPickup(p.id)}
                     >
                       <span className="font-mono text-sm font-semibold">{p.code}</span>
-                      <PickupStatusBadge status={p.status} />
+                      <PickupKindBadge kind={p.kind} />
+                      <PickupStatusBadge status={p.status} kind={p.kind} />
                       <span className="text-sm text-ink-soft">
                         {p.scheduledDate
                           ? `${formatDay(p.scheduledDate, true)}${p.windowStart ? ` · ${arrivalText(p.windowStart, p.windowEnd)}` : ''}`
@@ -340,33 +344,8 @@ export function OrderDetail({ id }: { id: string }) {
           </Section>
         )}
 
-        <Section title="Recebimentos na oficina" className="lg:col-span-3" bodyClassName="p-0">
-          {receipts.data?.length ? (
-            <ul className="divide-y divide-line">
-              {receipts.data.map((r) => (
-                <li key={r.id} className="px-5 py-3 text-sm">
-                  <p>
-                    <span className="font-mono font-semibold">{r.code}</span> ·{' '}
-                    {formatDateTime(r.receivedAt)} · {RECEIPT_ORIGIN_LABEL[r.origin]}
-                    {r.pickup ? ` (${r.pickup.code})` : ''}
-                  </p>
-                  <p className="text-ink-muted">
-                    {r.lines
-                      .map((l) => `${l.quantity}× ${l.description} → ${l.location}`)
-                      .join(' · ')}
-                    {r.receivedBy ? ` · recebido por ${r.receivedBy.displayName}` : ''}
-                  </p>
-                  {r.divergences && <p className="text-warn-600">Divergências: {r.divergences}</p>}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState title="Nenhuma peça recebida ainda" />
-          )}
-        </Section>
-
         {can('os.ver') && (
-          <Section title="Ordens de serviço" className="lg:col-span-2" bodyClassName="p-0">
+          <Section title="Ordens de serviço" className="lg:col-span-5" bodyClassName="p-0">
             {serviceOrders.data?.items.length ? (
               <ul className="divide-y divide-line">
                 {serviceOrders.data.items.map((s) => (
@@ -377,8 +356,12 @@ export function OrderDetail({ id }: { id: string }) {
                     >
                       {s.code}
                     </Link>
-                    <ServiceOrderStatusBadge status={s.status} />
-                    <span className="text-ink-muted">{s.pieceCount} peça(s)</span>
+                    {s.operationalState ? (
+                      <OsStateBadge state={s.operationalState} />
+                    ) : (
+                      <ServiceOrderStatusBadge status={s.status} />
+                    )}
+                    <span className="text-ink-muted">{plural(s.pieceCount, 'peça', 'peças')}</span>
                   </li>
                 ))}
               </ul>
@@ -416,6 +399,14 @@ export function OrderDetail({ id }: { id: string }) {
           id={o.id}
           version={o.version}
           code={o.code}
+          also={[
+            ...(pickups.data ?? [])
+              .filter((p) => !['CANCELADA', 'RECEBIDA_NA_OFICINA'].includes(p.status))
+              .map((p) => `${p.kind === 'NO_LOCAL' ? 'No local' : 'Retirada'} ${p.code}`),
+            ...(serviceOrders.data?.items ?? [])
+              .filter((s) => s.status === 'ABERTA')
+              .map((s) => `${s.code} (com as tarefas da semana e o material a comprar)`),
+          ]}
           onClose={() => setCancelling(false)}
         />
       )}
@@ -572,11 +563,13 @@ function CancelOrderDialog({
   id,
   version,
   code,
+  also,
   onClose,
 }: {
   id: string;
   version: number;
   code: string;
+  also: string[];
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -631,7 +624,9 @@ function CancelOrderDialog({
       onClose={onClose}
       size="sm"
       title={`Cancelar o pedido ${code}?`}
-      description="Retiradas ainda ativas também serão canceladas. O registro é mantido no histórico."
+      description={`${
+        also.length ? `Também serão cancelados: ${also.join(', ')}. ` : ''
+      }Cobranças sem pagamento também são canceladas. Nada é apagado: tudo fica no histórico.`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -830,5 +825,47 @@ function PlannedIntentDialog({ order, onClose }: { order: OrderDto; onClose: () 
         </div>
       )}
     </Dialog>
+  );
+}
+
+/**
+ * "Peça chegou na tapeçaria": marca todas as peças que faltam (as da retirada também). Depois
+ * disso o pedido oferece "Gerar ordem de serviço".
+ */
+export function MarkArrivedButton({
+  order,
+  size = 'md',
+}: {
+  order: Pick<OrderDto, 'id' | 'code' | 'version'>;
+  size?: 'sm' | 'md';
+}) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [key] = useState(newIdempotencyKey);
+  const m = useMutation({
+    mutationFn: () =>
+      api<OrderDto>(`/api/v1/orders/${order.id}/arrived`, {
+        method: 'POST',
+        idempotencyKey: key,
+        body: { version: order.version },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['order', order.id] });
+      void qc.invalidateQueries({ queryKey: ['orders'] });
+      toast('ok', `Pedido ${order.code}: peça na tapeçaria. Já pode gerar a OS.`);
+    },
+    onError: (e) => toast('danger', errorMessage(e)),
+  });
+  return (
+    <Button
+      variant="secondary"
+      size={size}
+      loading={m.isPending}
+      icon={<PackageCheck className="size-4" aria-hidden />}
+      onClick={() => m.mutate()}
+      data-testid={size === 'sm' ? `order-mark-arrived-${order.code}` : 'order-mark-arrived'}
+    >
+      Peça chegou na tapeçaria
+    </Button>
   );
 }

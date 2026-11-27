@@ -1,6 +1,6 @@
 'use client';
 
-import type { AuditLogDto } from '@cenario/shared';
+import { HIGHLIGHTED_AUDIT_ACTIONS, type AuditLogDto } from '@cenario/shared';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { ScrollText } from 'lucide-react';
 import { useState } from 'react';
@@ -17,7 +17,12 @@ const ENTITY_LABELS: Record<string, string> = {
   session: 'Sessão',
   user: 'Usuário',
   company_settings: 'Empresa',
+  quality_inspection: 'Inspeção de qualidade',
 };
+/** Filtro especial (Fase 3): só as exceções destacadas. */
+const HIGHLIGHTED = '__destaques';
+const isHighlighted = (action: string) =>
+  (HIGHLIGHTED_AUDIT_ACTIONS as readonly string[]).includes(action);
 
 function Changes({ changes }: { changes: unknown }) {
   if (!changes || typeof changes !== 'object' || Object.keys(changes).length === 0) return null;
@@ -39,7 +44,8 @@ export function AuditPage() {
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ limit: '50' });
       if (pageParam) params.set('cursor', pageParam);
-      if (entityType) params.set('entityType', entityType);
+      if (entityType === HIGHLIGHTED) params.set('highlighted', '1');
+      else if (entityType) params.set('entityType', entityType);
       return api<{ items: AuditLogDto[]; nextCursor: string | null }>(`/api/audit?${params}`);
     },
     getNextPageParam: (last) => last.nextCursor,
@@ -50,7 +56,7 @@ export function AuditPage() {
     <>
       <PageHeader
         title="Auditoria"
-        description="Registro imutável das ações críticas: quem fez, o quê, quando e de onde."
+        description="Quem fez o quê, e quando."
         actions={
           <Select
             aria-label="Filtrar por tipo"
@@ -59,6 +65,7 @@ export function AuditPage() {
             className="w-52"
           >
             <option value="">Todos os registros</option>
+            <option value={HIGHLIGHTED}>Exceções destacadas</option>
             {Object.entries(ENTITY_LABELS).map(([k, v]) => (
               <option key={k} value={k}>
                 {v}
@@ -82,10 +89,21 @@ export function AuditPage() {
         ) : (
           <ol className="divide-y divide-line">
             {items.map((a) => (
-              <li key={a.id} className="px-5 py-4">
+              <li
+                key={a.id}
+                className={
+                  isHighlighted(a.action)
+                    ? 'border-l-4 border-warn-600 bg-warn-50 px-5 py-4'
+                    : 'px-5 py-4'
+                }
+                data-highlighted={isHighlighted(a.action) || undefined}
+                data-action={a.action}
+                // Melhoria 157: o código técnico (em inglês) fica só para o suporte, ao parar o mouse.
+                title={a.action}
+              >
                 <div className="flex flex-wrap items-center gap-2">
+                  {isHighlighted(a.action) && <Badge tone="warn">Exceção destacada</Badge>}
                   <Badge tone="neutral">{ENTITY_LABELS[a.entityType] ?? a.entityType}</Badge>
-                  <code className="text-xs text-ink-muted">{a.action}</code>
                 </div>
                 <p className="mt-1.5 text-[15px] text-ink">{a.summary}</p>
                 <p className="mt-0.5 text-xs text-ink-muted">

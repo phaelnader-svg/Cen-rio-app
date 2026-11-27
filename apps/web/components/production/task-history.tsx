@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import type { TaskEventDto, TaskRefDto } from '@cenario/shared';
 import {
   PAUSE_REASON_LABEL,
@@ -60,7 +61,9 @@ export function TaskHistory({ events, large }: { events: TaskEventDto[]; large?:
                   : null,
                 e.extra.step ? `Etapa: ${e.extra.step}` : null,
                 e.extra.nextStep ? `Próximo: ${e.extra.nextStep}` : null,
-                e.extra.attachmentIds?.length ? `${e.extra.attachmentIds.length} foto(s)` : null,
+                e.extra.attachmentIds?.length
+                  ? `${plural(e.extra.attachmentIds.length, 'foto', 'fotos')}`
+                  : null,
               ]
                 .filter(Boolean)
                 .join(' · ')}

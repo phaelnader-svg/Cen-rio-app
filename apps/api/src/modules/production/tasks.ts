@@ -10,6 +10,7 @@ import {
   TASK_WAITING,
   boardQuerySchema,
   compareTasks,
+  isFreeHelperTask,
   createTaskSchema,
   evaluateRelease,
   findCycle,
@@ -18,7 +19,6 @@ import {
   completeTaskSchema,
   pauseTaskSchema,
   progressTaskSchema,
-  taskMaterialsSchema,
   taskCode,
   taskDependenciesSchema,
   taskReasonSchema,
@@ -37,9 +37,7 @@ import { parseDateOnly } from '../commercial/common';
 import { idParams } from '../presenters';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { qualityTaskClosed } from '../quality/inspections';
-import { packagingStarted } from '../quality/packaging';
 import { notify, taskNotice } from '../notifications/notify';
-import { readinessOf } from '../purchasing/common';
 import {
   EXECUTE,
   PLAN,
@@ -54,19 +52,11 @@ import {
   reevaluateTasks,
   taskEvent,
   taskInclude,
-  taskMaterialsReady,
   toTaskDto,
   taskNotBefore,
 } from './common';
 import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
-import { cancelHelpForClosedTask, processHelpQueue } from '../help/queue';
-import {
-  supportCancelled,
-  supportCompleted,
-  supportReassigned,
-  supportStarted,
-} from '../help/support';
-import { suggestAlternative } from '../help/reschedule';
+import { ACTIVITY_SKILL, suggestAlternative } from '../help/reschedule';
 import { assertUpholstererRule } from './distribution';
 import {
   actionCancelled,
@@ -75,7 +65,6 @@ import {
   actionStarted,
   originalTaskClosed,
 } from '../issues/service';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
 
@@ -242,9 +231,41 @@ async function assertSingleActive(
   }
 }
 
+// ─────────────────────── Tarefas livres (preparação) ───────────────────────
+
+/**
+ * Competências de quem pode pegar tarefas livres de preparação/desmontagem: a etapa aparece
+ * para quem tem a competência dela (cadastro de Competências da equipe), com produção ativa.
+ */
+async function skillsOf(db: Tx | PrismaClient, userId: string) {
+  const rows = await db.employeeSkill.findMany({
+    where: { employee: { userId, active: true, user: { active: true } } },
+    select: { skill: true },
+  });
+  return new Set<string>(rows.map((r) => r.skill));
+}
+const canTake = (skills: Set<string>, activity: string) =>
+  skills.has(ACTIVITY_SKILL[activity as keyof typeof ACTIVITY_SKILL]);
+
+/** Tarefa em andamento da pessoa (disponível = nenhuma). */
+function runningTaskOf(db: Tx | PrismaClient, userId: string) {
+  return db.productionTask.findFirst({
+    where: { assigneeUserId: userId, status: 'EM_EXECUCAO' },
+    select: { number: true, title: true },
+  });
+}
+
+/** Onde ficam as tarefas livres que podem ser pegas agora. */
+const FREE_NOW: Prisma.ProductionTaskWhereInput = {
+  stepClass: 'PREPARACAO',
+  assigneeUserId: null,
+  status: 'LIBERADA',
+  plan: { mode: 'FILA_SEMANAL', status: 'PUBLICADO' },
+  serviceOrder: { status: 'ABERTA' },
+};
+
 export async function productionTaskRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   // ─────────────────────────── Gestão ───────────────────────────
 
@@ -379,15 +400,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           input.assigneeUserId !== undefined ? input.assigneeUserId : t.assigneeUserId,
       });
       const updated = await tx.productionTask.update({ where: { id }, data });
-      // Simplificação Fase 7: trocar o executor do apoio troca o ajudante do pedido junto.
-      if (t.supportForTaskId && updated.assigneeUserId !== t.assigneeUserId)
-        await supportReassigned(
-          tx,
-          actor,
-          id,
-          updated.assigneeUserId,
-          input.reason ?? 'Responsável alterado no planejamento.',
-        );
       if (t.status !== 'RASCUNHO') {
         const changes: Record<string, { from: unknown; to: unknown }> = {};
         for (const k of [
@@ -519,77 +531,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
     },
   );
 
-  /**
-   * Fase 6: materiais aprovados de que a tarefa depende. Com vínculos, a tarefa é
-   * liberada quando ESSES materiais estão cobertos (ex.: corte só com o tecido);
-   * sem vínculos, continua dependendo da OS inteira. Nunca começa sem eles.
-   */
-  app.put(
-    '/api/v1/production-tasks/:id/materials',
-    { config: { access: PLAN } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = taskMaterialsSchema.parse(request.body);
-      const actor = actorFrom(request);
-      await prisma.$transaction(async (tx) => {
-        await lockTasks(tx, [id]);
-        const t = await tx.productionTask.findUnique({ where: { id } });
-        if (!t) throw Errors.notFound('Tarefa');
-        if (t.version !== input.version) throw Errors.versionConflict(t.version);
-        if (!(TASK_WAITING as readonly string[]).includes(t.status) && t.status !== 'RASCUNHO') {
-          throw Errors.business(
-            'Só tarefas que ainda não começaram podem ter os materiais alterados.',
-          );
-        }
-        const ids = [...new Set(input.requirementIds)];
-        const valid = await tx.materialRequirement.count({
-          where: {
-            id: { in: ids },
-            serviceOrderId: t.serviceOrderId,
-            origin: 'SOLICITACAO_APROVADA',
-            status: 'ATIVA',
-          },
-        });
-        if (valid !== ids.length) {
-          throw Errors.business('Use somente materiais aprovados e atuais desta OS.');
-        }
-        const before = await tx.productionTaskMaterial.findMany({ where: { taskId: id } });
-        await tx.productionTaskMaterial.deleteMany({ where: { taskId: id } });
-        if (ids.length) {
-          await tx.productionTaskMaterial.createMany({
-            data: ids.map((requirementId) => ({ taskId: id, requirementId })),
-          });
-        }
-        await tx.productionTask.update({
-          where: { id },
-          // Vincular materiais implica exigir materiais.
-          data: { ...(ids.length ? { requiresMaterials: true } : {}), version: { increment: 1 } },
-        });
-        if (t.status !== 'RASCUNHO') {
-          await taskEvent(tx, actor, null, t, {
-            kind: 'MATERIAIS',
-            note: input.reason ?? null,
-            changes: { from: before.map((b) => b.requirementId), to: ids },
-          });
-          await reviseIfPublished(
-            tx,
-            request,
-            t.planId,
-            input.reason,
-            `materiais de ${taskCode(t.number)}`,
-          );
-          await reevaluateTasks(tx, actor, [id]);
-          const after = await tx.productionTask.findUniqueOrThrow({ where: { id } });
-          await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_DEPENDENCIES_UPDATED, after, {
-            changed: ['materials'],
-          });
-        }
-      });
-      const { timezone } = await company(prisma);
-      return toTaskDto(await loadTask(prisma, id), timezone);
-    },
-  );
-
   async function adminTransition(request: FastifyRequest, kind: 'cancel' | 'block' | 'unblock') {
     const { id } = idParams.parse(request.params);
     // Fase 10: o motivo do desbloqueio (opcional) também é validado — antes um texto longo ou
@@ -656,9 +597,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           summary: `Tarefa ${taskCode(t.number)} cancelada.`,
           changes: { from: t.status, reason: input.reason },
         });
-        // Fase 8: apoio cancelado encerra o pedido; tarefa principal cancelada cancela os pedidos.
-        if (t.supportForTaskId) await supportCancelled(tx, actor, t.id, input.reason);
-        else await cancelHelpForClosedTask(tx, actor, t.id);
         // Fase 9: resolução cancelada → ocorrência volta a aguardar delegação.
         if (t.issueId) await actionCancelled(tx, actor, t.id, input.reason);
         else await originalTaskClosed(tx, actor, t.id, 'CANCELADA');
@@ -697,11 +635,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       }
       await reevaluateTasks(tx, actor, [id]);
     });
-    if (kind === 'cancel') {
-      await processHelpQueue(prisma).catch((err: unknown) =>
-        request.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
-      );
-    }
     if (kind === 'cancel' && !(await prisma.productionTask.findUnique({ where: { id } })))
       return { deleted: true };
     const { timezone } = await company(prisma);
@@ -809,7 +742,38 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       include: taskInclude,
     });
     const dtos = rows.map((t) => toTaskDto(t, timezone)).sort(compareTasks);
+    // O aviso do cartão vem da lista simples da OS (mesma regra do detalhe da tarefa), numa
+    // consulta só. Nunca muda a situação da tarefa.
+    {
+      const soIds = [
+        ...new Set(rows.filter((r) => r.requiresMaterials).map((r) => r.serviceOrderId)),
+      ];
+      const missing = soIds.length
+        ? new Set(
+            (
+              await prisma.serviceOrderMaterial.findMany({
+                where: { serviceOrderId: { in: soIds }, removedAt: null, available: false },
+                select: { serviceOrderId: true },
+                distinct: ['serviceOrderId'],
+              })
+            ).map((m) => m.serviceOrderId),
+          )
+        : new Set<string>();
+      for (const d of dtos)
+        if (d.requiresMaterials) d.osMaterialsMissing = missing.has(d.serviceOrder.id);
+    }
+    // Tarefas livres de preparação: só para ajudante disponível (sem tarefa em andamento).
+    const me = request.auth!.userId;
+    const mySkills = await skillsOf(prisma, me);
+    const free =
+      mySkills.size && !(await runningTaskOf(prisma, me))
+        ? (await prisma.productionTask.findMany({ where: FREE_NOW, include: taskInclude }))
+            .filter((t) => canTake(mySkills, t.activity))
+            .map((t) => toTaskDto(t, timezone))
+            .sort(compareTasks)
+        : [];
     return {
+      free,
       today: dtos.filter(
         (t) =>
           !t.scheduledDate ||
@@ -833,13 +797,24 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       const { id } = idParams.parse(request.params);
       const t = await loadTask(prisma, id);
       const me = request.auth!.userId;
-      if (!canViewAll(request) && t.assigneeUserId !== me) {
-        throw Errors.forbidden('Esta tarefa é de outra pessoa.');
+      const freeTask = isFreeHelperTask({ ...t, planMode: t.plan?.mode ?? null });
+      const helper = freeTask && canTake(await skillsOf(prisma, me), t.activity);
+      if (!canViewAll(request) && t.assigneeUserId !== me && !helper) {
+        throw Errors.forbidden(
+          t.stepClass === 'PREPARACAO' && t.assignee
+            ? `${t.assignee.displayName} já pegou esta tarefa.`
+            : 'Esta tarefa é de outra pessoa.',
+        );
       }
       // Simplificação Fase 4: rascunho (pré-planejamento) não existe para quem executa.
       if (!canViewAll(request) && t.status === 'RASCUNHO') throw Errors.notFound('Tarefa');
       const { timezone } = await company(prisma);
-      const [events, so, readiness, osTasks, links, revisions] = await Promise.all([
+      const osMaterials = await prisma.serviceOrderMaterial.findMany({
+        where: { serviceOrderId: t.serviceOrderId, removedAt: null },
+        select: { description: true, quantity: true, unit: true, available: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      const [events, so, osTasks, revisions] = await Promise.all([
         prisma.productionTaskEvent.findMany({
           where: { taskId: id },
           include: { actor: { select: { displayName: true } } },
@@ -849,7 +824,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           where: { id: t.serviceOrderId },
           include: { items: { orderBy: { position: 'asc' } } },
         }),
-        readinessOf(prisma, t.serviceOrderId),
         prisma.productionTask.findMany({
           where: { serviceOrderId: t.serviceOrderId, status: { not: 'RASCUNHO' } },
           select: {
@@ -861,10 +835,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           },
           orderBy: [{ sequence: 'asc' }, { number: 'asc' }],
         }),
-        prisma.productionTaskMaterial.findMany({
-          where: { taskId: id },
-          select: { requirementId: true },
-        }),
         prisma.serviceOrderRevision.findMany({
           where: { serviceOrderId: t.serviceOrderId, scope: { not: 'CRIACAO' } },
           include: { changedBy: { select: { displayName: true } } },
@@ -873,7 +843,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         }),
       ]);
       const own = t.assigneeUserId === me && request.auth!.permissions.has('producao.executar');
-      const materialIds = links.map((l) => l.requirementId);
       const itemCode = (itemId: string | null) => {
         const it = itemId ? so.items.find((i) => i.id === itemId) : null;
         return it ? formatServiceOrderItemCode(so.number, it.position) : null;
@@ -907,14 +876,18 @@ export async function productionTaskRoutes(app: FastifyInstance) {
               : [],
           })),
         },
-        materials: readiness.lines,
-        materialsState: readiness.state,
-        materialIds,
+        // O indicador reflete a lista simples da OS (só informativo; nunca bloqueia).
         taskMaterials: !t.requiresMaterials
           ? 'NAO_EXIGE'
-          : (await taskMaterialsReady(prisma, t, new Map([[t.serviceOrderId, readiness]])))
-            ? 'DISPONIVEIS'
-            : 'FALTANDO',
+          : osMaterials.some((m) => !m.available)
+            ? 'FALTANDO'
+            : 'DISPONIVEIS',
+        osMaterials: osMaterials.map((m) => ({
+          description: m.description,
+          quantity: m.quantity === null ? null : Number(m.quantity),
+          unit: m.unit,
+          available: m.available,
+        })),
         // Só os nomes dos campos alterados (sem valores): nada comercial chega ao tablet.
         technicalHistory: revisions.map((r) => ({
           revision: r.revision,
@@ -936,12 +909,15 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           assignee: x.assignee?.displayName ?? null,
         })),
         can: {
-          start: own && t.status === 'LIBERADA',
+          // Tarefa livre: qualquer ajudante pode tocar em Iniciar (o primeiro fica com ela).
+          start:
+            t.status === 'LIBERADA' &&
+            (own || (helper && request.auth!.permissions.has('producao.executar'))),
           pause: own && t.status === 'EM_EXECUCAO',
           // Fase 9: não retoma enquanto uma ocorrência aberta impede a tarefa.
           resume: own && t.status === 'PAUSADA' && !(await hasBlockingIssue(prisma, t.id)),
           progress: own && (t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA'),
-          complete: own && t.status === 'EM_EXECUCAO' && t.activity !== 'EMBALAGEM',
+          complete: own && t.status === 'EM_EXECUCAO',
           manage: canManage(request),
         },
       };
@@ -968,18 +944,37 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         where: { id },
         include: {
           plan: { select: { status: true, mode: true } },
-          serviceOrder: {
-            select: {
-              status: true,
-              items: { select: { id: true, orderItem: { select: { receivedQuantity: true } } } },
-            },
-          },
+          serviceOrder: { select: { status: true } },
           dependsOn: { include: { dependsOn: { select: { status: true } } } },
           dependents: true,
         },
       });
       if (!t) throw Errors.notFound('Tarefa');
-      if (t.assigneeUserId !== request.auth!.userId) {
+      const me = request.auth!.userId;
+      // Tarefa livre de preparação: o primeiro ajudante disponível que toca em Iniciar fica com
+      // ela. A linha está travada (FOR UPDATE): dois toques ao mesmo tempo nunca pegam os dois.
+      let claimed = false;
+      if (
+        action === 'start' &&
+        isFreeHelperTask({ ...t, planMode: t.plan?.mode ?? null }) &&
+        canTake(await skillsOf(tx, me), t.activity)
+      ) {
+        const busy = await runningTaskOf(tx, me);
+        if (busy)
+          throw Errors.conflict(
+            `Você já está com ${taskCode(busy.number)} · ${busy.title} em andamento: termine ou pause antes de pegar outra.`,
+          );
+        t.assigneeUserId = me;
+        claimed = true;
+      }
+      if (t.assigneeUserId !== me) {
+        if (t.stepClass === 'PREPARACAO' && t.assigneeUserId) {
+          const who = await tx.user.findUnique({
+            where: { id: t.assigneeUserId },
+            select: { displayName: true },
+          });
+          throw Errors.forbidden(`${who?.displayName ?? 'Outro ajudante'} já pegou esta tarefa.`);
+        }
         throw Errors.forbidden('Esta tarefa é de outra pessoa.');
       }
       if (t.serviceOrder.status !== 'ABERTA') throw Errors.business('A OS não está ativa.');
@@ -991,12 +986,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           throw Errors.business('Esta tarefa não pode ser iniciada agora.');
         }
         // Verificação completa no momento do início (não confia no estado salvo nem no tablet).
-        const items = t.serviceOrderItemId
-          ? t.serviceOrder.items.filter((i) => i.id === t.serviceOrderItemId)
-          : t.serviceOrder.items;
         const check = evaluateRelease({
           osActive: true,
-          pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
           published:
             t.plan?.status === 'PUBLICADO' ||
             Boolean(t.supportForTaskId || t.issueId || t.inspectionId),
@@ -1004,8 +995,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           dependenciesDone: t.dependsOn.every(
             (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
           ),
-          materialsReady: await taskMaterialsReady(tx, t),
-          requiresMaterials: t.requiresMaterials,
           manuallyBlocked: Boolean(t.blockedReason),
           openIssue: await hasBlockingIssue(tx, t.id),
           scheduledAt: t.scheduledAt,
@@ -1025,6 +1014,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         const u = await tx.productionTask.update({
           where: { id },
           data: {
+            ...(claimed ? { assigneeUserId: me } : {}),
             status: 'EM_EXECUCAO',
             startedAt: t.startedAt ?? now,
             blockers: [],
@@ -1035,11 +1025,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           kind: 'INICIADA',
           from: t.status,
           to: 'EM_EXECUCAO',
+          // Fica no histórico (e nas estatísticas) que a tarefa livre foi pega por quem iniciou.
+          ...(claimed ? { note: 'Pegou a tarefa livre', changes: { claimed: true } } : {}),
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
-        if (t.supportForTaskId) await supportStarted(tx, actor, t.id, now);
         if (t.issueId) await actionStarted(tx, actor, t.id);
-        if (t.activity === 'EMBALAGEM') await packagingStarted(tx, actor, t.id);
         return;
       }
       if (action === 'pause') {
@@ -1138,11 +1128,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       }
       // Conclusão
       if (t.status === 'CONCLUIDA') return; // conclusão repetida: sem novos eventos nem liberações
-      // Fase 10: a embalagem conclui pela tela própria (proteção, local e aprovação vigente).
-      if (t.activity === 'EMBALAGEM')
-        throw Errors.business(
-          'Conclua a embalagem pela tela de embalagem (proteção usada e local da peça).',
-        );
+      // Reformulação S1: uma tarefa de embalagem antiga (só histórico) conclui como qualquer outra;
+      // nada da embalagem é exigido nem gravado.
       if (t.status !== 'EM_EXECUCAO')
         throw Errors.business('Só tarefas em execução podem ser concluídas.');
       // Registro adicional só quando a etapa exige (regra técnica definida pelo gestor).
@@ -1184,10 +1171,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         summary: `Tarefa ${taskCode(t.number)} (${t.title}) concluída.`,
       });
       await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_COMPLETED, u);
-      // Fase 8: concluir o apoio encerra o pedido (a tarefa principal segue independente);
-      // concluir a principal cancela pedidos que nem começaram.
-      if (t.supportForTaskId) await supportCompleted(tx, actor, t.id, now);
-      else await cancelHelpForClosedTask(tx, actor, t.id);
       // Fase 9: concluir a resolução NÃO encerra a ocorrência — vai para verificação.
       if (t.issueId) await actionCompleted(tx, actor, t.id, completion!.note ?? null);
       else await originalTaskClosed(tx, actor, t.id, 'CONCLUIDA');
@@ -1222,10 +1205,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
     // Fase 7: disponibilidade operacional de quem executa (ocupado, em pausa, disponível).
     if (action !== 'progress') {
       await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, request.auth!.userId));
-      // Fase 8: quem ficou livre pode atender a fila de ajuda.
-      await processHelpQueue(prisma).catch((err: unknown) =>
-        request.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
-      );
     }
     const { timezone } = await company(prisma);
     return toTaskDto(await loadTask(prisma, id), timezone);

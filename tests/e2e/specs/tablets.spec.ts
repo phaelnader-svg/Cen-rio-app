@@ -160,6 +160,11 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
       await expect(jt.getByTestId('task-pieces')).toContainText('Sofá 3 lugares');
       await expect(detail).toContainText('Ao concluir, libera');
       await expect(detail).toContainText('Revestimento do encosto');
+      // Fase 2: o essencial fica à vista; dependências, etapas e históricos em "Mais detalhes".
+      const more = jt.getByTestId('task-more');
+      await expect(jt.getByTestId('os-steps')).toBeHidden();
+      await more.getByText('Mais detalhes').click();
+      await expect(jt.getByTestId('os-steps')).toBeVisible();
       await jt.getByRole('button', { name: 'Registrar andamento' }).click();
       await jt.getByLabel('Etapa atual').fill('Estrutura limpa');
       await jt.getByLabel('Próximo passo').fill('Trocar percintas do assento');

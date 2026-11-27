@@ -1,11 +1,19 @@
+import {
+  billingEnvironment,
+  billingLocked,
+  blocksAt,
+  emailDeliveryEnabled,
+  statusOf,
+} from '../core/billing';
 import type { EmployeeDto, EmployeeSummaryDto, MeDto, Permission } from '@cenario/shared';
-import { isPermission } from '@cenario/shared';
+import { PROVISIONAL_TRADE_NAME, hasWhatsapp, isPermission } from '@cenario/shared';
 import type { Employee, PrismaClient, Tx } from '@cenario/db';
 import { z } from 'zod';
 import type { AuthContext } from '../core/types';
 import { Errors } from '../lib/errors';
+import { requireCompanyId } from '../core/tenant';
 
-export const idParams = z.object({ id: z.string().uuid({ message: 'Identificador inválido.' }) });
+export const idParams = z.object({ id: z.guid({ message: 'Identificador inválido.' }) });
 
 export function photoUrl(fileId: string | null): string | null {
   return fileId ? `/api/files/${fileId}` : null;
@@ -83,12 +91,25 @@ export async function buildMe(
   const [user, device, company] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: auth.userId }, include: { employee: true } }),
     auth.deviceId
-      ? db.device.findUnique({ where: { id: auth.deviceId }, select: { id: true, name: true } })
+      ? db.device.findUnique({
+          where: { id: auth.deviceId },
+          select: { id: true, name: true, shows: true },
+        })
       : null,
-    db.companySettings.findUnique({ where: { id: 1 } }),
+    db.companySettings.findUnique({ where: { id: requireCompanyId() } }),
   ]);
+  const permissions = [...auth.permissions];
+  const billingEnv = billingEnvironment();
   return {
-    user: { id: user.id, email: user.email, displayName: user.displayName },
+    user: {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      // Sem envio de e-mail configurado não há como confirmar: nada é cobrado da pessoa.
+      emailConfirmed: user.emailConfirmedAt !== null || !emailDeliveryEnabled(),
+      twoFactor: user.totpEnabledAt !== null,
+      supportAgent: user.supportAgent,
+    },
     employee: user.employee ? toEmployeeSummary(user.employee) : null,
     session: {
       id: auth.sessionId,
@@ -97,7 +118,7 @@ export async function buildMe(
       deviceId: auth.deviceId,
     },
     device,
-    permissions: [...auth.permissions],
+    permissions,
     company: {
       tradeName: company?.tradeName ?? 'Cenário Estofados',
       timezone: company?.timezone ?? 'America/Sao_Paulo',
@@ -105,6 +126,41 @@ export async function buildMe(
       arrivalAlertAt: company?.arrivalAlertAt ?? '09:30',
       workdayEnd: company?.workdayEnd ?? '18:00',
       arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
+      platformOwner: !!company?.serverConnections && permissions.includes('empresa.configurar'),
+      platformCompany: !!company?.serverConnections,
+      needsWelcome:
+        company?.tradeName === PROVISIONAL_TRADE_NAME &&
+        permissions.includes('empresa.configurar') &&
+        !user.supportAgent,
+      // 26/11/2026: empresa sem WhatsApp (criada antes do cadastro pedir) informa ao entrar.
+      needsWhatsapp:
+        !!company &&
+        !company.isDemo &&
+        !company.isPlatform &&
+        !hasWhatsapp(company.phone) &&
+        permissions.includes('empresa.configurar') &&
+        !user.supportAgent,
+      supportAccessUntil:
+        company?.supportAccessUntil && company.supportAccessUntil > new Date()
+          ? company.supportAccessUntil.toISOString()
+          : null,
+      isDemo: company?.isDemo ?? false,
+      servesOnSite: company?.servesOnSite ?? true,
+      subscription: company
+        ? {
+            plan: company.plan,
+            status: statusOf(company, billingEnv),
+            blocksAt: blocksAt(company, billingEnv)?.toISOString() ?? null,
+            locked: billingLocked(company, billingEnv),
+            billingEnabled: billingEnv.BILLING_ENABLED,
+          }
+        : {
+            plan: 'gestao',
+            status: 'CORTESIA',
+            blocksAt: null,
+            locked: false,
+            billingEnabled: false,
+          },
     },
   };
 }

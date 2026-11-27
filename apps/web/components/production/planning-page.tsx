@@ -1,5 +1,6 @@
 'use client';
 
+import { plural, taskAssigneeLabel } from '@cenario/shared';
 import type {
   PlanCandidateDto,
   PlanItemDto,
@@ -21,7 +22,6 @@ import {
   mondayOf,
 } from '@cenario/shared';
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   CalendarRange,
@@ -37,11 +37,10 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { PriorityBadge } from '@/components/commercial/badges';
 import { Section } from '@/components/commercial/section';
-import { ReadinessBadge } from '@/components/purchasing/badges';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select } from '@/components/ui/field';
-import { HelpAndRescheduleBanner } from '@/components/help/pages';
+import { RescheduleBanner } from '@/components/production/reschedule-pages';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
@@ -55,10 +54,11 @@ import {
   useWorkers,
 } from '@/lib/production';
 import { TaskStatusBadge, blockersText } from './badges';
+import { PublishWeekDialog } from './publish-week-dialog';
 import { useSend } from './use-send';
 
 /** Planejamento semanal de produção (sexta é o dia padrão; qualquer dia é permitido). */
-export function ProductionPlanningPage() {
+export function ProductionPlanningPage({ embedded = false }: { embedded?: boolean } = {}) {
   const me = useMe();
   const today = todayIso(me.data?.company.timezone);
   const [week, setWeek] = useState(() => mondayOf(addDays(today, 3)));
@@ -71,19 +71,22 @@ export function ProductionPlanningPage() {
 
   return (
     <>
-      <PageHeader
-        title="Planejamento de produção"
-        description="Selecione as OS da semana, defina responsáveis, dias e dependências e publique. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
-        actions={
-          <Link
-            href="/painel/producao"
-            className="text-sm font-medium text-brand-700 hover:underline"
-          >
-            Quadro de produção →
-          </Link>
-        }
-      />
-      <HelpAndRescheduleBanner />
+      {!embedded && (
+        <PageHeader
+          title="Planejamento de produção"
+          description="Monte a semana e publique para liberar as tarefas."
+          help="Selecione as OS da semana, defina responsáveis, dias e dependências e publique. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
+          actions={
+            <Link
+              href="/painel/producao"
+              className="text-sm font-medium text-brand-700 hover:underline"
+            >
+              Quadro de produção →
+            </Link>
+          }
+        />
+      )}
+      <RescheduleBanner />
       <Card className="mb-6 flex flex-wrap items-center gap-3 p-4">
         <Button
           variant="secondary"
@@ -205,8 +208,8 @@ function PlanEditor({ planId }: { planId: string }) {
           <Badge tone={fila ? 'info' : undefined}>{PLAN_MODE_LABEL[plan.mode]}</Badge>
         </span>
         <span className="text-sm text-ink-muted">
-          {plan.items.length} OS · {plan.tasks.filter((t) => t.status !== 'CANCELADA').length}{' '}
-          tarefa(s)
+          {plan.items.length} OS ·{' '}
+          {plural(plan.tasks.filter((t) => t.status !== 'CANCELADA').length, 'tarefa', 'tarefas')}
           {plan.publishedAt ? ` · publicado em ${formatDateTime(plan.publishedAt)}` : ''}
         </span>
         <span className="flex-1" />
@@ -248,7 +251,10 @@ function PlanEditor({ planId }: { planId: string }) {
       )}
 
       {fila && published && plan.weekEnded && plan.pendingCount > 0 && (
-        <Alert tone="warn" title={`Semana encerrada com ${plan.pendingCount} pendência(s)`}>
+        <Alert
+          tone="warn"
+          title={`Semana encerrada com ${plural(plan.pendingCount, 'pendência', 'pendências')}`}
+        >
           <p className="mt-1">
             As pendências continuam nesta semana até você decidir. Nada é transferido
             automaticamente.
@@ -293,7 +299,7 @@ function PlanEditor({ planId }: { planId: string }) {
                   </Badge>
                 )}
                 <span className="block text-ink-muted">
-                  {r.reason} · {r.taskCount} tarefa(s)
+                  {r.reason} · {plural(r.taskCount, 'tarefa', 'tarefas')}
                 </span>
               </li>
             ))}
@@ -310,7 +316,7 @@ function PlanEditor({ planId }: { planId: string }) {
           onClose={() => setAdding(null)}
         />
       )}
-      {publishing && <PublishDialog plan={plan} onClose={() => setPublishing(false)} />}
+      {publishing && <PublishWeekDialog planId={plan.id} onClose={() => setPublishing(false)} />}
       {carrying && <CarryOverDialog plan={plan} onClose={() => setCarrying(false)} />}
     </div>
   );
@@ -353,7 +359,6 @@ function CandidatesSection({
                 </span>
               </span>
               <PriorityBadge priority={c.serviceOrder.priority} />
-              <ReadinessBadge state={c.materialsState} />
               <Button
                 size="sm"
                 icon={<Plus className="size-3.5" aria-hidden />}
@@ -441,11 +446,6 @@ function AddOsDialog({
       {error && (
         <Alert tone="danger" className="mb-4">
           {error}
-        </Alert>
-      )}
-      {candidate.materialsState !== 'COMPLETO' && (
-        <Alert tone="warn" className="mb-4">
-          Materiais: as etapas que exigem material ficarão bloqueadas até a prontidão completa.
         </Alert>
       )}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -558,7 +558,6 @@ function ItemSection({
       title={`${item.serviceOrder.code} · ${item.customerName}`}
       actions={
         <>
-          <ReadinessBadge state={item.materialsState} />
           <PriorityBadge priority={item.priority} />
           <Select
             aria-label={`Responsável principal da ${item.serviceOrder.code}`}
@@ -843,7 +842,10 @@ function QueuesSection({
     );
   };
   return (
-    <Section title={`Filas da semana · ${done} de ${total} concluída(s)`} bodyClassName="p-0">
+    <Section
+      title={`Filas da semana · ${done} de ${plural(total, 'concluída', 'concluídas')}`}
+      bodyClassName="p-0"
+    >
       {queues.length === 0 ? (
         <p className="px-5 py-4 text-sm text-ink-muted">
           Nenhuma tarefa com responsável. Defina os responsáveis nas OS abaixo.
@@ -955,7 +957,7 @@ function CarryOverDialog({ plan, onClose }: { plan: ProductionPlanDto; onClose: 
         {pending.map((t) => (
           <Checkbox
             key={t.id}
-            label={`${t.code} · ${t.title} · ${t.assignee?.displayName ?? 'sem responsável'}`}
+            label={`${t.code} · ${t.title} · ${taskAssigneeLabel(t)}`}
             checked={sel.has(t.id)}
             onChange={(e) => {
               const n = new Set(sel);
@@ -1009,7 +1011,7 @@ function DistributionSection({
     });
   return (
     <Section
-      title={`Distribuição por peça · ${q.data.pendencyCount} pendência(s)`}
+      title={`Distribuição por peça · ${plural(q.data.pendencyCount, 'pendência', 'pendências')}`}
       bodyClassName="p-0"
       actions={plan.items.map((it) => (
         <Button
@@ -1245,72 +1247,6 @@ export function DepsDialog({
             />
           ))}
       </div>
-    </Dialog>
-  );
-}
-
-function PublishDialog({ plan, onClose }: { plan: ProductionPlanDto; onClose: () => void }) {
-  const [notes, setNotes] = useState('');
-  const [key] = useState(newIdempotencyKey);
-  const { m, error } = useSend(onClose);
-  const byPerson = new Map<string, number>();
-  for (const t of plan.tasks)
-    byPerson.set(
-      t.assignee?.displayName ?? 'Sem responsável',
-      (byPerson.get(t.assignee?.displayName ?? 'Sem responsável') ?? 0) + 1,
-    );
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title="Publicar a programação da semana?"
-      description="As tarefas vão para os tablets. Alterações posteriores exigem motivo e geram nova revisão."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Voltar
-          </Button>
-          <Button
-            loading={m.isPending}
-            onClick={() =>
-              m.mutate({
-                run: () =>
-                  api(`/api/v1/production-plans/${plan.id}/publish`, {
-                    method: 'POST',
-                    idempotencyKey: key,
-                    body: { version: plan.version, notes },
-                  }),
-                ok: 'Programação publicada.',
-              })
-            }
-          >
-            Publicar
-          </Button>
-        </>
-      }
-    >
-      {error && (
-        <Alert tone="danger" className="mb-3">
-          {error}
-        </Alert>
-      )}
-      <ul className="mb-4 text-sm">
-        {[...byPerson].map(([n, c]) => (
-          <li key={n}>
-            {n}: <strong>{c}</strong> tarefa(s)
-          </li>
-        ))}
-      </ul>
-      {plan.conflicts.length > 0 && (
-        <Alert tone="warn" className="mb-4">
-          <AlertTriangle className="mr-1 inline size-4" aria-hidden />
-          {plan.conflicts.length} aviso(s): tarefas sem responsável, sem horário ou sem materiais
-          ficarão bloqueadas.
-        </Alert>
-      )}
-      <Field label="Observações (histórico)">
-        {(p) => <Input {...p} value={notes} onChange={(e) => setNotes(e.target.value)} />}
-      </Field>
     </Dialog>
   );
 }

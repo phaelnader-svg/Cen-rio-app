@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   ARRIVAL_KIND_LABEL,
   ATTENDANCE_ACTION_LABEL,
@@ -30,7 +31,6 @@ import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { notify, resolveNotifications } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { domainTaskEvent, lockTasks, taskEvent } from '../production/common';
-import { processHelpQueue } from '../help/queue';
 import { analyzeAbsence, obsoleteProposals } from '../help/reschedule';
 import {
   MANAGE,
@@ -93,11 +93,6 @@ async function resolveOpenImpacts(
 
 export async function attendanceRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  /** Fase 8: chegada, encerramento e situações mudam quem pode ajudar. */
-  const requeue = () =>
-    processHelpQueue(prisma).catch((err: unknown) =>
-      app.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
-    );
 
   // ─────────────────────────── Funcionário (tablet) ───────────────────────────
 
@@ -252,7 +247,6 @@ export async function attendanceRoutes(app: FastifyInstance) {
         }
         await refreshAvailability(tx, actor, e.id, now);
       });
-      await requeue();
       return myAttendance(userId);
     },
   );
@@ -392,7 +386,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
           action: 'attendance.departed',
           entityType: 'attendance',
           entityId: row.id,
-          summary: `${e.displayName} encerrou o expediente às ${cfg.now}${early ? ' (saída antecipada)' : ''}; ${running.length} tarefa(s) pausada(s), ${pending.length} sem andamento.`,
+          summary: `${e.displayName} encerrou o expediente às ${cfg.now}${early ? ' (saída antecipada)' : ''}; ${plural(running.length, 'tarefa pausada', 'tarefas pausadas')}, ${pending.length} sem andamento.`,
         });
         await attendanceEvent(tx, actor, {
           type: EVENT_TYPES.ATTENDANCE_DEPARTED,
@@ -412,13 +406,12 @@ export async function attendanceRoutes(app: FastifyInstance) {
             userId,
             kind: 'EXPEDIENTE_ENCERRADO',
             dedupeKey: `SAIDA:${row.id}`,
-            body: `Expediente encerrado às ${cfg.now}${running.length ? `; ${running.length} tarefa(s) pausada(s) com o andamento preservado` : ''}.`,
+            body: `Expediente encerrado às ${cfg.now}${running.length ? `; ${plural(running.length, 'tarefa pausada', 'tarefas pausadas')} com o andamento preservado` : ''}.`,
             includeActor: true,
           },
         ]);
         await refreshAvailability(tx, actor, e.id, now);
       });
-      await requeue();
       return myAttendance(userId);
     },
   );
@@ -500,7 +493,6 @@ export async function attendanceRoutes(app: FastifyInstance) {
       throw Errors.business('Este funcionário não registra presença operacional.');
     }
     await prisma.$transaction((tx) => applyAttendanceAction(tx, actor, cfg, e, input));
-    await requeue();
     const row = await prisma.operationalAttendance.findUniqueOrThrow({
       where: { employeeId_date: { employeeId: e.id, date: dbDate(input.date) } },
     });
@@ -521,7 +513,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     );
   });
 
-  await calendarRoutes(app, requeue);
+  await calendarRoutes(app);
 
   app.get('/api/v1/attendance/impacts', { config: { access: VIEW } }, async (request) => {
     const q = teamQuerySchema.parse(request.query);

@@ -1,15 +1,14 @@
 import {
   paymentReportSchema,
   EVENT_TYPES,
-  PICKUP_STATUS_LABEL,
+  PICKUP_KIND_LABEL,
+  pickupStatusLabel,
   approveInspectionSchema,
   assignInspectorSchema,
   assignLogisticsOccurrenceSchema,
-  assignPackagingSchema,
   assignPickupLogisticsSchema,
   cancelWithReasonSchema,
   checkInspectionItemSchema,
-  completePackagingSchema,
   confirmReturnSchema,
   createDeliverySchema,
   createReturnSchema,
@@ -27,7 +26,6 @@ import {
   pickupExecutionSchema,
   qualitySettingsSchema,
   qualityTemplateSchema,
-  receiptCorrectionSchema,
   rejectInspectionSchema,
   resolveLogisticsOccurrenceSchema,
   stageQuerySchema,
@@ -44,11 +42,13 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { asSnapshot, dateOnly, lockOrder, pickupCode } from '../commercial/common';
 import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { PICKUP_AUDIENCE } from '../pickups/routes';
+import { receivePickupAtWorkshop } from '../pickups/arrival';
 import { notify, resolvePickupAssignment } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { workers } from '../production/plans';
@@ -83,15 +83,7 @@ import {
   resolveOccurrence,
   toOccurrenceDto,
 } from './logistics';
-import { assignPackaging, completePackaging, packagingInclude, toPackagingDto } from './packaging';
-import {
-  cancelReturn,
-  confirmReturn,
-  correctReceiptLine,
-  createReturn,
-  returnInclude,
-  toReturnDto,
-} from './returns';
+import { cancelReturn, confirmReturn, createReturn, returnInclude, toReturnDto } from './returns';
 import {
   arriveDelivery,
   cancelDelivery,
@@ -115,11 +107,8 @@ import {
   withPaymentInstructions,
 } from '../finance/billing';
 import { setTripParticipants, tripCostTeamProblem } from '../pickups/service';
+import { requireCompanyId } from '../../core/tenant';
 
-const PACKAGING_ACCESS = {
-  session: 'any',
-  anyPermissions: ['producao.executar', 'qualidade.gerenciar'],
-} as const;
 const LOCATION_READ = {
   session: 'any',
   anyPermissions: [
@@ -159,7 +148,7 @@ const RETURNS_VIEW = {
   anyPermissions: ['devolucoes.gerenciar', 'pedidos.ver'],
 } as const;
 
-const itemParams = z.object({ id: z.string().uuid(), itemId: z.string().uuid() });
+const itemParams = z.object({ id: z.guid(), itemId: z.guid() });
 const device = (r: FastifyRequest) => r.auth?.deviceId ?? null;
 const isManager = (r: FastifyRequest, p: 'qualidade.gerenciar' | 'entregas.gerenciar') =>
   r.auth?.permissions.has(p) ?? false;
@@ -203,6 +192,9 @@ async function pieceStatus(
     : undefined;
   return {
     ...pieceRef(item),
+    // Reformulação S1: etapa calculada agora (sem embalagem). Uma peça antiga ainda gravada numa
+    // etapa de embalagem aparece como pronta, sem gravar nada na leitura.
+    stage: r.stage,
     readiness: r.readiness,
     inspection: r.inspection
       ? {
@@ -210,13 +202,6 @@ async function pieceStatus(
           code: `IQ-${String(r.inspection.number).padStart(5, '0')}`,
           status: r.inspection.status,
           round: r.inspection.round,
-        }
-      : null,
-    packaging: r.inspection?.packaging
-      ? {
-          id: r.inspection.packaging.id,
-          code: `EB-${String(r.inspection.packaging.number).padStart(5, '0')}`,
-          status: r.inspection.packaging.status,
         }
       : null,
     delivery: di
@@ -382,7 +367,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/v1/quality/settings', { config: { access: QUALITY_MANAGE } }, async () => {
-    const s = await prisma.companySettings.findUnique({ where: { id: 1 } });
+    const s = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
     const main = await mainInspector(prisma);
     return {
       qualityInspectorUserId: s?.qualityInspectorUserId ?? null,
@@ -399,7 +384,7 @@ export async function qualityRoutes(app: FastifyInstance) {
           throw Errors.business('O inspetor principal precisa da permissão "Inspecionar peças".');
       }
       await tx.companySettings.update({
-        where: { id: 1 },
+        where: { id: requireCompanyId() },
         data: { qualityInspectorUserId: input.qualityInspectorUserId },
       });
       await audit(tx, actorFrom(request), {
@@ -511,78 +496,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     saveTemplate(r, idParams.parse(r.params).id),
   );
 
-  // ─────────────────────────── Embalagem ───────────────────────────
-
-  app.get('/api/v1/packaging', { config: { access: PACKAGING_ACCESS } }, async (request) => {
-    const q = z
-      .object({ scope: z.enum(['open', 'all', 'mine']).default('open') })
-      .parse(request.query);
-    const manager = isManager(request, 'qualidade.gerenciar');
-    const rows = await prisma.packagingRecord.findMany({
-      where: {
-        ...(q.scope === 'all' ? {} : { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } }),
-        ...(!manager || q.scope === 'mine' ? { assigneeUserId: request.auth!.userId } : {}),
-      },
-      include: packagingInclude,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
-    return Promise.all(rows.map((r) => toPackagingDto(prisma, r)));
-  });
-
-  app.get('/api/v1/packaging/:id', { config: { access: PACKAGING_ACCESS } }, async (request) => {
-    const { id } = idParams.parse(request.params);
-    const r = await prisma.packagingRecord.findUnique({ where: { id }, include: packagingInclude });
-    if (!r) throw Errors.notFound('Embalagem');
-    if (!isManager(request, 'qualidade.gerenciar') && r.assigneeUserId !== request.auth!.userId)
-      throw Errors.forbidden();
-    return toPackagingDto(prisma, r);
-  });
-
-  app.post(
-    '/api/v1/packaging/:id/assign',
-    { config: { access: QUALITY_MANAGE } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = assignPackagingSchema.parse(request.body);
-      await prisma.$transaction((tx) => assignPackaging(tx, actorFrom(request), id, input));
-      return toPackagingDto(
-        prisma,
-        await prisma.packagingRecord.findUniqueOrThrow({
-          where: { id },
-          include: packagingInclude,
-        }),
-      );
-    },
-  );
-
-  app.post(
-    '/api/v1/packaging/:id/complete',
-    { config: { access: PACKAGING_ACCESS, idempotent: true } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = completePackagingSchema.parse(request.body);
-      const actor = actorFrom(request);
-      await prisma.$transaction((tx) =>
-        completePackaging(
-          tx,
-          actor,
-          { userId: request.auth!.userId, isManager: isManager(request, 'qualidade.gerenciar') },
-          id,
-          input,
-          device(request),
-        ),
-      );
-      await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, request.auth!.userId));
-      return toPackagingDto(
-        prisma,
-        await prisma.packagingRecord.findUniqueOrThrow({
-          where: { id },
-          include: packagingInclude,
-        }),
-      );
-    },
-  );
+  // Reformulação S1: as rotas de embalagem (/api/v1/packaging…) deixaram de existir (404).
 
   // ─────────────────────────── Localizações e peças ───────────────────────────
 
@@ -611,7 +525,7 @@ export async function qualityRoutes(app: FastifyInstance) {
       .replace(/^_|_$/g, '')
       .slice(0, 30);
     const l = await prisma.$transaction(async (tx) => {
-      if (await tx.itemLocation.findUnique({ where: { key } }))
+      if (await tx.itemLocation.findFirst({ where: { key } }))
         throw Errors.conflict('Já existe uma localização com esse nome.');
       const created = await tx.itemLocation.create({ data: { key, ...input } });
       await audit(tx, actorFrom(request), {
@@ -742,6 +656,8 @@ export async function qualityRoutes(app: FastifyInstance) {
     { config: { access: DELIVERY_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createDeliverySchema.parse(request.body);
+      // Fase 1: com a logística desligada, a entrega é confirmada direto na OS.
+      await assertModuleEnabled(prisma, 'logistica');
       if (input.tripCost && !request.auth!.permissions.has('financeiro.gerenciar'))
         throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
       const teamProblem = tripCostTeamProblem(input.team, Boolean(input.tripCost));
@@ -770,6 +686,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   app.put('/api/v1/deliveries/:id', { config: { access: DELIVERY_MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);
     const input = updateDeliverySchema.parse(request.body);
+    await assertModuleEnabled(prisma, 'logistica');
     await prisma.$transaction((tx) => updateDelivery(tx, actorFrom(request), id, input));
     return deliveryDto(id);
   });
@@ -780,6 +697,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     async (request) => {
       const { id } = idParams.parse(request.params);
       const { version } = deliveryVersionSchema.parse(request.body);
+      await assertModuleEnabled(prisma, 'logistica');
       await prisma.$transaction((tx) => confirmDelivery(tx, actorFrom(request), id, version));
       return deliveryDto(id);
     },
@@ -924,6 +842,7 @@ export async function qualityRoutes(app: FastifyInstance) {
         OR: [
           { status: { in: ['AGENDADA', 'EM_EXECUCAO', 'COM_OCORRENCIA'] } },
           { status: 'RETIRADA_REALIZADA', updatedAt: { gte: since } },
+          { kind: 'NO_LOCAL', status: 'RECEBIDA_NA_OFICINA', updatedAt: { gte: since } },
         ],
       },
       include: {
@@ -939,6 +858,7 @@ export async function qualityRoutes(app: FastifyInstance) {
         return {
           id: p.id,
           kind: 'RETIRADA' as const,
+          onSite: p.kind === 'NO_LOCAL',
           code: pickupCode(p.number),
           status: p.status,
           customerName: p.order.customer.name,
@@ -1062,7 +982,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     { config: { access: DELIVERY_EXECUTE, idempotent: true } },
     async (request) => {
       const { kind, id } = z
-        .object({ kind: z.enum(['pickups', 'deliveries']), id: z.string().uuid() })
+        .object({ kind: z.enum(['pickups', 'deliveries']), id: z.guid() })
         .parse(request.params);
       const input = paymentReportSchema.parse(request.body);
       const stop = { kind: kind === 'pickups' ? ('RETIRADA' as const) : ('ENTREGA' as const), id };
@@ -1088,11 +1008,18 @@ export async function qualityRoutes(app: FastifyInstance) {
         const cur = await tx.pickupRequest.findUniqueOrThrow({ where: { id } });
         const to = input.step === 'SAIDA' ? 'EM_EXECUCAO' : 'RETIRADA_REALIZADA';
         if (cur.status === to) return;
+        // "No local": o serviço feito já passou direto para "Serviço feito" (repetição).
+        if (
+          cur.kind === 'NO_LOCAL' &&
+          to === 'RETIRADA_REALIZADA' &&
+          cur.status === 'RECEBIDA_NA_OFICINA'
+        )
+          return;
         if (cur.version !== input.version) throw Errors.versionConflict(cur.version);
         const from = input.step === 'SAIDA' ? 'AGENDADA' : 'EM_EXECUCAO';
         if (cur.status !== from)
           throw Errors.business(
-            `Retirada ${PICKUP_STATUS_LABEL[cur.status].toLowerCase()}: não é possível registrar este passo.`,
+            `${PICKUP_KIND_LABEL[cur.kind]} ${pickupStatusLabel(cur.status, cur.kind).toLowerCase()}: não é possível registrar este passo.`,
           );
         const actor = actorFrom(request);
         const u = await tx.pickupRequest.update({
@@ -1115,7 +1042,7 @@ export async function qualityRoutes(app: FastifyInstance) {
           action: 'pickup.status_changed',
           entityType: 'pickup_request',
           entityId: id,
-          summary: `Retirada ${pickupCode(p.number)}: ${PICKUP_STATUS_LABEL[cur.status]} → ${PICKUP_STATUS_LABEL[to]} (logística).`,
+          summary: `${PICKUP_KIND_LABEL[cur.kind]} ${pickupCode(p.number)}: ${pickupStatusLabel(cur.status, cur.kind)} → ${pickupStatusLabel(to, cur.kind)} (logística).`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PICKUP_STATUS_CHANGED,
@@ -1131,6 +1058,10 @@ export async function qualityRoutes(app: FastifyInstance) {
           audience: `${PICKUP_AUDIENCE}|user:${request.auth!.userId}` as typeof PICKUP_AUDIENCE,
         });
         await syncTripCost(tx, actor, { pickupId: id });
+        // 2026-11-25: "No local" — serviço feito na casa do cliente: as peças contam como
+        // atendidas na hora (não existe "chegou na tapeçaria" depois).
+        if (cur.kind === 'NO_LOCAL' && to === 'RETIRADA_REALIZADA')
+          await receivePickupAtWorkshop(tx, actor, id, 'serviço feito no local (celular)');
         await emitOrderEvent(tx, request, p.orderId);
       });
       return { ok: true };
@@ -1272,7 +1203,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     );
 
   app.get('/api/v1/returns', { config: { access: RETURNS_VIEW } }, async (request) => {
-    const q = z.object({ orderId: z.string().uuid().optional() }).parse(request.query);
+    const q = z.object({ orderId: z.guid().optional() }).parse(request.query);
     const rows = await prisma.pieceReturn.findMany({
       where: q.orderId ? { orderId: q.orderId } : {},
       include: returnInclude,
@@ -1320,65 +1251,6 @@ export async function qualityRoutes(app: FastifyInstance) {
       const input = cancelWithReasonSchema.parse(request.body);
       await prisma.$transaction((tx) => cancelReturn(tx, actorFrom(request), id, input));
       return returnDto(id);
-    },
-  );
-
-  app.post(
-    '/api/v1/receipt-lines/:id/corrections',
-    { config: { access: RETURNS_MANAGE, idempotent: true } },
-    async (request, reply) => {
-      const { id } = idParams.parse(request.params);
-      const input = receiptCorrectionSchema.parse(request.body);
-      const out = await prisma.$transaction(async (tx) => {
-        const r = await correctReceiptLine(tx, actorFrom(request), id, input);
-        await emitOrderEvent(tx, request, r.orderId);
-        return r.correction;
-      });
-      return reply.status(201).send({
-        id: out.id,
-        receiptLineId: out.receiptLineId,
-        previousQuantity: out.previousQuantity,
-        newQuantity: out.newQuantity,
-        reason: out.reason,
-        actor: request.auth!.displayName,
-        createdAt: out.createdAt.toISOString(),
-      });
-    },
-  );
-
-  app.get(
-    '/api/v1/receipts/:id/corrections',
-    {
-      config: {
-        access: {
-          session: 'WEB',
-          anyPermissions: ['pedidos.ver', 'recebimentos.registrar', 'devolucoes.gerenciar'],
-        },
-      },
-    },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const rows = await prisma.receiptCorrection.findMany({
-        where: { receiptLine: { receiptId: id } },
-        orderBy: { createdAt: 'asc' },
-      });
-      const actors = new Map(
-        (
-          await prisma.user.findMany({
-            where: { id: { in: rows.map((r) => r.actorId).filter((x): x is string => !!x) } },
-            select: { id: true, displayName: true },
-          })
-        ).map((u) => [u.id, u.displayName]),
-      );
-      return rows.map((r) => ({
-        id: r.id,
-        receiptLineId: r.receiptLineId,
-        previousQuantity: r.previousQuantity,
-        newQuantity: r.newQuantity,
-        reason: r.reason,
-        actor: r.actorId ? (actors.get(r.actorId) ?? null) : null,
-        createdAt: r.createdAt.toISOString(),
-      }));
     },
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { changePasswordSchema } from '@cenario/shared';
+import { PASSWORD_RULE_HINT, changePasswordSchema } from '@cenario/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,8 @@ import { Alert, Card, PageHeader } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import { useMe } from '@/lib/hooks';
+import { TwoFactorCard } from '@/components/improvements/two-factor';
+import { PrivacyRequestCard } from '@/components/improvements/privacy-extras';
 
 export function AccountPage() {
   const me = useMe();
@@ -64,11 +66,7 @@ export function AccountPage() {
               />
             )}
           </Field>
-          <Field
-            label="Nova senha"
-            error={errors.newPassword}
-            hint="Mínimo de 10 caracteres, com letras e números."
-          >
+          <Field label="Nova senha" error={errors.newPassword} hint={PASSWORD_RULE_HINT}>
             {(p) => (
               <Input
                 {...p}
@@ -95,6 +93,8 @@ export function AccountPage() {
           </Button>
         </form>
       </Card>
+      {!me.data?.user.supportAgent && <TwoFactorCard />}
+      {!me.data?.user.supportAgent && <PrivacyRequestCard scope="MINHA_CONTA" />}
     </>
   );
 }

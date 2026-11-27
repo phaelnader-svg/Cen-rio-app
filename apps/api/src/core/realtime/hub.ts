@@ -16,6 +16,8 @@ import { toRealtimeEvent } from './serialize';
 
 export interface ConnectionIdentity {
   sessionId: string;
+  /** Empresa da sessão: só eventos dela chegam a esta conexão (multi-empresa). */
+  companyId: number;
   userId: string;
   kind: SessionKind;
   deviceId: string | null;
@@ -81,6 +83,35 @@ export class RealtimeHub {
 
   onPresence(handler: PresenceHandler): void {
     this.presenceHandler = handler;
+  }
+
+  /**
+   * Espera por evento novo da empresa (consulta longa do Firma Viva: em vez de perguntar a cada
+   * poucos segundos, a requisição fica aberta até algo mudar ou o tempo acabar).
+   */
+  waitForCompanyEvent(
+    companyId: number,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v: boolean) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        off();
+        signal?.removeEventListener('abort', onAbort);
+        resolve(v);
+      };
+      const off = this.feed.onEvents((events) => {
+        if (events.some((e) => e.companyId === companyId)) finish(true);
+      });
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      timer.unref();
+      const onAbort = () => finish(false);
+      signal?.addEventListener('abort', onAbort);
+    });
   }
 
   get size(): number {
@@ -206,7 +237,7 @@ export class RealtimeHub {
     }
     try {
       const missed = await this.prisma.domainEvent.findMany({
-        where: { seq: { gt: since } },
+        where: { seq: { gt: since }, companyId: conn.companyId },
         orderBy: { seq: 'asc' },
         take: MAX_REPLAY_EVENTS + 1,
       });
@@ -256,13 +287,14 @@ export class RealtimeHub {
   private deliver(conn: Connection, event: DomainEvent): boolean {
     if (event.seq <= conn.cursor) return false;
     conn.cursor = event.seq;
-    if (!this.canSee(conn, event.audience)) return false;
+    if (!this.canSee(conn, event)) return false;
     this.send(conn, { kind: 'event', event: toRealtimeEvent(event) });
     return true;
   }
 
-  private canSee(conn: Connection, audience: string): boolean {
-    return audienceAllows(audience, conn);
+  private canSee(conn: Connection, event: DomainEvent): boolean {
+    if (event.companyId !== conn.companyId) return false;
+    return audienceAllows(event.audience, conn);
   }
 
   private handleControlEvent(event: DomainEvent): void {
@@ -330,7 +362,7 @@ export class RealtimeHub {
           id: { in: ids },
           revokedAt: null,
           expiresAt: { gt: new Date() },
-          user: { active: true },
+          user: { active: true, company: { blockedAt: null } },
         },
         select: { id: true },
       });

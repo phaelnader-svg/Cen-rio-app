@@ -1,6 +1,7 @@
 'use client';
 
-import type { PieceReturnDto, ReceiptLineDto } from '@cenario/shared';
+import { plural } from '@cenario/shared';
+import type { PieceReturnDto } from '@cenario/shared';
 import {
   FULFILLMENT_STAGE_LABEL,
   RETURN_STATUS_LABEL,
@@ -31,6 +32,9 @@ const today = () =>
  */
 export function ReturnsPage() {
   const q = useReturns();
+  // B6: consultar vale para pedidos.ver ou devolucoes.gerenciar; registrar, confirmar e cancelar
+  // continuam só com devolucoes.gerenciar (regra da API).
+  const manage = useCan()('devolucoes.gerenciar');
   const [create, setCreate] = useState(false);
   const [confirm, setConfirm] = useState<PieceReturnDto | null>(null);
   const [cancel, setCancel] = useState<PieceReturnDto | null>(null);
@@ -39,11 +43,14 @@ export function ReturnsPage() {
     <>
       <PageHeader
         title="Devoluções"
-        description="Peças devolvidas ao cliente sem serviço (desistência, cancelamento) — de OS ou avulsas. O registro é confirmado quando o cliente recebe as peças."
+        description="Peças devolvidas ao cliente sem serviço."
+        help="Peças devolvidas ao cliente sem serviço (desistência, cancelamento) — de OS ou avulsas. O registro é confirmado quando o cliente recebe as peças."
         actions={
-          <Button icon={<Plus className="size-4" />} onClick={() => setCreate(true)}>
-            Registrar devolução
-          </Button>
+          manage && (
+            <Button icon={<Plus className="size-4" />} onClick={() => setCreate(true)}>
+              Registrar devolução
+            </Button>
+          )
         }
       />
       {q.isPending ? (
@@ -99,7 +106,7 @@ export function ReturnsPage() {
                 <Button size="sm" variant="secondary" onClick={() => setDetail(r)}>
                   Detalhes
                 </Button>
-                {r.status === 'REGISTRADA' && (
+                {manage && r.status === 'REGISTRADA' && (
                   <>
                     <Button size="sm" onClick={() => setConfirm(r)}>
                       Confirmar entrega ao cliente
@@ -273,7 +280,7 @@ function CreateReturnDialog({ onClose }: { onClose: () => void }) {
       size="lg"
       onClose={onClose}
       title="Registrar devolução"
-      description="Peças que voltam ao cliente sem serviço. O recebimento original é preservado; a confirmação libera reservas e valores das peças devolvidas (o que já foi executado vai para revisão do gestor)."
+      description="Peças que voltam ao cliente sem serviço. A confirmação libera os valores das peças devolvidas (o que já foi executado vai para revisão do gestor)."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -436,24 +443,13 @@ function ReturnDetailDialog({ r, onClose }: { r: PieceReturnDto; onClose: () => 
         <p>
           <strong>Destino:</strong> {r.destination ?? 'não informado'}
         </p>
-        {(r.review.reservations.length > 0 ||
-          r.review.laborToReview > 0 ||
-          r.review.requirements.length > 0) && (
+        {r.review.laborToReview > 0 && (
           <Alert tone="warn" title="Revisão do gestor">
             <ul className="list-disc space-y-0.5 pl-4">
-              {r.review.requirements.map((x) => (
-                <ReviewRequirement key={x.id} x={x} returnCode={r.code} />
-              ))}
-              {r.review.reservations.map((x) => (
-                <li key={x.id}>
-                  {x.serviceOrder}: reserva de {x.quantity} × {x.material} sem peça definida —
-                  libere em Estoque se não for mais necessária.
-                </li>
-              ))}
               {r.review.laborToReview > 0 && (
                 <li>
-                  {r.review.laborToReview} valor(es) de produção com trabalho executado ou valor
-                  devido — revise em Financeiro → Produção e equipe.
+                  {plural(r.review.laborToReview, 'valor', 'valores')} de produção com trabalho
+                  executado ou valor devido — revise em Financeiro → Produção e equipe.
                 </li>
               )}
             </ul>
@@ -472,111 +468,5 @@ function ReturnDetailDialog({ r, onClose }: { r: PieceReturnDto; onClose: () => 
         </div>
       </div>
     </Dialog>
-  );
-}
-
-/** Correção auditável de uma linha de recebimento (o registro original não muda). */
-export function ReceiptCorrectionButton({ line }: { line: ReceiptLineDto }) {
-  const [open, setOpen] = useState(false);
-  const [quantity, setQuantity] = useState(String(line.correctedQuantity ?? line.quantity));
-  const [reason, setReason] = useState('');
-  const [key] = useState(newIdempotencyKey);
-  const { m, error } = useSend(() => setOpen(false));
-  return (
-    <>
-      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
-        Corrigir
-      </Button>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title={`Corrigir recebimento — ${line.description}`}
-        description={`Recebido originalmente: ${line.quantity}. A correção fica no histórico; peças em OS ativa ou devolvidas não podem ficar sem cobertura.`}
-        footer={
-          <Button
-            disabled={reason.trim().length < 5}
-            loading={m.isPending}
-            onClick={() =>
-              m.mutate({
-                run: () =>
-                  api(`/api/v1/receipt-lines/${line.id}/corrections`, {
-                    method: 'POST',
-                    body: { newQuantity: Number(quantity), reason: reason.trim() },
-                    idempotencyKey: key,
-                  }),
-                ok: 'Recebimento corrigido.',
-              })
-            }
-          >
-            Salvar correção
-          </Button>
-        }
-      >
-        {error && (
-          <Alert tone="danger" className="mb-3">
-            {error}
-          </Alert>
-        )}
-        <div className="grid gap-3">
-          <Field label="Quantidade correta">
-            {(f) => (
-              <Input
-                {...f}
-                type="number"
-                min={0}
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-              />
-            )}
-          </Field>
-          <Field label="Justificativa" required>
-            {(f) => <Textarea {...f} value={reason} onChange={(e) => setReason(e.target.value)} />}
-          </Field>
-        </div>
-      </Dialog>
-    </>
-  );
-}
-
-/**
- * Etapa 2 (V7): material "Toda a OS" de uma OS com peça devolvida — a devolução não o cancela
- * sozinha. O gestor decide: Manter (nada muda) ou Cancelar (registrado com motivo).
- */
-function ReviewRequirement({
-  x,
-  returnCode,
-}: {
-  x: PieceReturnDto['review']['requirements'][number];
-  returnCode: string;
-}) {
-  const can = useCan();
-  const [key] = useState(newIdempotencyKey);
-  const { m, error } = useSend();
-  return (
-    <li data-testid={`return-requirement-${x.id}`}>
-      {x.serviceOrder}: material para toda a OS ({x.quantity} × {x.material}) — confira se ainda é
-      necessário.{' '}
-      {can('materiais.aprovar') && (
-        <Button
-          size="sm"
-          variant="secondary"
-          loading={m.isPending}
-          onClick={() =>
-            m.mutate({
-              ok: 'Necessidade cancelada.',
-              run: () =>
-                api(`/api/v1/material-requirements/${x.id}/cancel`, {
-                  method: 'POST',
-                  idempotencyKey: key,
-                  body: { reason: `Revisão da devolução ${returnCode}` },
-                }),
-            })
-          }
-        >
-          Cancelar necessidade
-        </Button>
-      )}
-      {error && <span className="block text-danger-600">{error}</span>}
-    </li>
   );
 }

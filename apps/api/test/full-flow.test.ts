@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
@@ -11,14 +14,8 @@ import {
   resetDatabase,
   setupTablet,
 } from './helpers';
-import { createCustomer, createOrder, createPickup, receiptBody } from './commercial-helpers';
-import {
-  createMeasurement,
-  fabric,
-  fillAndSubmit,
-  gestorUserId,
-  nextFriday,
-} from './measurement-helpers';
+import { createCustomer, createOrder, createPickup, markArrived } from './commercial-helpers';
+import { gestorUserId } from './measurement-helpers';
 import {
   act,
   addOs,
@@ -29,18 +26,10 @@ import {
   today,
   userIdOf,
 } from './production-helpers';
-import {
-  confirmPurchase,
-  createPurchase,
-  createSupplier,
-  ok,
-  readiness,
-  receive,
-  staples,
-  grantConference,
-} from './purchasing-helpers';
 import { PINS, decideInspection, finish, post, prepareCompany, setClock } from './audit-helpers';
 import { coverLabor } from './labor-helpers';
+import { provarExclusaoDaEmpresa } from './excluir-empresa-helper';
+import { restoreCompanyCopy, takeCompanyCopy } from '../src/modules/platform/company-copies';
 
 /**
  * Fase 12 — fluxo completo de produção, ponta a ponta pela API real (sessões reais de painel,
@@ -70,7 +59,7 @@ const ok2 = (r: { status: number; body: unknown }, label: string, statuses = [20
 };
 
 describe('Fluxo completo de produção (32 passos)', () => {
-  it('do cliente ao resultado da OS, com ajuda, ocorrência, reprovação, correção, entrega e financeiro', async () => {
+  it('do cliente ao resultado da OS, com ocorrência, reprovação, correção, entrega e financeiro', async () => {
     const admin = await loginAdmin(app);
     const ids = {
       ricardo: await userIdOf('Ricardo'),
@@ -113,23 +102,19 @@ describe('Fluxo completo de produção (32 passos)', () => {
       );
     // 5. Peças chegam à oficina (recebimento da retirada).
     ok2(
-      await post(
-        admin,
-        '/api/v1/receipts',
-        receiptBody(
-          order.id,
-          order.items.map((i: { id: string; quantity: number }) => ({
-            orderItemId: i.id,
-            quantity: i.quantity,
-          })),
-          pickup.id,
-        ) as Record<string, unknown>,
+      await markArrived(
+        order.id,
+        order.items.map((i: { id: string; quantity: number }) => ({
+          orderItemId: i.id,
+          quantity: i.quantity,
+        })),
       ),
       'recebimento',
     );
     // 6. OS criada.
     const so = ok2(
       await post(admin, '/api/v1/service-orders', {
+        materialPurchased: true,
         orderId: order.id,
         items: [
           {
@@ -150,89 +135,20 @@ describe('Fluxo completo de produção (32 passos)', () => {
     );
     const sofa = so.items[0];
     const poltronas = so.items[1];
-    // 7–8. Gestor mede (rotina de sexta) e a solicitação de material é aprovada.
-    const m = ok2(
-      await createMeasurement(admin, {
-        serviceOrderId: so.id,
-        kind: 'ROTINA',
-        assigneeUserId: ids.gestor,
-        dueDate: nextFriday(),
-      }),
-      'medição',
-    );
-    const sub = ok2(
-      await fillAndSubmit(admin, m as never, {
-        items: [
-          fabric({
-            serviceOrderItemId: sofa.id,
-            description: 'Linho',
-            color: 'Bege',
-            quantity: 12,
-          }),
-          staples({ serviceOrderItemId: poltronas.id }),
-        ],
-      }),
-      'enviar medição',
-    );
-    ok2(
-      await post(admin, `/api/v1/measurements/${m.id}/request/approve`, {
-        version: sub.request.version,
-      }),
-      'aprovar',
-    );
-    const reqs = await db().materialRequirement.findMany({
-      where: { serviceOrderId: so.id, origin: 'SOLICITACAO_APROVADA' },
-    });
-    expect(reqs).toHaveLength(2);
-    // 9. Compras: tecido exclusivo da OS e grampos para o estoque (reservados para a OS).
-    const supplier = await createSupplier(admin);
-    const linho = reqs.find((r) => r.kind === 'TECIDO')!;
-    const grampo = reqs.find((r) => r.kind !== 'TECIDO')!;
-    const po = ok2(
-      await createPurchase(admin, {
-        supplierId: supplier.id,
-        expectedDate: day(2),
-        items: [
-          {
-            sourcing: 'EXCLUSIVO_OS',
-            allocations: [{ materialRequirementId: linho.id, quantity: 12 }],
-            quantity: 12,
-            unitPriceCents: 4500,
-          },
-          {
-            sourcing: 'ESTOQUE',
-            allocations: [{ materialRequirementId: grampo.id, quantity: 2 }],
-            quantity: 4,
-            unitPriceCents: 1890,
-          },
-        ],
-      }),
-      'compra',
-    );
-    const confirmed = ok2(await confirmPurchase(admin, po as never), 'confirmar compra');
-    // 10. Funcionário (Thiago, no tablet) confirma a chegada do material. O pedido inclui material
-    // exclusivo da OS: quem confere precisa da capacidade de conferência técnica (Rodada 1, F3-17).
-    await grantConference('Thiago');
+    // 7–11. Materiais da OS na lista simples (comprados e na oficina, com custo informado).
+    for (const mat of [
+      { description: 'Linho bege', quantity: 12, unit: 'm', costCents: 12 * 4500 },
+      { description: 'Grampos 80/10', quantity: 2, unit: 'cx', costCents: 2 * 1890 },
+    ])
+      ok2(
+        await post(admin, `/api/v1/service-orders/${so.id}/material-list`, {
+          ...mat,
+          purchased: true,
+          available: true,
+        }),
+        'material da OS',
+      );
     const thiago = await tabletOf(app, admin, 'Thiago', PINS.Thiago!);
-    ok2(
-      await receive(
-        thiago,
-        confirmed.id,
-        confirmed.items.map((i: { id: string; quantity: number }) => ok(i.id, i.quantity)),
-      ),
-      'receber material',
-    );
-    // 11. Estoque e reservas atualizados; materiais disponíveis para a OS.
-    const ready = await readiness(admin, so.id);
-    expect(ready.state).toBe('COMPLETO');
-    const reservation = await db().stockReservation.findFirstOrThrow({
-      where: { serviceOrderId: so.id, status: 'ATIVA' },
-    });
-    // O estoque entrega à OS o material reservado (saída física, vira custo consumido).
-    ok2(
-      await post(admin, `/api/v1/stock-reservations/${reservation.id}/consume`),
-      'entregar material',
-    );
 
     // 12. Gestor programa a semana: preparação (João) → revestimento (Ricardo) ∥ poltronas (Márcio).
     const plan = await createPlan(admin);
@@ -321,21 +237,6 @@ describe('Fluxo completo de produção (32 passos)', () => {
       act(tablets['Márcio']!, poltrona.id, 'start'),
     ]);
     expect(parallel.map((r) => r.status)).toEqual([200, 200]);
-    // 16–17. Ricardo pede ajudante; o sistema atribui alguém disponível com a competência.
-    const help = ok2(
-      await post(tablets.Ricardo!, '/api/v1/help-requests', {
-        taskId: corte.id,
-        kind: 'PARAFUSAR',
-      }),
-      'ajuda',
-    );
-    expect(['ATRIBUIDA', 'EM_ATENDIMENTO']).toContain(help.status);
-    const support = await db().productionTask.findFirstOrThrow({
-      where: { supportForTaskId: corte.id },
-    });
-    expect([ids.joao, ids.thiago]).toContain(support.assigneeUserId);
-    const helper = support.assigneeUserId === ids.joao ? tablets['João']! : tablets.Thiago!;
-    await finish(helper, support.id);
     // 18. Márcio registra falta de material.
     const issue = ok2(
       await post(tablets['Márcio']!, '/api/v1/issues', {
@@ -402,25 +303,13 @@ describe('Fluxo completo de produção (32 passos)', () => {
     await decideInspection(tablets.Thiago!, sofa.id);
     await decideInspection(tablets.Thiago!, poltronas.id);
     expect(await db().qualityInspection.count({ where: { serviceOrderItemId: sofa.id } })).toBe(2);
-    // 28. Embalagem concluída (João).
-    const expedicao = (await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } }))
-      .id;
-    for (const item of [sofa.id, poltronas.id]) {
-      const p = await db().packagingRecord.findFirstOrThrow({
-        where: { serviceOrderItemId: item },
-        orderBy: { createdAt: 'desc' },
-      });
-      const packer = p.assigneeUserId === ids.thiago ? tablets.Thiago! : tablets['João']!;
-      ok2(
-        await post(packer, `/api/v1/packaging/${p.id}/complete`, {
-          protection: 'PLASTICO_BOLHA',
-          locationId: expedicao,
-          notes: 'Embalado',
-          version: p.version,
-        }),
-        'embalar',
-      );
-    }
+    // 28. Reformulação S1: sem embalagem — aprovada, a peça fica pronta para entrega direto.
+    expect(
+      await db().packagingRecord.count({
+        where: { serviceOrderItemId: { in: [sofa.id, poltronas.id] } },
+      }),
+    ).toBe(0);
+    expect(await db().productionTask.count({ where: { activity: 'EMBALAGEM' } })).toBe(0);
     const stages = await db().serviceOrderItem.findMany({ where: { serviceOrderId: so.id } });
     expect(stages.map((s) => s.fulfillmentStage)).toEqual(['PRONTA_ENTREGA', 'PRONTA_ENTREGA']);
     // 29. Gestor agenda a entrega (definitiva: todas as peças prontas).
@@ -547,19 +436,32 @@ describe('Fluxo completo de produção (32 passos)', () => {
     const dash = (await admin.get('/api/v1/finance/dashboard')).body;
     expect(dash.accrual.completedOrders).toBe(1);
     expect(dash.cash.receivedCents).toBe(350000);
-    // Integridade final: nenhuma tarefa concluída duas vezes, nada de estoque negativo.
+    // Integridade final: nenhuma tarefa concluída duas vezes.
     const dup = await db().$queryRawUnsafe<{ n: bigint }[]>(
       `SELECT count(*) AS n FROM (SELECT task_id FROM production_task_events WHERE kind = 'CONCLUIDA' GROUP BY task_id HAVING count(*) > 1) x`,
     );
     expect(Number(dup[0]!.n)).toBe(0);
-    expect(
-      await db().stockItem.count({
-        where: { OR: [{ onHand: { lt: 0 } }, { reserved: { lt: 0 } }] },
-      }),
-    ).toBe(0);
     // O painel acompanhou tudo em tempo real.
     await panelWs.waitFor((x) => x.event?.type === 'delivery.updated');
     await panelWs.close();
     void idemKey;
+    // A empresa inteira, cheia de dados de ponta a ponta, pode ser apagada de vez sem sobrar nada.
+    const log = await provarExclusaoDaEmpresa(1);
+    expect(log).toMatch(/apagados de service_orders/);
+    expect(log).toMatch(/apagados de production_task_events/);
+    // Item 52: a mesma empresa cheia de dados pode voltar inteira de uma cópia, sem nada solto.
+    const dir = mkdtempSync(join(tmpdir(), 'cenario-copia-'));
+    try {
+      const copy = await takeCompanyCopy(app.ctx.owner, dir, 1, 'diaria');
+      expect(copy.header.counts.production_task_events).toBeGreaterThan(0);
+      const r = await restoreCompanyCopy(app.ctx.owner, dir, 1, copy.id, async () => undefined);
+      expect(r.changes.every((c) => c.now === c.copy)).toBe(true);
+      const again = await takeCompanyCopy(app.ctx.owner, dir, 1, 'diaria');
+      for (const [t, n] of Object.entries(copy.header.counts))
+        if (!['sessions', 'idempotency_keys', 'domain_events', 'audit_logs'].includes(t))
+          expect(again.header.counts[t] ?? 0, t).toBe(n);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

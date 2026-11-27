@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin } from './helpers';
+import { generateOs } from './os-helpers';
 
 /**
  * Prazos e serviços em risco no navegador (dados fictícios):
@@ -54,14 +55,9 @@ test.describe.serial('Prazos e serviços em risco', () => {
       },
     });
     const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
-    const rec = await call(page, 'POST', '/api/v1/receipts', {
-      orderId: order.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: [
-        { orderItemId: order.items[0].id, quantity: 1, condition: 'BOA', location: 'Recepção' },
-      ],
-    });
+    // Fluxo da OS (2026-11-18): a peça chega e a OS é gerada no pedido.
+    await call(page, 'POST', `/api/v1/orders/${order.id}/arrived`, { version: order.version });
+    const rec = { generatedServiceOrder: await generateOs(page, order.id) };
     const soId = rec.generatedServiceOrder.id as string;
     const soCode = rec.generatedServiceOrder.code as string;
 
@@ -80,7 +76,7 @@ test.describe.serial('Prazos e serviços em risco', () => {
     // 2. O cartão abre a Central filtrada; a OS atrasada aparece com o rótulo.
     await card.click();
     await expect(page).toHaveURL(/\/painel\/atencao\?type=PRAZO_OS$/);
-    await expect(page.getByText(`${soCode} · Cliente Prazo E2E — ATRASADO`)).toBeVisible();
+    await expect(page.getByText(`${soCode} · Cliente Prazo E2E — atrasado`)).toBeVisible();
 
     // Detalhe da OS: rótulo vindo da API.
     await page.goto(`/painel/os/${soId}`);

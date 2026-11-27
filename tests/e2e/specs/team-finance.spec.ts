@@ -49,7 +49,8 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await page.goto('/painel/financeiro');
     await expect(page.getByRole('heading', { name: 'Financeiro' })).toBeVisible();
     await expect(page.getByTestId('finance-dashboard')).toBeVisible();
-    await page.getByRole('tab', { name: 'Receitas e recebimentos' }).click();
+    await page.getByRole('tab', { name: 'Receitas', exact: true }).click();
+    await page.getByRole('tab', { name: 'A receber' }).click();
     const row = page.getByTestId(`fin-order-${order.code}`);
     await expect(row).toContainText('R$ 1.000,00');
     await expect(row).toContainText('Cobrança não lançada');
@@ -76,7 +77,8 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await expect(row).toContainText('Recebido em parte');
 
     // ── Produção: valor combinado do sofá com o Ricardo (liberado só na condição) ──
-    await page.getByRole('tab', { name: 'Produção e equipe' }).click();
+    await page.getByRole('tab', { name: 'Equipe', exact: true }).click();
+    await page.getByRole('tab', { name: 'Mão de obra' }).click();
     await page.getByRole('button', { name: 'Combinar valor' }).click();
     const labor = page.getByRole('dialog', { name: 'Combinar valor de produção' });
     await labor.getByTestId('labor-os').selectOption({ value: so.id });
@@ -95,7 +97,8 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await evidence(page, '02-producao-combinada');
 
     // ── Despesa operacional e painel (competência × caixa) ──
-    await page.getByRole('tab', { name: 'Despesas' }).click();
+    await page.getByRole('tab', { name: 'Despesas', exact: true }).click();
+    await page.getByRole('tab', { name: 'Gastos fixos' }).click();
     await page.getByRole('button', { name: 'Nova despesa' }).click();
     const exp = page.getByRole('dialog', { name: 'Nova despesa operacional' });
     await exp.getByLabel('Categoria').selectOption({ label: 'Energia' });
@@ -105,13 +108,14 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await exp.getByRole('button', { name: 'Salvar' }).click();
     await expect(exp).toBeHidden();
     await expect(page.getByTestId('fin-expenses')).toContainText('Energia do galpão (E2E)');
-    await page.getByRole('tab', { name: 'Painel' }).click();
+    await page.getByRole('tab', { name: 'Resumo' }).click();
     await expect(page.getByTestId('fin-received')).not.toHaveText('R$ 0,00');
-    await expect(page.getByText('não é lucro líquido').first()).toBeVisible();
+    await expect(page.getByTestId('fin-net')).toBeVisible();
     await evidence(page, '03-painel-financeiro');
 
     // ── Custos e resultado por OS (previsto × realizado) ──
-    await page.getByRole('tab', { name: 'Custos e resultado por OS' }).click();
+    await page.getByRole('tab', { name: 'Resumo', exact: true }).click();
+    await page.getByRole('tab', { name: 'Por OS' }).click();
     const result = page.getByTestId(`result-${so.code}`);
     await expect(result).toContainText('R$ 1.000,00');
     await result.getByRole('button', { name: 'Detalhar' }).click();
@@ -121,6 +125,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await page.keyboard.press('Escape');
 
     // ── Relatório com exportação CSV ──
+    await page.getByRole('tab', { name: 'Resumo', exact: true }).click();
     await page.getByRole('tab', { name: 'Relatórios' }).click();
     await expect(page.getByTestId('report-table')).toContainText(so.code);
     const href = await page.getByTestId('report-csv').getAttribute('href');

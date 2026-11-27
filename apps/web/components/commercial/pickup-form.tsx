@@ -1,6 +1,7 @@
 'use client';
 
-import type { OrderDto, PickupDto } from '@cenario/shared';
+import { plural } from '@cenario/shared';
+import type { OrderDto, PickupDto, PickupKind } from '@cenario/shared';
 import {
   PICKUP_TEAMS,
   PICKUP_TEAM_LABEL,
@@ -16,7 +17,7 @@ import { useToast } from '@/components/ui/toast';
 import { ApiError, api, fieldErrors, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses } from '@/lib/commercial';
 import { useLogisticsPeople } from '@/lib/quality';
-import { useCan } from '@/lib/hooks';
+import { useCan, useMe } from '@/lib/hooks';
 import {
   DateField,
   FormGrid,
@@ -27,8 +28,10 @@ import {
 } from '@/components/ui/form';
 import { addressLines } from './address-form';
 import { TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
+import { PickupTakeFields, pickupTakeBody, type PickupTake } from './pickup-take-fields';
+import { PickupKindChoice, pickupWords } from './pickup-kind-choice';
 
-/** Solicitar (a partir do pedido) ou editar/reagendar uma retirada. */
+/** Solicitar (a partir do pedido) ou editar/reagendar uma retirada ou um serviço no local. */
 export function PickupForm({
   order,
   pickup,
@@ -38,6 +41,9 @@ export function PickupForm({
   pickup?: PickupDto;
   onClose: () => void;
 }) {
+  const [kind, setKind] = useState<PickupKind>(pickup?.kind ?? 'RETIRADA');
+  const servesOnSite = useMe().data?.company.servesOnSite ?? true;
+  const words = pickupWords(kind);
   const qc = useQueryClient();
   const toast = useToast();
   const addresses = useCustomerAddresses(order.customer.id);
@@ -53,6 +59,11 @@ export function PickupForm({
   const [teamNotes, setTeamNotes] = useState(pickup?.teamNotes ?? '');
   const [instructions, setInstructions] = useState(pickup?.instructions ?? '');
   const [externalReference, setExternalReference] = useState(pickup?.externalReference ?? '');
+  const [take, setTake] = useState<PickupTake>({
+    bringSamples: pickup?.bringSamples ?? false,
+    samplesDescription: pickup?.samplesDescription ?? '',
+    bringCardMachine: pickup?.bringCardMachine ?? false,
+  });
   // Quantidade disponível para retirada por peça (considerando esta retirada, se edição).
   const available = (itemId: string) => {
     const it = order.items.find((i) => i.id === itemId)!;
@@ -82,6 +93,7 @@ export function PickupForm({
         .map(([orderItemId, q]) => ({ orderItemId, quantity: Number(q) }))
         .filter((i) => i.quantity > 0);
       const base = {
+        kind,
         addressId: addressId || null,
         scheduledDate: date || null,
         windowStart: start || null,
@@ -91,6 +103,7 @@ export function PickupForm({
         teamNotes,
         instructions,
         externalReference,
+        ...pickupTakeBody(take),
         items,
       };
       if (pickup) {
@@ -115,7 +128,12 @@ export function PickupForm({
       void qc.invalidateQueries({ queryKey: ['pickups'] });
       void qc.invalidateQueries({ queryKey: ['order', order.id] });
       qc.setQueryData(['pickup', p.id], p);
-      toast('ok', pickup ? 'Retirada atualizada.' : `Retirada ${p.code} solicitada.`);
+      toast(
+        'ok',
+        pickup
+          ? `${pickupWords(p.kind).noun} atualizado.`
+          : `${pickupWords(p.kind).noun} ${p.code} agendado.`,
+      );
       onClose();
     },
     onError: (e) => {
@@ -136,14 +154,13 @@ export function PickupForm({
   });
 
   const currentAddress = pickup?.address ?? order.pickupAddress;
-  const scheduling = Boolean(date);
 
   return (
     <Dialog
       open
       onClose={onClose}
       size="lg"
-      title={pickup ? `Retirada ${pickup.code}` : `Solicitar retirada — ${order.code}`}
+      title={pickup ? `${words.noun} ${pickup.code}` : `Agendar — ${order.code}`}
       description={`${order.customer.name} · ${order.contractedService}`}
       footer={
         <>
@@ -152,34 +169,34 @@ export function PickupForm({
           </Button>
           <Button
             loading={m.isPending}
-            disabled={
-              (!pickup && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok) || (scheduling && !start)
-            }
+            disabled={(!pickup && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok) || !date || !start}
             onClick={() => m.mutate()}
           >
-            {pickup ? 'Salvar' : scheduling ? 'Solicitar e agendar' : 'Solicitar retirada'}
+            {pickup ? 'Salvar' : words.schedule}
           </Button>
         </>
       }
     >
       <div className="space-y-5" data-testid="pickup-form">
         {error && <Alert tone="danger">{error}</Alert>}
+        {(servesOnSite || kind === 'NO_LOCAL') && (
+          <PickupKindChoice value={kind} onChange={setKind} />
+        )}
         <FormGrid>
           <DateField
-            label="Data do compromisso"
+            label={words.date}
             cols={4}
+            required
             error={errors.scheduledDate}
-            hint="Vazio = só solicitada (aguardando agendamento)"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
           <TimeField
             label="Horário de chegada ao cliente"
             cols={4}
-            required={scheduling}
+            required
             error={errors.windowStart}
-            hint={scheduling ? 'Obrigatório no agendamento. Sem horário de término.' : 'Com a data'}
-            disabled={!scheduling}
+            hint="Sem horário de término."
             value={start}
             onChange={(e) => setStart(e.target.value)}
           />
@@ -257,8 +274,9 @@ export function PickupForm({
         {!pickup && team === 'LOGISTICA_TERCEIRIZADA' && (
           <TripCostFields kind="RETIRADA" onChange={(v, ok) => setTrip({ v, ok })} />
         )}
+        <PickupTakeFields value={take} onChange={setTake} error={errors.samplesDescription} />
         <fieldset>
-          <legend className="mb-2 text-sm font-semibold">Peças a retirar</legend>
+          <legend className="mb-2 text-sm font-semibold">{words.pieces}</legend>
           {errors.items && <p className="mb-2 text-sm text-danger-600">{errors.items}</p>}
           <ul className="divide-y divide-line rounded-xl border border-line">
             {order.items.map((i) => (
@@ -266,14 +284,14 @@ export function PickupForm({
                 <span className="min-w-0 flex-1 text-sm">
                   {i.description}
                   <span className="block text-xs text-ink-muted">
-                    até {Math.max(0, available(i.id))} disponível(is)
+                    até {plural(Math.max(0, available(i.id)), 'disponível', 'disponíveis')}
                   </span>
                 </span>
                 <input
                   type="number"
                   min={0}
                   max={Math.max(0, available(i.id))}
-                  aria-label={`Quantidade a retirar de ${i.description}`}
+                  aria-label={`${words.qty} ${i.description}`}
                   className="input input-sm w-24"
                   value={qty[i.id]}
                   onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })}
@@ -289,7 +307,11 @@ export function PickupForm({
             rows={2}
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Acesso, portaria, cuidados no transporte…"
+            placeholder={
+              kind === 'NO_LOCAL'
+                ? 'Acesso, portaria, o que levar para fazer no local…'
+                : 'Acesso, portaria, cuidados no transporte…'
+            }
           />
         </FormGrid>
       </div>

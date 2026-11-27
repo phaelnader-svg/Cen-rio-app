@@ -104,6 +104,34 @@ echo ok > "$TMP/modo"
 roda "$TMP/a5.out" enviar-backups
 afirma "$TMP/a5.out" "✔ cenario-homolog-20261004T030000Z enviado"
 igual "$(n_objetos)" 3 "objetos no bucket"
+[[ ! -e "$TMP/portao" ]] && echo "  ✔ envios feitos com o portão FECHADO" || { echo "  ✘ portão aberto nos cenários A"; FALHAS=$((FALHAS + 1)); }
+
+echo "A6. alerta da cópia externa (envio-externo, limite 36 h)"
+roda "$TMP/a6a.out" envio-externo
+igual "$(cat "$TMP/a6a.out.rc")" 0 "em dia logo após o envio"
+afirma "$TMP/a6a.out" "✔ último envio ao bucket há 0 h"
+afirma "$TMP/a6a.out" "✔ nenhum backup local sem cópia externa há mais de 36 h"
+igual "$(wc -c < "$CHAMADAS" | xargs)" 0 "chamadas a docker/gcloud (só leitura local)"
+echo $(( $(date -u +%s) - 37 * 3600 )) > "$TMP/estado/ultimo-envio"
+roda "$TMP/a6b.out" envio-externo
+igual "$(cat "$TMP/a6b.out.rc")" 1 "último envio há 37 h reprova"
+afirma "$TMP/a6b.out" "✘ último envio ao bucket há 37 h (limite 36 h)"
+date -u +%s > "$TMP/estado/ultimo-envio"
+VELHO="cenario-homolog-$(date -u -d '-2 days' +%Y%m%dT%H%M%SZ)"; NOVO="cenario-homolog-$(date -u -d '-30 hours' +%Y%m%dT%H%M%SZ)"
+novo_backup "$VELHO"; novo_backup "$NOVO"
+roda "$TMP/a6c.out" envio-externo
+igual "$(cat "$TMP/a6c.out.rc")" 1 "backup de 2 dias sem cópia externa reprova"
+afirma "$TMP/a6c.out" "✘ 1 backup(s) local(is) sem cópia externa há mais de 36 h (mais antigo: $VELHO)"
+nega "$TMP/a6c.out" "$NOVO"
+CENARIO_ENVIO_MAX_H=24 roda "$TMP/a6d.out" envio-externo
+afirma "$TMP/a6d.out" "✘ 2 backup(s) local(is) sem cópia externa há mais de 24 h"
+roda "$TMP/a6e.out" enviar-backups
+igual "$(cat "$TMP/a6e.out.rc")" 0 "pendentes enviados com o portão fechado"
+roda "$TMP/a6f.out" envio-externo
+igual "$(cat "$TMP/a6f.out.rc")" 0 "em dia depois do envio"
+echo "A7. saúde: o alerta conta no smoke e só avisa nas operações internas"
+igual "$(grep -c '^  CENARIO_ENVIO_SO_AVISO=1 saude$' "$VMSH")" 3 "ativar, aplicar-config e recuperar chamam a saúde em modo aviso"
+igual "$(grep -c '^  saude$' "$VMSH")" 0 "nenhuma chamada interna à saúde estrita"
 
 echo "B. portão fechado: gerar-env e iniciar recusam sem chamar docker nem Secret Manager"
 for c in gerar-env iniciar; do
@@ -166,7 +194,9 @@ afirma "$TMP/d1.out" "já instalados: mantidos"
 nega "$CHAMADAS" "fallocate"
 nega "$CHAMADAS" "apt-get"
 afirma "$R/etc/systemd/system/cenario-homolog.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
-afirma "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
+nega "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
+afirma "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/opt/cenario/infra/homolog/gcp/vm.sh"
+afirma "$R/etc/systemd/system/cenario-backup-upload.service" "/opt/cenario/infra/homolog/gcp/vm.sh enviar-backups"
 afirma "$TMP/d1.out" "publicação NÃO autorizada"
 nega "$CHAMADAS" "restart cenario-homolog"
 nega "$CHAMADAS" "start cenario-homolog"

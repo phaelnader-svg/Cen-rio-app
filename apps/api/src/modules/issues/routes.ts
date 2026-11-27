@@ -11,7 +11,6 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import { attendanceConfig } from '../attendance/common';
-import { processHelpQueue } from '../help/queue';
 import { idParams } from '../presenters';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { attentionRoutes } from './attention';
@@ -43,10 +42,6 @@ export async function issueRoutes(app: FastifyInstance) {
   const canManage = (request: FastifyRequest) => has(request, 'ocorrencias.gerenciar');
   const canView = (request: FastifyRequest) =>
     canManage(request) || has(request, 'ocorrencias.ver');
-  const after = () =>
-    processHelpQueue(prisma).catch((err: unknown) =>
-      app.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
-    );
 
   async function load(db: Tx | PrismaClient, id: string, request?: FastifyRequest) {
     const r = await db.productionIssue.findUnique({ where: { id }, include: issueInclude });
@@ -114,7 +109,6 @@ export async function issueRoutes(app: FastifyInstance) {
       );
       // Pausa por impedimento muda a disponibilidade (Fase 7) e libera para ajudar (Fase 8).
       await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, me));
-      await after();
       reply.status(201);
       return (await load(prisma, issue.id, request)).dto;
     },
@@ -173,7 +167,6 @@ export async function issueRoutes(app: FastifyInstance) {
 
   async function mutate(request: FastifyRequest, id: string, run: (tx: Tx) => Promise<unknown>) {
     await prisma.$transaction(run);
-    await after();
     return (await load(prisma, id, request)).dto;
   }
 

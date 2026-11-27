@@ -1,6 +1,9 @@
 import {
   EVENT_TYPES,
+  reworkCode,
+  PICKUP_KIND_LABEL,
   PICKUP_STATUS_LABEL,
+  pickupStatusLabel,
   PICKUP_TRANSITIONS,
   anyPermissionAudience,
   createPickupSchema,
@@ -10,16 +13,19 @@ import {
   type PickupDto,
   type PickupStatus,
 } from '@cenario/shared';
+import { followPickupDate } from '../deadlines/promise';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, actorOf, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { idParams } from '../presenters';
 import {
   activeAddress,
   asSnapshot,
+  can,
   dateOnly,
   lockOrder,
   lockOrderItems,
@@ -33,15 +39,27 @@ import { refreshOrderStatus } from '../commercial/status';
 import { PICKUP_ASSIGNMENT_DONE, resolvePickupAssignment } from '../notifications/notify';
 import { emitOrderEvent } from '../orders/routes';
 import { syncTripCost } from '../finance/trip-costs';
-import { createPickup, setTripParticipants, validatePickupItems } from './service';
+import {
+  announcePickupChange,
+  createPickup,
+  setTripParticipants,
+  validatePickupItems,
+} from './service';
+import { undoPickupArrival } from './arrival';
+import { changeServiceOrderPromisedDate } from '../service-orders/routes';
 
 const VIEW = { session: 'WEB', permissions: ['retiradas.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['retiradas.gerenciar'] } as const;
-export const PICKUP_AUDIENCE = anyPermissionAudience('retiradas.ver', 'recebimentos.registrar');
+export const PICKUP_AUDIENCE = anyPermissionAudience('retiradas.ver');
 const EDITABLE: PickupStatus[] = ['AGUARDANDO_AGENDAMENTO', 'AGENDADA', 'COM_OCORRENCIA'];
 
 const fullInclude = {
-  order: { include: { customer: true } },
+  order: { include: { customer: true, rework: { select: { id: true, number: true } } } },
+  logisticsUser: { select: { id: true, displayName: true } },
+  tripParticipants: {
+    include: { user: { select: { id: true, displayName: true } } },
+    orderBy: { createdAt: 'asc' as const },
+  },
   items: { include: { orderItem: true }, orderBy: { orderItem: { position: 'asc' as const } } },
   events: {
     include: { recordedBy: { select: { displayName: true } } },
@@ -49,7 +67,15 @@ const fullInclude = {
   },
 } satisfies Prisma.PickupRequestInclude;
 
-export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<PickupDto> {
+/**
+ * `valuesVisible`: o valor do serviço (valor combinado do pedido) só sai com `pedidos.valores`,
+ * a mesma regra da tela do pedido.
+ */
+export async function loadPickupDto(
+  db: PrismaClient | Tx,
+  id: string,
+  valuesVisible = false,
+): Promise<PickupDto> {
   const p = await db.pickupRequest.findUnique({ where: { id }, include: fullInclude });
   if (!p) throw Errors.notFound('Retirada');
   return {
@@ -57,11 +83,17 @@ export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<
     number: p.number,
     code: pickupCode(p.number),
     status: p.status,
+    kind: p.kind,
     order: {
       id: p.orderId,
       code: orderCode(p.order.number),
       contractedService: p.order.contractedService,
+      // Sem a permissão a chave nem aparece (nenhum campo de valor na resposta).
+      ...(valuesVisible ? { agreedValueCents: p.order.agreedValueCents } : {}),
     },
+    rework: p.order.rework
+      ? { id: p.order.rework.id, code: reworkCode(p.order.rework.number) }
+      : null,
     customer: {
       ...toCustomerSummary(p.order.customer),
       // Contato necessário para a operação de retirada.
@@ -76,6 +108,16 @@ export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<
     teamNotes: p.teamNotes,
     instructions: p.instructions,
     externalReference: p.externalReference,
+    bringSamples: p.bringSamples,
+    samplesDescription: p.samplesDescription,
+    bringCardMachine: p.bringCardMachine,
+    executor: p.logisticsUser
+      ? { userId: p.logisticsUser.id, displayName: p.logisticsUser.displayName }
+      : null,
+    participants: p.tripParticipants.map((t) => ({
+      userId: t.user.id,
+      displayName: t.user.displayName,
+    })),
     items: p.items.map((i) => ({
       orderItemId: i.orderItemId,
       pieceType: i.orderItem.pieceType,
@@ -92,7 +134,13 @@ export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<
       recordedBy: e.recordedBy?.displayName ?? null,
       occurredAt: e.occurredAt.toISOString(),
     })),
-    allowedTransitions: [...PICKUP_TRANSITIONS[p.status]],
+    // "No local": "serviço feito" já conta as peças; não existe o passo "chegou na oficina".
+    allowedTransitions: PICKUP_TRANSITIONS[p.status].filter(
+      (s) =>
+        p.kind !== 'NO_LOCAL' ||
+        s !== 'RECEBIDA_NA_OFICINA' ||
+        !PICKUP_TRANSITIONS[p.status].includes('RETIRADA_REALIZADA'),
+    ),
     version: p.version,
     createdAt: p.createdAt.toISOString(),
   };
@@ -126,6 +174,7 @@ export async function pickupRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/pickups', { config: { access: VIEW } }, async (request) => {
     const q = pickupQuerySchema.parse(request.query);
+    const values = can(request, 'pedidos.valores');
     const rows = await prisma.pickupRequest.findMany({
       where: {
         ...(q.status?.length ? { status: { in: q.status } } : {}),
@@ -147,12 +196,12 @@ export async function pickupRoutes(app: FastifyInstance) {
       ],
       take: q.limit,
     });
-    return Promise.all(rows.map((r) => loadPickupDto(prisma, r.id)));
+    return Promise.all(rows.map((r) => loadPickupDto(prisma, r.id, values)));
   });
 
   app.get('/api/v1/pickups/:id', { config: { access: VIEW } }, async (request) => {
     const { id } = idParams.parse(request.params);
-    return loadPickupDto(prisma, id);
+    return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
   });
 
   app.post(
@@ -160,11 +209,15 @@ export async function pickupRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createPickupSchema.parse(request.body);
+      // Fase 1: com a logística desligada não há retirada agendada (o cliente traz as peças).
+      await assertModuleEnabled(prisma, 'logistica');
       const id = await prisma.$transaction(
         async (tx) =>
           (await createPickup(tx, actorFrom(request), request.auth!.permissions, input)).id,
       );
-      return reply.status(201).send(await loadPickupDto(prisma, id));
+      return reply
+        .status(201)
+        .send(await loadPickupDto(prisma, id, can(request, 'pedidos.valores')));
     },
   );
 
@@ -217,6 +270,10 @@ export async function pickupRoutes(app: FastifyInstance) {
       let status = before.status;
       if (input.scheduledDate && before.status === 'AGUARDANDO_AGENDAMENTO') status = 'AGENDADA';
       if (!input.scheduledDate && before.status === 'AGENDADA') status = 'AGUARDANDO_AGENDAMENTO';
+      // 2026-11-26: ocorrência (cliente não estava) remarcada = agendada de novo — e volta a chegar
+      // sozinha no novo dia. Sem data, fica aguardando agendamento.
+      if (before.status === 'COM_OCORRENCIA' && scheduleChanged)
+        status = input.scheduledDate ? 'AGENDADA' : 'AGUARDANDO_AGENDAMENTO';
 
       const actor = actorFrom(request);
       await tx.pickupRequestItem.deleteMany({ where: { pickupId: id } });
@@ -229,6 +286,7 @@ export async function pickupRoutes(app: FastifyInstance) {
                 addressSnapshot: snapshotAddress(address) as unknown as Prisma.InputJsonValue,
               }
             : {}),
+          ...(input.kind ? { kind: input.kind } : {}),
           scheduledDate: parseDateOnly(input.scheduledDate),
           windowStart: input.windowStart ?? null,
           windowEnd: input.windowEnd ?? null,
@@ -238,6 +296,15 @@ export async function pickupRoutes(app: FastifyInstance) {
           teamNotes: input.teamNotes ?? null,
           instructions: input.instructions ?? null,
           externalReference: input.externalReference ?? null,
+          ...(input.bringSamples !== undefined
+            ? {
+                bringSamples: input.bringSamples,
+                samplesDescription: input.bringSamples ? (input.samplesDescription ?? null) : null,
+              }
+            : {}),
+          ...(input.bringCardMachine !== undefined
+            ? { bringCardMachine: input.bringCardMachine }
+            : {}),
           status,
           version: { increment: 1 },
           items: {
@@ -245,6 +312,31 @@ export async function pickupRoutes(app: FastifyInstance) {
           },
         },
       });
+      // Prazo em dias úteis acompanha o novo dia da retirada (enquanto não há OS).
+      const kindAfter = input.kind ?? before.kind;
+      if (beforeDate !== (input.scheduledDate ?? null) || kindAfter !== before.kind)
+        await followPickupDate(tx, before.orderId, input.scheduledDate ?? null, kindAfter, {
+          withServiceOrders: kindAfter === 'NO_LOCAL',
+        });
+      // 2026-11-26: No local remarcado com OS aberta — o prazo da OS que era o dia antigo vai
+      // junto (prazo combinado à mão para outro dia fica como está).
+      if (kindAfter === 'NO_LOCAL' && input.scheduledDate && beforeDate !== input.scheduledDate) {
+        const open = await tx.serviceOrder.findMany({
+          where: { orderId: before.orderId, status: 'ABERTA' },
+          select: { id: true, promisedDate: true },
+          orderBy: { number: 'asc' },
+        });
+        for (const so of open)
+          if (!so.promisedDate || dateOnly(so.promisedDate) === beforeDate)
+            await changeServiceOrderPromisedDate(
+              tx,
+              actor,
+              so.id,
+              input.scheduledDate,
+              'Serviço no local remarcado',
+              `No local ${pickupCode(before.number)}`,
+            );
+      }
       if (scheduleChanged || status !== before.status) {
         await tx.pickupEvent.create({
           data: {
@@ -263,6 +355,15 @@ export async function pickupRoutes(app: FastifyInstance) {
           data: { pickupId: id, kind: 'DADOS_ALTERADOS', recordedById: actor.userId },
         });
       }
+      if (input.kind && input.kind !== before.kind)
+        await tx.pickupEvent.create({
+          data: {
+            pickupId: id,
+            kind: 'TIPO_ALTERADO',
+            note: `${PICKUP_KIND_LABEL[before.kind]} → ${PICKUP_KIND_LABEL[input.kind]}`,
+            recordedById: actor.userId,
+          },
+        });
       await refreshOrderStatus(tx, before.orderId);
       await audit(tx, actor, {
         action: 'pickup.updated',
@@ -283,6 +384,9 @@ export async function pickupRoutes(app: FastifyInstance) {
               }
             : {}),
           ...(status !== before.status ? { status: { from: before.status, to: status } } : {}),
+          ...(input.kind && input.kind !== before.kind
+            ? { kind: { from: before.kind, to: input.kind } }
+            : {}),
         },
       });
       await emitPickupEvent(
@@ -302,14 +406,15 @@ export async function pickupRoutes(app: FastifyInstance) {
           now.logisticsUserId,
         );
       }
+      if (scheduleChanged) await announcePickupChange(tx, actor, id, 'REAGENDADA');
       await emitOrderEvent(tx, request, before.orderId);
     });
-    return loadPickupDto(prisma, id);
+    return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
   });
 
   /**
    * Registro manual do andamento (confirmações da logística nesta fase).
-   * "Recebida na oficina" só é atingida pelo registro de recebimento físico.
+   * "Recebida na oficina" marca as peças da retirada como chegadas (sem tela de recebimento).
    */
   app.post('/api/v1/pickups/:id/transition', { config: { access: MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);
@@ -338,34 +443,64 @@ export async function pickupRoutes(app: FastifyInstance) {
         );
       }
       const actor = actorFrom(request);
+      // 2026-11-26: "A retirada não aconteceu" (desfaz a chegada, automática ou não).
+      if (before.status === 'RECEBIDA_NA_OFICINA') {
+        await lockOrderItems(tx, before.orderId);
+        await undoPickupArrival(tx, actor, id, input.note!);
+        return;
+      }
+      // 2026-11-25: "No local" — serviço feito na casa do cliente = peças atendidas de uma vez
+      // (não há "chegou na oficina" depois): conta as peças e libera a OS para terminar.
+      const toStatus: PickupStatus =
+        before.kind === 'NO_LOCAL' && input.toStatus === 'RETIRADA_REALIZADA'
+          ? 'RECEBIDA_NA_OFICINA'
+          : input.toStatus;
       await tx.pickupRequest.update({
         where: { id, version: input.version },
-        data: { status: input.toStatus, version: { increment: 1 } },
+        data: { status: toStatus, version: { increment: 1 } },
       });
       await tx.pickupEvent.create({
         data: {
           pickupId: id,
-          kind: input.toStatus,
+          kind: toStatus,
           fromStatus: before.status,
-          toStatus: input.toStatus,
+          toStatus,
           note: input.note ?? null,
           recordedById: actor.userId,
         },
       });
+      if (toStatus === 'RECEBIDA_NA_OFICINA') await markPickupArrived(tx, id);
       await refreshOrderStatus(tx, before.orderId);
-      if (PICKUP_ASSIGNMENT_DONE.includes(input.toStatus))
-        await resolvePickupAssignment(tx, actor, id);
+      if (PICKUP_ASSIGNMENT_DONE.includes(toStatus)) await resolvePickupAssignment(tx, actor, id);
       await audit(tx, actor, {
         action: 'pickup.status_changed',
         entityType: 'pickup_request',
         entityId: id,
-        summary: `Retirada ${pickupCode(before.number)}: ${PICKUP_STATUS_LABEL[before.status]} → ${PICKUP_STATUS_LABEL[input.toStatus]}.`,
-        changes: { status: { from: before.status, to: input.toStatus }, note: input.note ?? null },
+        summary: `${PICKUP_KIND_LABEL[before.kind]} ${pickupCode(before.number)}: ${pickupStatusLabel(before.status, before.kind)} → ${pickupStatusLabel(toStatus, before.kind)}.`,
+        changes: { status: { from: before.status, to: toStatus }, note: input.note ?? null },
       });
       await emitPickupEvent(tx, request, id, EVENT_TYPES.PICKUP_STATUS_CHANGED);
       await syncTripCost(tx, actor, { pickupId: id }, input.note ?? undefined);
+      if (toStatus === 'CANCELADA')
+        await announcePickupChange(tx, actor, id, 'CANCELADA', input.note);
       await emitOrderEvent(tx, request, before.orderId);
     });
-    return loadPickupDto(prisma, id);
+    return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
   });
+}
+
+/** Soma as peças da retirada ao recebido de cada item do pedido (nunca além do pedido). */
+export async function markPickupArrived(tx: Tx, pickupId: string) {
+  const items = await tx.pickupRequestItem.findMany({
+    where: { pickupId },
+    include: { orderItem: { select: { quantity: true, receivedQuantity: true } } },
+  });
+  for (const i of items) {
+    const next = Math.min(i.orderItem.quantity, i.orderItem.receivedQuantity + i.quantity);
+    if (next !== i.orderItem.receivedQuantity)
+      await tx.commercialOrderItem.update({
+        where: { id: i.orderItemId },
+        data: { receivedQuantity: next },
+      });
+  }
 }

@@ -1,6 +1,14 @@
 'use client';
 
-import type { HolidayDto, LeaveDto, LeaveKind, OpenShiftDto } from '@cenario/shared';
+import type {
+  HolidayDto,
+  LeaveDto,
+  LeaveImpactDto,
+  LeaveKind,
+  OpenShiftDto,
+} from '@cenario/shared';
+import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { LEAVE_KINDS, LEAVE_KIND_LABEL } from '@cenario/shared';
 import { CalendarOff, Moon, Plane } from 'lucide-react';
 import { useState } from 'react';
@@ -279,7 +287,64 @@ function LeaveDialog({
           {(p) => <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}
         </Field>
       </div>
+      {!cancel && employeeId && startDate && (
+        <LeaveImpact employeeId={employeeId} start={startDate} end={endDate || startDate} />
+      )}
     </Dialog>
+  );
+}
+
+/** Item 19 (lista de 53): as OS que ficam apertadas com a folga. */
+function LeaveImpact({
+  employeeId,
+  start,
+  end,
+}: {
+  employeeId: string;
+  start: string;
+  end: string;
+}) {
+  const valid =
+    /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end) && end >= start;
+  const q = useQuery({
+    queryKey: ['leave-impact', employeeId, start, end],
+    queryFn: () =>
+      api<LeaveImpactDto>(
+        `/api/v1/attendance/leave-impact?employeeId=${employeeId}&start=${start}&end=${end}`,
+      ),
+    enabled: valid,
+  });
+  if (!valid || !q.data) return null;
+  const d = q.data;
+  if (d.tight.length === 0)
+    return (
+      <Alert tone="ok" className="mt-4" data-testid="folga-sem-impacto">
+        Nenhuma OS com prazo nessa semana depende de {d.employeeName}.
+      </Alert>
+    );
+  return (
+    <Alert
+      tone="warn"
+      className="mt-4"
+      title={`${d.tight.length === 1 ? '1 OS fica apertada' : `${d.tight.length} OS ficam apertadas`} com essa folga`}
+      data-testid="folga-impacto"
+    >
+      <ul className="mt-1 space-y-0.5">
+        {d.tight.map((o) => (
+          <li key={o.serviceOrderId}>
+            <Link href={`/painel/os/${o.serviceOrderId}`} className="font-medium hover:underline">
+              {o.code}
+            </Link>{' '}
+            · {o.customerName}
+            {o.promisedDate ? ` · prazo ${formatDay(o.promisedDate)}` : ''} ·{' '}
+            {o.openTasks === 1 ? '1 tarefa' : `${o.openTasks} tarefas`} com {d.employeeName}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1">
+        Passe as tarefas para outra pessoa ou combine o novo prazo com o cliente.
+      </p>
+    </Alert>
   );
 }
 

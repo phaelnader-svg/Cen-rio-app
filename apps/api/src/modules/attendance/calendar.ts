@@ -1,3 +1,4 @@
+import { plural, type LeaveImpactDto } from '@cenario/shared';
 import {
   EVENT_TYPES,
   LEAVE_KIND_LABEL,
@@ -16,11 +17,12 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { dateOnly } from '../commercial/common';
+import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notify } from '../notifications/notify';
 import { MANAGE, MANAGERS_AUDIENCE, VIEW, attendanceConfig, brDate, dbDate, team } from './common';
@@ -201,7 +203,7 @@ async function leaveNotice(
   ]);
 }
 
-export async function calendarRoutes(app: FastifyInstance, requeue: () => Promise<unknown>) {
+export async function calendarRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
   const tx = <T>(fn: (t: Tx) => Promise<T>) =>
     (prisma as PrismaClient).$transaction(fn, { timeout: 60_000 });
@@ -230,7 +232,7 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
       const input = createHolidaySchema.parse(request.body);
       const actor = actorFrom(request);
       const row = await tx(async (t) => {
-        const same = await t.companyHoliday.findUnique({ where: { date: dbDate(input.date) } });
+        const same = await t.companyHoliday.findFirst({ where: { date: dbDate(input.date) } });
         if (same)
           throw Errors.conflict(
             `${brDate(input.date)} já está no calendário (${same.name}${same.active ? '' : ', inativo'}): edite o registro existente.`,
@@ -258,7 +260,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         });
         return h;
       });
-      await requeue();
       return reply.status(201).send(holidayDto(row));
     },
   );
@@ -297,7 +298,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         });
         return u;
       });
-      await requeue();
       return holidayDto(row);
     },
   );
@@ -348,13 +348,12 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
           action: 'attendance.leave_created',
           entityType: 'attendance_leave',
           entityId: l.id,
-          summary: `${leaveCode(l.number)}: ${LEAVE_KIND_LABEL[input.kind]} de ${e.displayName}, ${brDate(input.startDate)} a ${brDate(input.endDate)} (${days(input.startDate, input.endDate)} dia(s)) — ${input.reason}`,
+          summary: `${leaveCode(l.number)}: ${LEAVE_KIND_LABEL[input.kind]} de ${e.displayName}, ${brDate(input.startDate)} a ${brDate(input.endDate)} (${plural(days(input.startDate, input.endDate), 'dia', 'dias')}) — ${input.reason}`,
         });
         await leaveNotice(t, actor, l, 'registrada');
         await applyToday(t, actor, l);
         return l.id;
       });
-      await requeue();
       const row = await prisma.attendanceLeave.findUniqueOrThrow({
         where: { id },
         include: leaveInclude,
@@ -399,7 +398,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         await leaveNotice(t, actor, u, 'corrigida');
         await applyToday(t, actor, { ...u, reason: input.reason });
       });
-      await requeue();
       return leaveDto(
         await prisma.attendanceLeave.findUniqueOrThrow({ where: { id }, include: leaveInclude }),
       );
@@ -440,10 +438,70 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         });
         await leaveNotice(t, actor, u, 'cancelada');
       });
-      await requeue();
       return leaveDto(
         await prisma.attendanceLeave.findUniqueOrThrow({ where: { id }, include: leaveInclude }),
       );
     },
   );
+}
+
+/**
+ * Item 19 (lista de 53, 2026-11-27): folga e férias com efeito nos prazos. Ao marcar a folga, o
+ * sistema mostra as OS com prazo entre o início da folga e uma semana depois do fim que ainda têm
+ * trabalho com a pessoa.
+ */
+export async function leaveImpactRoutes(app: FastifyInstance) {
+  const { prisma } = app.ctx;
+  app.get('/api/v1/attendance/leave-impact', { config: { access: VIEW } }, async (request) => {
+    const q = z
+      .object({
+        employeeId: z.guid(),
+        start: z.iso.date(),
+        end: z.iso.date(),
+      })
+      .parse(request.query);
+    if (q.end < q.start) throw Errors.business('A data final vem antes da inicial.');
+    assertRange(q.start, q.end);
+    const e = await prisma.employee.findUnique({
+      where: { id: q.employeeId },
+      select: { userId: true, displayName: true },
+    });
+    if (!e) throw Errors.notFound('Funcionário');
+    const until = new Date(`${q.end}T12:00:00.000Z`);
+    until.setUTCDate(until.getUTCDate() + 7);
+    const orders = await prisma.serviceOrder.findMany({
+      where: {
+        status: 'ABERTA',
+        promisedDate: { gte: dbDate(q.start), lte: dbDate(until.toISOString().slice(0, 10)) },
+        productionTasks: {
+          some: { assigneeUserId: e.userId, status: { notIn: ['CONCLUIDA', 'CANCELADA'] } },
+        },
+      },
+      select: {
+        id: true,
+        number: true,
+        promisedDate: true,
+        customer: { select: { name: true } },
+        productionTasks: {
+          where: { assigneeUserId: e.userId, status: { notIn: ['CONCLUIDA', 'CANCELADA'] } },
+          select: { id: true },
+        },
+      },
+      orderBy: { promisedDate: 'asc' },
+      take: 50,
+    });
+    const out: LeaveImpactDto = {
+      employeeName: e.displayName,
+      start: q.start,
+      end: q.end,
+      tight: orders.map((o) => ({
+        serviceOrderId: o.id,
+        code: serviceOrderCode(o.number),
+        customerName: o.customer.name,
+        promisedDate: o.promisedDate ? o.promisedDate.toISOString().slice(0, 10) : null,
+        openTasks: o.productionTasks.length,
+      })),
+    };
+    return out;
+  });
 }

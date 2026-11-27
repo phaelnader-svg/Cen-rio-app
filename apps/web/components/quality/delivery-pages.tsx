@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { DeliveryDto, PickupTeam, PieceStatusDto } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import {
@@ -30,7 +31,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { useCustomer, arrivalText } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
-import { useCan } from '@/lib/hooks';
+import { useCan, useModules } from '@/lib/hooks';
 import { useWorkers } from '@/lib/production';
 import {
   useDeliveries,
@@ -43,6 +44,7 @@ import {
 } from '@/lib/quality';
 import { TripCostCard, TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
 import { BalanceWarning, useDeliveryBalance } from '@/components/finance/balance-warning';
+import { AskReview } from './review-link';
 import {
   DateField,
   FormGrid,
@@ -97,7 +99,8 @@ export function DeliveriesPage() {
     <>
       <PageHeader
         title="Expedição e entregas"
-        description="Peças prontas (inspeção aprovada, correções encerradas, embalagem concluída e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
+        description="Peças prontas e agenda de entregas."
+        help="Peças prontas (inspeção aprovada, correções encerradas e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
       />
       <Tabs
         tabs={[
@@ -125,7 +128,8 @@ function Agenda() {
   const q = useDeliveries({ from, to });
   const groups = useMemo(() => {
     const byDate = new Map<string, Map<string, DeliveryDto[]>>();
-    for (const d of q.data ?? []) {
+    // 2026-11-26 (Raphael): entrega cancelada some da agenda (fica no histórico da OS).
+    for (const d of (q.data ?? []).filter((x) => x.status !== 'CANCELADA')) {
       if (!byDate.has(d.scheduledDate)) byDate.set(d.scheduledDate, new Map());
       const r = byDate.get(d.scheduledDate)!;
       if (!r.has(d.region)) r.set(d.region, []);
@@ -176,7 +180,7 @@ function Agenda() {
                         <span className="w-24 font-mono font-semibold">{d.code}</span>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium">
-                            {d.customer.name} · {d.items.length} peça(s)
+                            {d.customer.name} · {plural(d.items.length, 'peça', 'peças')}
                             {d.requiresInstallation ? ' · com instalação' : ''}
                           </p>
                           <p className="text-ink-muted">
@@ -188,8 +192,11 @@ function Agenda() {
                           </p>
                         </div>
                         {d.openOccurrences > 0 && (
-                          <Badge tone="danger">{d.openOccurrences} ocorrência(s)</Badge>
+                          <Badge tone="danger">
+                            {plural(d.openOccurrences, 'ocorrência', 'ocorrências')}
+                          </Badge>
                         )}
+                        {d.origin === 'DIRETA' && <Badge tone="info">Confirmada na OS</Badge>}
                         <DeliveryBadge status={d.status} />
                         <Link
                           href={`/painel/entregas/${d.id}`}
@@ -213,6 +220,8 @@ function Agenda() {
 function ReadyPieces() {
   const q = usePieces({ stage: 'PRONTA_ENTREGA' });
   const can = useCan();
+  // Reformulação, Fase 1: sem logística, a entrega é confirmada na própria OS.
+  const logisticsOn = useModules().logistica;
   const [schedule, setSchedule] = useState<{
     customerId: string;
     customer: string;
@@ -241,7 +250,8 @@ function ReadyPieces() {
           key={list[0]!.customerId}
           title={list[0]!.customer}
           actions={
-            can('entregas.gerenciar') && (
+            can('entregas.gerenciar') &&
+            logisticsOn && (
               <Button
                 size="sm"
                 onClick={() =>
@@ -265,6 +275,17 @@ function ReadyPieces() {
                 {p.serviceOrder.promisedDate
                   ? ` · prometida ${p.serviceOrder.promisedDate.split('-').reverse().join('/')}`
                   : ''}
+                {!logisticsOn && (
+                  <>
+                    {' · '}
+                    <Link
+                      className="text-brand-700 hover:underline"
+                      href={`/painel/os/${p.serviceOrder.id}?tab=entrega`}
+                    >
+                      Marcar como entregue na {p.serviceOrder.code}
+                    </Link>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -623,7 +644,7 @@ export function ScheduleDialog({
       {provisional && (
         <Alert tone="warn" className="mb-3" title="Provisório">
           {unready.length
-            ? `${unready.map((p) => p.code).join(', ')} ainda não está(ão) pronta(s) para entrega.`
+            ? `${unready.map((p) => p.code).join(', ')} ${unready.length === 1 ? 'ainda não está pronta' : 'ainda não estão prontas'} para entrega.`
             : 'Pré-agendamento ainda não confirmado.'}{' '}
           A confirmação definitiva só é possível com todas as peças liberadas.
         </Alert>
@@ -826,12 +847,30 @@ export function DeliveryDetailPage({ id }: { id: string }) {
         </Alert>
       )}
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="delivery-header">
-        <DeliveryBadge status={d.status} />
+        {d.reverted ? (
+          <span data-testid="delivery-reverted">
+            <Badge tone="warn" dot>
+              Desfeita em {formatDateTime(d.reverted.at)} — {d.reverted.reason}
+            </Badge>
+          </span>
+        ) : (
+          <DeliveryBadge status={d.status} />
+        )}
         {d.provisional && <Badge tone="warn">Não confirmada ao cliente</Badge>}
-        <span>
-          {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
-        </span>
-        {d.attempts > 0 && <Badge tone="danger">{d.attempts} tentativa(s) frustrada(s)</Badge>}
+        {d.origin === 'DIRETA' ? (
+          <span data-testid="delivery-origin-direct">
+            <Badge tone="info">Confirmada diretamente pela OS (sem roteiro nem viagem)</Badge>
+          </span>
+        ) : (
+          <span>
+            {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
+          </span>
+        )}
+        {d.attempts > 0 && (
+          <Badge tone="danger">
+            {plural(d.attempts, 'tentativa frustrada', 'tentativas frustradas')}
+          </Badge>
+        )}
       </div>
       <div className="mb-6 space-y-4">
         <BalanceWarning
@@ -841,6 +880,11 @@ export function DeliveryDetailPage({ id }: { id: string }) {
           onAck={d.status === 'PROVISORIA' && manage ? setBalanceAck : undefined}
         />
         <TripCostCard deliveryId={d.id} />
+        {d.status === 'CONCLUIDA' && (
+          <div className="flex">
+            <AskReview deliveryId={d.id} />
+          </div>
+        )}
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">

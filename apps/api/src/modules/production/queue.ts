@@ -11,6 +11,7 @@
  * - o gestor reordena (com versão/CAS e, se publicada, motivo e revisão) e, terminada a
  *   semana, transfere pendências para outra semana publicada (ação explícita e idempotente).
  */
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   carryOverSchema,
@@ -46,7 +47,6 @@ import {
   toTaskDto,
 } from './common';
 import { announceAssignments, reviseIfPublished } from './plans';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 const OPEN = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA', 'EM_EXECUCAO', 'PAUSADA'] as const;
 const CARRYABLE = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA', 'PAUSADA'];
@@ -137,7 +137,6 @@ export async function weekEnded(db: Tx | PrismaClient, weekStart: Date) {
 
 export async function productionQueueRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   /** Minha fila (tablet): ordem, tarefa atual, próxima executável e bloqueadas à frente. */
   app.get('/api/v1/production-tasks/mine/queue', { config: { access: EXECUTE } }, (request) =>
@@ -146,7 +145,7 @@ export async function productionQueueRoutes(app: FastifyInstance) {
 
   /** Fila de um funcionário, para a gestão. */
   app.get('/api/v1/production-queue/:userId', { config: { access: VIEW } }, (request) =>
-    loadQueue(prisma, z.object({ userId: z.string().uuid() }).parse(request.params).userId),
+    loadQueue(prisma, z.object({ userId: z.guid() }).parse(request.params).userId),
   );
 
   /**
@@ -338,7 +337,7 @@ export async function productionQueueRoutes(app: FastifyInstance) {
           action: 'production.tasks_carried',
           entityType: 'production_plan',
           entityId: from.id,
-          summary: `${todo.length} pendência(s) da semana ${dateOnly(from.weekStart)} transferida(s) para ${dateOnly(to.weekStart)}: ${codes}. Motivo: ${input.reason}`,
+          summary: `${plural(todo.length, 'pendência', 'pendências')} da semana ${dateOnly(from.weekStart)} ${todo.length === 1 ? 'transferida' : 'transferidas'} para ${dateOnly(to.weekStart)}: ${codes}. Motivo: ${input.reason}`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PRODUCTION_TASKS_CARRIED,

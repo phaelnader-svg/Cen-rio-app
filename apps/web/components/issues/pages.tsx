@@ -38,13 +38,13 @@ import { useWorkers } from '@/lib/production';
 const CATEGORY_TONE: Record<AttentionCategory, 'danger' | 'warn' | 'info' | 'neutral'> = {
   CRITICO: 'danger',
   ACAO: 'warn',
-  ATENCAO: 'info',
+  ATENCAO: 'neutral',
   INFO: 'neutral',
 };
 const CATEGORY_CARD: Record<AttentionCategory, string> = {
   CRITICO: 'border-danger-600/40 bg-danger-50',
   ACAO: 'border-warn-600/40 bg-warn-50',
-  ATENCAO: 'border-info-600/30 bg-info-50',
+  ATENCAO: 'border-line-strong bg-subtle',
   INFO: 'border-line bg-surface',
 };
 
@@ -61,6 +61,7 @@ export function AttentionPage() {
   }));
   const q = useAttention(f);
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v || undefined }));
+  const [more, setMore] = useState(false);
   const orders = useMemo(() => {
     const m = new Map<string, string>();
     for (const i of q.data?.items ?? [])
@@ -70,8 +71,9 @@ export function AttentionPage() {
   return (
     <>
       <PageHeader
-        title="Central de atenção"
-        description="Só o que pede atenção: ocorrências, pedidos de ajuda atrasados, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
+        title="Avisos e pendências"
+        description="Tudo o que pede a sua atenção, do mais urgente para o menos."
+        help="Só o que pede atenção: ocorrências, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-4" data-testid="attention-counts">
         {ATTENTION_CATEGORIES.map((c) => (
@@ -92,8 +94,9 @@ export function AttentionPage() {
           </button>
         ))}
       </div>
+      {/* Revisão geral (item 2): só o filtro por tipo à vista; os outros ficam em "Mais filtros". */}
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
-        <label className="field">
+        <label className="field sm:col-span-2">
           <span className="label">Tipo</span>
           <Select value={f.type ?? ''} onChange={(e) => set('type', e.target.value)}>
             <option value="">Todos</option>
@@ -104,63 +107,80 @@ export function AttentionPage() {
             ))}
           </Select>
         </label>
-        <label className="field">
-          <span className="label">Situação</span>
-          <Select value={f.status ?? ''} onChange={(e) => set('status', e.target.value)}>
-            <option value="">Todas</option>
-            {Object.entries(ISSUE_STATUS_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">Funcionário</span>
-          <Select
-            value={f.employeeUserId ?? ''}
-            onChange={(e) => set('employeeUserId', e.target.value)}
+        <details className="sm:col-span-3 lg:col-span-6" open={more}>
+          <summary
+            className="cursor-pointer text-sm font-medium text-brand-700"
+            onClick={(e) => {
+              e.preventDefault();
+              setMore(!more);
+            }}
           >
-            <option value="">Todos</option>
-            {workers.data?.map((w) => (
-              <option key={w.userId} value={w.userId}>
-                {w.displayName}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">Responsável pela solução</span>
-          <Select
-            value={f.solverUserId ?? ''}
-            onChange={(e) => set('solverUserId', e.target.value)}
-          >
-            <option value="">Todos</option>
-            {workers.data?.map((w) => (
-              <option key={w.userId} value={w.userId}>
-                {w.displayName}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">OS</span>
-          <Select
-            value={f.serviceOrderId ?? ''}
-            onChange={(e) => set('serviceOrderId', e.target.value)}
-          >
-            <option value="">Todas</option>
-            {orders.map(([id, code]) => (
-              <option key={id} value={id}>
-                {code}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">Data</span>
-          <Input type="date" value={f.date ?? ''} onChange={(e) => set('date', e.target.value)} />
-        </label>
+            {more ? 'Menos filtros' : 'Mais filtros'}
+          </summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <label className="field">
+              <span className="label">Situação</span>
+              <Select value={f.status ?? ''} onChange={(e) => set('status', e.target.value)}>
+                <option value="">Todas</option>
+                {Object.entries(ISSUE_STATUS_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">Funcionário</span>
+              <Select
+                value={f.employeeUserId ?? ''}
+                onChange={(e) => set('employeeUserId', e.target.value)}
+              >
+                <option value="">Todos</option>
+                {workers.data?.map((w) => (
+                  <option key={w.userId} value={w.userId}>
+                    {w.displayName}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">Responsável pela solução</span>
+              <Select
+                value={f.solverUserId ?? ''}
+                onChange={(e) => set('solverUserId', e.target.value)}
+              >
+                <option value="">Todos</option>
+                {workers.data?.map((w) => (
+                  <option key={w.userId} value={w.userId}>
+                    {w.displayName}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">OS</span>
+              <Select
+                value={f.serviceOrderId ?? ''}
+                onChange={(e) => set('serviceOrderId', e.target.value)}
+              >
+                <option value="">Todas</option>
+                {orders.map(([id, code]) => (
+                  <option key={id} value={id}>
+                    {code}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">Data</span>
+              <Input
+                type="date"
+                value={f.date ?? ''}
+                onChange={(e) => set('date', e.target.value)}
+              />
+            </label>
+          </div>
+        </details>
       </Card>
       {q.isPending ? (
         <Spinner />
@@ -223,10 +243,12 @@ export function AttentionPage() {
                         <dd className="inline">{i.employee.displayName}</dd>
                       </div>
                     )}
-                    <div>
-                      <dt className="inline text-ink-muted">Prioridade: </dt>
-                      <dd className="inline">{PRIORITY_LABEL[i.priority as Priority]}</dd>
-                    </div>
+                    {i.priority !== 'NORMAL' && (
+                      <div>
+                        <dt className="inline text-ink-muted">Prioridade: </dt>
+                        <dd className="inline">{PRIORITY_LABEL[i.priority as Priority]}</dd>
+                      </div>
+                    )}
                     {i.deadline && (
                       <div>
                         <dt className="inline text-ink-muted">Prazo: </dt>
@@ -237,10 +259,12 @@ export function AttentionPage() {
                         </dd>
                       </div>
                     )}
-                    <div>
-                      <dt className="inline text-ink-muted">Responsável pela solução: </dt>
-                      <dd className="inline">{i.solver?.displayName ?? '—'}</dd>
-                    </div>
+                    {i.solver && (
+                      <div>
+                        <dt className="inline text-ink-muted">Quem vai resolver: </dt>
+                        <dd className="inline">{i.solver.displayName}</dd>
+                      </div>
+                    )}
                   </dl>
                   {i.impacts.length > 0 && (
                     <p className="mt-2 text-sm">
@@ -289,7 +313,7 @@ export function IssueDetailPage({ id }: { id: string }) {
   const c = i.can;
   return (
     <>
-      <BackLink href="/painel/atencao" label="Central de atenção" />
+      <BackLink href="/painel/atencao" label="Avisos e pendências" />
       <PageHeader
         title={`${i.code} · ${ISSUE_KIND_LABEL[i.kind]}`}
         description={i.description}
@@ -326,10 +350,10 @@ export function IssueDetailPage({ id }: { id: string }) {
           {ISSUE_STATUS_LABEL[i.status]}
         </Badge>
         <Badge tone="neutral">{ISSUE_IMPACT_LABEL[i.impact]}</Badge>
-        <Badge tone={i.priority === 'URGENTE' || i.priority === 'ALTA' ? 'danger' : 'neutral'}>
+        <Badge tone={i.priority === 'URGENTE' || i.priority === 'ALTA' ? 'warn' : 'neutral'}>
           Prioridade {PRIORITY_LABEL[i.priority].toLowerCase()}
         </Badge>
-        {i.deadlineRisk && <Badge tone="danger">Prazo em risco</Badge>}
+        {i.deadlineRisk && <Badge tone="warn">Prazo em risco</Badge>}
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
@@ -515,7 +539,7 @@ function AssignDialog({ i, onClose }: { i: IssueDto; onClose: () => void }) {
               {...f}
               value={instructions}
               maxLength={300}
-              placeholder="Ex.: Verificar a máquina de costura do Márcio"
+              placeholder="Ex.: Verificar a máquina de costura da bancada 2"
               onChange={(e) => setInstructions(e.target.value)}
             />
           )}

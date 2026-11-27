@@ -4,8 +4,9 @@
  * Regras (definitivas):
  * - cada peça que exige tapeçaria tem UM tapeceiro titular (service_order_items.upholsterer);
  *   todas as etapas TAPECARIA da peça são dele — nunca divididas por disponibilidade/ausência;
- * - PREPARACAO vai ao responsável padrão configurado (ou ao único ajudante elegível); OUTRA fica
- *   para o gestor; sem elegível = pendência visível, nunca atribuição arbitrária;
+ * - PREPARACAO nasce LIVRE (sem responsável): aparece no tablet dos ajudantes disponíveis e o
+ *   primeiro que toca em Iniciar fica com ela (2026-11-19); OUTRA fica para o gestor; sem
+ *   elegível = pendência visível, nunca atribuição arbitrária;
  * - gerar não libera: as tarefas nascem em rascunho (ou bloqueadas e reavaliadas, se o plano já
  *   está publicado) e seguem a liberação/fila da Fase 2;
  * - idempotente: chave (peça, modelo, posição da etapa) com índice único parcial; repetir só
@@ -14,6 +15,7 @@
  *   nem concluída e não mexe em valores: só sinaliza revisão financeira.
  * Planos LEGADO continuam usando a geração anterior (plans.ts `generateTasks`), sem mudança.
  */
+import { plural } from '@cenario/shared';
 import {
   DISTRIBUTION_PENDENCY_LABEL,
   EVENT_TYPES,
@@ -32,6 +34,7 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
+import { learnedStageMinutes } from './stage-times';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -55,7 +58,7 @@ import {
   taskEvent,
 } from './common';
 import { announceAssignments, reviseIfPublishedBy } from './plans';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
+import { requireCompanyId } from '../../core/tenant';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA'];
 const DONE = ['CONCLUIDA', 'CANCELADA'];
@@ -111,28 +114,13 @@ export function upholsterersOf(team: Team) {
 }
 
 /**
- * Responsável de uma etapa de preparação (ou null = pendência). Simplificação Fase 5: o
- * responsável padrão da PRÓPRIA etapa vem primeiro; sem ele, vale o responsável padrão global.
- * Em ambos, configurado mas inelegível (inativo, sem competência) = pendência, nunca outro.
+ * Quem pode pegar a tarefa livre de uma etapa de preparação/desmontagem: produção ativa e a
+ * competência da etapa. Pedido do Raphael (2026-11-19): o dono não escolhe quem desmonta;
+ * quem estiver disponível pega no tablet.
  */
-async function preparationAssignee(
-  db: Tx | PrismaClient,
-  team: Team,
-  activity: keyof typeof ACTIVITY_SKILL,
-  stepAssigneeUserId: string | null = null,
-): Promise<string | null> {
-  const skill = ACTIVITY_SKILL[activity];
-  const ok = (m: Member | undefined) => Boolean(m && m.canExecute && m.skills.has(skill));
-  if (stepAssigneeUserId) return ok(team.get(stepAssigneeUserId)) ? stepAssigneeUserId : null;
-  const settings = await db.companySettings.findUnique({ where: { id: 1 } });
-  if (settings?.preparationAssigneeUserId) {
-    // Configurado mas inelegível (inativo, sem competência): pendência, nunca outro no lugar.
-    return ok(team.get(settings.preparationAssigneeUserId))
-      ? settings.preparationAssigneeUserId
-      : null;
-  }
-  const helpers = [...team.values()].filter((m) => m.isHelper && ok(m));
-  return helpers.length === 1 ? helpers[0]!.userId : null;
+export function freeTaskTakers(team: Team, activity: string) {
+  const skill = ACTIVITY_SKILL[activity as keyof typeof ACTIVITY_SKILL];
+  return [...team.values()].filter((m) => m.canExecute && m.skills.has(skill));
 }
 
 // ─────────────────────────── Geração ───────────────────────────
@@ -288,6 +276,8 @@ export async function distributeServiceOrder(
     orderBy: { position: 'asc' },
   });
   const team = await loadTeam(tx);
+  // Item 17 (lista de 53): as tarefas novas já nascem com o tempo real aprendido no tablet.
+  const minutesFor = await learnedStageMinutes(tx);
   const created: string[] = [];
   const assigned: string[] = [];
   for (const item of items) {
@@ -361,7 +351,6 @@ export async function distributeServiceOrder(
     for (const t of keep) byPosition.set(t.templateStepPosition!, [t.id]);
 
     // 3. Etapas do modelo: cria as que faltam; completa responsável ainda vazio.
-    const prepCache = new Map<string, string | null>();
     for (const step of template.steps) {
       const deps = [...new Set(step.dependsOn.flatMap((p) => byPosition.get(p) ?? []))];
       if (step.optional && item.serviceType === 'FABRICACAO') {
@@ -371,20 +360,8 @@ export async function distributeServiceOrder(
       const cls = step.stepClass as StepClass | null;
       let who: string | null = null;
       if (cls === 'TAPECARIA') who = owner && upholstererOk(team, owner) ? owner : null;
-      else if (cls === 'PREPARACAO') {
-        const key = `${step.activity}:${step.defaultAssigneeUserId ?? ''}`;
-        if (!prepCache.has(key))
-          prepCache.set(
-            key,
-            await preparationAssignee(
-              tx,
-              team,
-              step.activity as keyof typeof ACTIVITY_SKILL,
-              step.defaultAssigneeUserId,
-            ),
-          );
-        who = prepCache.get(key)!;
-      } else if (cls === 'OUTRA' && step.defaultAssigneeUserId) {
+      // PREPARACAO: sem responsável — fica livre para o primeiro ajudante disponível pegar.
+      else if (cls === 'OUTRA' && step.defaultAssigneeUserId) {
         // Simplificação Fase 5: "outra" continua sem responsável automático, salvo o padrão
         // da própria etapa — e só se for elegível (senão fica para o gestor).
         const m = team.get(step.defaultAssigneeUserId);
@@ -415,6 +392,7 @@ export async function distributeServiceOrder(
           sequence: item.position * 100 + step.position,
           requiresMaterials: step.requiresMaterials,
           completionRequirement: step.completionRequirement,
+          estimatedMinutes: minutesFor(step.activity, item.pieceType, item.quantity),
           stepClass: cls,
           templateId: template.id,
           templateVersion: template.version,
@@ -488,13 +466,16 @@ export async function pieceDistribution(
   const unclassified = template?.steps.filter((s) => !s.stepClass) ?? [];
   if (unclassified.length)
     add('ETAPA_SEM_CLASSIFICACAO', [], unclassified.map((s) => s.name).join(', '));
+  // Preparação é livre (o primeiro ajudante disponível pega): só é pendência se ninguém ativo
+  // tiver a competência da etapa para pegá-la.
   const prepOpen = tasks.filter(
     (t) => t.stepClass === 'PREPARACAO' && !t.assigneeUserId && !DONE.includes(t.status),
   );
-  if (prepOpen.length)
+  const nobody = prepOpen.filter((t) => freeTaskTakers(team, t.activity).length === 0);
+  if (nobody.length)
     add(
       'SEM_RESPONSAVEL_PADRAO',
-      prepOpen.map((t) => t.id),
+      nobody.map((t) => t.id),
     );
   if (
     template &&
@@ -719,7 +700,7 @@ export async function setUpholsterer(
       kind === 'DEFINICAO' ? 'production.piece_owner_defined' : 'production.piece_owner_replaced',
     entityType: 'service_order_item',
     entityId: item.id,
-    summary: `${code}: titular ${kind === 'DEFINICAO' ? 'definido' : 'substituído'} (${team.get(input.userId)?.displayName}); ${toMove.length} tarefa(s) pendente(s) acompanharam${reason ? `. Motivo: ${reason}` : ''}${financial ? '. Revisão financeira aberta: liberação e pagamento travados até o gestor definir os valores; nenhum valor foi alterado.' : ''}`,
+    summary: `${code}: titular ${kind === 'DEFINICAO' ? 'definido' : 'substituído'} (${team.get(input.userId)?.displayName}); ${plural(toMove.length, 'tarefa pendente', 'tarefas pendentes')} acompanharam${reason ? `. Motivo: ${reason}` : ''}${financial ? '. Revisão financeira aberta: liberação e pagamento travados até o gestor definir os valores; nenhum valor foi alterado.' : ''}`,
   });
   await appendEvent(tx, actor, {
     type: EVENT_TYPES.PRODUCTION_PIECE_OWNER_CHANGED,
@@ -755,7 +736,6 @@ export async function assertUpholstererRule(
 
 export async function productionDistributionRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   /** Distribuição proposta/atual do plano: titular, responsáveis e pendências por peça. */
   app.get('/api/v1/production-plans/:id/distribution', { config: { access: VIEW } }, (request) =>
@@ -767,9 +747,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
     '/api/v1/production-plans/:id/items/:itemId/distribute',
     { config: { access: PLAN, idempotent: true } },
     async (request) => {
-      const { id, itemId } = z
-        .object({ id: z.string().uuid(), itemId: z.string().uuid() })
-        .parse(request.params);
+      const { id, itemId } = z.object({ id: z.guid(), itemId: z.guid() }).parse(request.params);
       const input = distributeSchema.parse(request.body ?? {});
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
@@ -815,7 +793,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
           action: 'production.distribution_processed',
           entityType: 'production_plan',
           entityId: id,
-          summary: `Distribuição reprocessada: ${r.created.length} tarefa(s) criada(s), ${r.assigned.length} atribuída(s).`,
+          summary: `Distribuição reprocessada: ${plural(r.created.length, 'tarefa criada', 'tarefas criadas')}, ${plural(r.assigned.length, 'atribuída', 'atribuídas')}.`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PRODUCTION_DISTRIBUTION_UPDATED,
@@ -841,9 +819,12 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
     },
   );
 
-  /** Responsável padrão da preparação (vazio = único ajudante elegível). */
+  /**
+   * Responsável padrão da preparação: guardado só por compatibilidade (rota existente). Desde
+   * 2026-11-19 a preparação é livre — este valor NÃO escolhe mais ninguém.
+   */
   app.get('/api/v1/production/distribution-settings', { config: { access: VIEW } }, async () => {
-    const s = await prisma.companySettings.findUnique({ where: { id: 1 } });
+    const s = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
     return { preparationAssigneeUserId: s?.preparationAssigneeUserId ?? null };
   });
   app.put(
@@ -851,7 +832,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
     { config: { access: PLAN } },
     async (request) => {
       const input = z
-        .object({ preparationAssigneeUserId: z.string().uuid().nullable() })
+        .object({ preparationAssigneeUserId: z.guid().nullable() })
         .parse(request.body);
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
@@ -861,7 +842,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
             throw Errors.business('Escolha um funcionário ativo que execute tarefas de produção.');
         }
         await tx.companySettings.update({
-          where: { id: 1 },
+          where: { id: requireCompanyId() },
           data: { preparationAssigneeUserId: input.preparationAssigneeUserId },
         });
         await audit(tx, actor, {

@@ -106,8 +106,8 @@ export async function openLaborReviews(
         ownerChangeId: i === 0 ? input.ownerChangeId : null,
         reason:
           scope === null
-            ? 'Mão de obra combinada para a OS inteira e titular de peça alterado: defina o valor devido a cada profissional.'
-            : 'Titular da peça substituído com mão de obra já combinada: defina o valor devido a cada profissional.',
+            ? 'Mão de obra combinada para a OS inteira e titular de peça alterado: defina o valor devido a cada funcionário.'
+            : 'Titular da peça substituído com mão de obra já combinada: defina o valor devido a cada funcionário.',
         openedById: actor.userId,
       },
     });

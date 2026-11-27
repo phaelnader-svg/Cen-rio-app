@@ -12,7 +12,6 @@ import { loginAdmin } from './helpers';
 const origin = `http://localhost:${E2E.webPort}`;
 const TZ = 'America/Sao_Paulo';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
-const promised = () => new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
 const LOST =
   'Não foi possível confirmar se o serviço foi salvo. Toque em salvar de novo sem alterar nada: se ele já foi registrado, o sistema mostra o mesmo serviço e não cria outro.';
 
@@ -71,10 +70,12 @@ test('Novo serviço: resposta perdida depois da gravação não duplica (mesma c
     .getByTestId('ns-customer-results')
     .getByRole('button', { name: /Clara Rede Novo Serviço/ })
     .click();
+  await page.getByTestId('ns-piece-type-0').selectOption('SOFA');
   await page.getByTestId('ns-piece-desc-0').fill('Sofá da rede');
-  await page.getByTestId('ns-promised').fill(promised());
+  await page.getByTestId('ns-business-days').fill('20');
   await page.getByTestId('ns-value').fill('2.000,00');
-  await expect(page.getByTestId('ns-pay-model')).toHaveValue('ENTRADA_ENTREGA');
+  // Pagamento (2026-11-18): à vista por padrão, 50% na retirada e 50% na entrega.
+  await expect(page.getByTestId('ns-pay-avista')).toBeChecked();
   await page.getByTestId('ns-date').fill(today());
   await page.getByTestId('ns-arrival').fill('22:30');
   await page.getByTestId('ns-team-own').click();

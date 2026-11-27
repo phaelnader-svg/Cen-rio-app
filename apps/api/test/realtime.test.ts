@@ -54,7 +54,7 @@ describe('Sincronização em tempo real entre sessões', () => {
     const wAdmin2 = track(await WsClient.connect(app, admin2));
 
     const joao = await employeeByName('João');
-    const roles = await db().role.findUniqueOrThrow({ where: { key: 'ajudante' } });
+    const roles = await db().role.findFirstOrThrow({ where: { key: 'ajudante' } });
     const upd = await admin.put(`/api/employees/${joao.id}`, {
       fullName: 'João',
       displayName: 'João Pedro',

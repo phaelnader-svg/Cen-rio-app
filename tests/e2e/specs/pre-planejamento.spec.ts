@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
+import { generateOs } from './os-helpers';
 
 /**
  * Simplificação Fase 4 — pré-planejamento no navegador (dados fictícios):
@@ -80,12 +81,18 @@ async function receivedService(page: Page, name: string, pieces: string[]) {
     },
     pickup: { scheduledDate: today(), windowStart: '23:30', team: 'EQUIPE_PROPRIA' },
   });
-  const pk = await call(page, 'GET', `/api/v1/pickups/${svc.pickup.id}`);
-  const r = await call(page, 'POST', `/api/v1/arrivals/pickups/${svc.pickup.id}/confirm`, {
-    version: pk.version,
-  });
-  expect(r.serviceOrder?.code).toMatch(/OS-\d{5}/);
-  return r.serviceOrder as { id: string; code: string };
+  // Fluxo da OS (2026-11-18): a retirada termina com "Peças chegaram na oficina" e a OS é gerada
+  // no pedido (com o material comprado, para entrar em "A planejar").
+  for (const toStatus of ['EM_EXECUCAO', 'RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA']) {
+    const pk = await call(page, 'GET', `/api/v1/pickups/${svc.pickup.id}`);
+    await call(page, 'POST', `/api/v1/pickups/${svc.pickup.id}/transition`, {
+      toStatus,
+      version: pk.version,
+    });
+  }
+  const so = await generateOs(page, svc.order.id);
+  expect(so.code).toMatch(/OS-\d{5}/);
+  return so as { id: string; code: string };
 }
 
 async function noHorizontalScroll(page: Page) {
@@ -103,6 +110,8 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
     test.setTimeout(300_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     let planId = '';
     try {
       const one = await receivedService(page, 'Helena Planejamento Fictícia', ['Sofá retrátil']);
@@ -114,7 +123,6 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       const row2 = page.getByTestId(`to-plan-${two.code}`);
       await expect(row1).toContainText('Helena Planejamento Fictícia');
       await expect(row1).toContainText('Sofá');
-      await expect(row1).toContainText('Materiais:');
       await expect(row2).toBeVisible();
       await expect(page.getByText(/R\$/)).toHaveCount(0);
       await shot(page, '01-a-planejar');
@@ -124,7 +132,7 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       const entry1 = page.getByTestId(`plan-entry-${one.code}`);
       await entry1.getByTestId('plan-start').fill(START);
       await entry1.locator('select').first().selectOption({ label: 'Ricardo' });
-      await expect(page.getByTestId('plan-summary')).toContainText('Ricardo: 1 peça(s)');
+      await expect(page.getByTestId('plan-summary')).toContainText('Ricardo: 1 peça');
       await shot(page, '02-planejar-servico');
       await page.getByTestId('plan-submit').click();
       await expect(row1).toHaveCount(0); // saiu de "A planejar"
@@ -137,7 +145,7 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       const owners = entry2.locator('select');
       await owners.nth(0).selectOption({ label: 'Ricardo' });
       await owners.nth(1).selectOption({ label: 'Márcio' });
-      await expect(page.getByTestId('plan-summary')).toContainText('Márcio: 1 peça(s)');
+      await expect(page.getByTestId('plan-summary')).toContainText('Márcio: 1 peça');
       await shot(page, '03-planejar-lote-dois-sofas');
       await page.getByTestId('plan-submit').click();
       await expect(row2).toHaveCount(0);
@@ -178,29 +186,33 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       await page.getByRole('tab', { name: /Planejados/ }).click();
       await page.getByTestId(`week-${WEEK}`).getByTestId('publish-week').click();
       const prev = page.getByTestId('publish-preview');
-      await expect(prev).toContainText('João');
+      // Preparação: ninguém escolhido — o ajudante disponível pega no tablet.
+      await expect(prev).toContainText('Livre para os ajudantes');
       await expect(prev).toContainText('Ricardo');
       await expect(prev).toContainText('Márcio');
       await shot(page, '05-revisar-e-publicar');
       await page.getByTestId('publish-confirm').click();
       await expect(prev).toHaveCount(0);
-      // Sem levantamento de materiais: planejado ≠ liberado — vai para "Aguardando condição".
-      await page.getByRole('tab', { name: /Aguardando condição/ }).click();
+      // A trava de materiais saiu (16/11/2026): publicado, o serviço fica em "Planejados"
+      // até a data de início (nada liberado antes dela).
+      await page.getByRole('tab', { name: /Planejados/ }).click();
       for (const so of [one, two])
-        await expect(page.getByTestId(`stage-${so.code}`).getByTestId('blockers')).toContainText(
-          /[Mm]ateria/,
-        );
-      await shot(page, '06-aguardando-condicao');
+        await expect(
+          page.getByTestId(`week-${WEEK}`).getByTestId(`planned-${so.code}`),
+        ).toBeVisible();
+      await expect(page.getByTestId(`week-${WEEK}`)).not.toContainText('Rascunho');
+      await shot(page, '06-planejados-publicados');
 
       // ── Tablets: cada um vê as suas; nada liberado antes da data de início.
       const joao = await openTablet(browser, cj, '730561', { width: 768, height: 1024 });
       const marcio = await openTablet(browser, cm, '582046');
-      await expect.poll(async () => (await mine(joao)).length).toBeGreaterThan(0);
+      await expect.poll(async () => (await mine(ricardo)).length).toBeGreaterThan(0);
       const r = await mine(ricardo);
       const m = await mine(marcio);
       const j = await mine(joao);
       expect(r.length).toBeGreaterThan(0);
       expect(m.length).toBeGreaterThan(0);
+      expect(j).toHaveLength(0); // preparação livre não entra na fila de ninguém
       // Ricardo: sofá da OS 1 + Sofá A da OS 2; Márcio: só o Sofá B.
       expect(new Set(r.map((x) => x.task.serviceOrderItem!.code))).toEqual(
         new Set([`${one.code}/1`, `${two.code}/1`]),
@@ -222,12 +234,13 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       ] as const) {
         await page.setViewportSize({ width: w, height: h });
         await page.goto('/painel/producao/a-planejar');
-        await page.getByRole('tab', { name: /Aguardando condição/ }).click();
-        await expect(page.getByTestId(`stage-${two.code}`)).toBeVisible();
+        await page.getByRole('tab', { name: /Planejados/ }).click();
+        await expect(page.getByTestId(`planned-${two.code}`)).toBeVisible();
         await noHorizontalScroll(page);
         await shot(page, `09-producao-${w}`);
       }
     } finally {
+      await setMaterialsGate(page, false).catch(() => undefined);
       // Limpeza: tarefas da semana futura canceladas (com motivo) — não afetam outros testes.
       if (planId) {
         const plan = await call(page, 'GET', `/api/v1/production-plans/${planId}`);

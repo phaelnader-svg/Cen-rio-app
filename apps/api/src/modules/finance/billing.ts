@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   PAYMENT_METHOD_LABEL,
   confirmPaymentReportSchema,
@@ -331,7 +332,7 @@ export async function billingAttention(db: PrismaClient): Promise<AttentionItemD
       type: 'COBRANCA',
       category: delivered ? 'CRITICO' : 'ATENCAO',
       title: `${code} · ${r.customer.name} — ${delivered ? (r.dueTrigger === 'ENTREGA' ? 'ENTREGUE COM SALDO' : 'RETIRADO COM SALDO') : 'COBRANÇA VENCIDA'}`,
-      description: `${receivableCode(r.number)} ${r.description}: saldo ${formatCents(d.openCents)}${d.daysOverdue ? ` · ${d.daysOverdue} dia(s) em atraso` : ''}.`,
+      description: `${receivableCode(r.number)} ${r.description}: saldo ${formatCents(d.openCents)}${d.daysOverdue ? ` · ${plural(d.daysOverdue, 'dia', 'dias')} em atraso` : ''}.`,
       serviceOrder: r.serviceOrder
         ? { id: r.serviceOrder.id, code: serviceOrderCode(r.serviceOrder.number) }
         : null,
@@ -428,7 +429,7 @@ export async function billingAttention(db: PrismaClient): Promise<AttentionItemD
 export async function billingRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
   const tx = <T>(fn: (t: Tx) => Promise<T>) => prisma.$transaction(fn);
-  const params = z.object({ id: z.string().uuid() });
+  const params = z.object({ id: z.guid() });
 
   app.get('/api/v1/finance/payment-reports', { config: { access: FIN_VIEW } }, async (request) => {
     const q = z

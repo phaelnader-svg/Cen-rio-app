@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   anyPermissionAudience,
@@ -48,7 +49,8 @@ async function collect(db: Tx | PrismaClient, date: string): Promise<Stop[]> {
   const day = parseDateOnly(date)!;
   const [deliveries, pickups] = await Promise.all([
     db.delivery.findMany({
-      where: { scheduledDate: day, status: { not: 'CANCELADA' } },
+      // Fase 1: entrega direta pela OS não é parada de roteiro (não houve viagem).
+      where: { scheduledDate: day, status: { not: 'CANCELADA' }, origin: 'LOGISTICA' },
       include: deliveryInclude,
     }),
     db.pickupRequest.findMany({
@@ -126,6 +128,7 @@ async function collect(db: Tx | PrismaClient, date: string): Promise<Stop[]> {
     const job: LogisticsJobDto = {
       id: p.id,
       kind: 'RETIRADA',
+      onSite: p.kind === 'NO_LOCAL',
       code: pickupCode(p.number),
       status: p.status,
       customerName: p.order.customer.name,
@@ -220,10 +223,11 @@ function analyze(stops: Stop[]): string[] {
   const pending = stops.filter((s) => !s.confirmed).length;
   if (pending)
     warnings.push(
-      `${pending} parada(s) não confirmada(s) (pré-agendamento ou retirada só solicitada): não são compromisso com o cliente.`,
+      `${plural(pending, 'parada não confirmada', 'paradas não confirmadas')} (pré-agendamento ou retirada só solicitada): não são compromisso com o cliente.`,
     );
   const noOwner = stops.filter((s) => s.confirmed && !s.responsible).length;
-  if (noOwner) warnings.push(`${noOwner} parada(s) sem responsável pela execução.`);
+  if (noOwner)
+    warnings.push(`${plural(noOwner, 'parada', 'paradas')} sem responsável pela execução.`);
   return warnings;
 }
 

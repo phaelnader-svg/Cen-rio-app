@@ -28,6 +28,9 @@ export async function runMaintenance(prisma: PrismaClient, log: FastifyBaseLogge
     const sessions = await tx.session.deleteMany({
       where: { OR: [{ revokedAt: { lt: cutoff } }, { expiresAt: { lt: cutoff } }] },
     });
+    // Autorização de aplicativos: códigos vencidos e tokens de acesso expirados.
+    await tx.oAuthCode.deleteMany({ where: { expiresAt: { lt: new Date(now.getTime() - DAY) } } });
+    await tx.oAuthAccessToken.deleteMany({ where: { expiresAt: { lt: now } } });
     if (idem.count || throttle.count || sessions.count) {
       log.info(
         { idempotency: idem.count, throttle: throttle.count, sessions: sessions.count },

@@ -1,0 +1,8 @@
+• migration_precheck {"version": "63674f1d116ed86a92dbcc421f2fd702e41b169d"} → job cf23d39d-28d3-42dd-ad04-a4f8497857b2 (mensagem 22597685039043617)
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh preflight 63674f1d116ed86a92dbcc421f2fd702e41b169d
+• imagem 63674f1d116ed86a92dbcc421f2fd702e41b169d: 37 migrations · banco: 35 aplicadas (35 registros)
+• pendentes (2): 20270316000000_reformulacao_fase_2, 20270323000000_reformulacao_fase_3
+✔ esquema compatível: 20270316000000_reformulacao_fase_2 (17 comandos)
+✔ esquema compatível: 20270323000000_reformulacao_fase_3 (8 comandos)
+ℹ * tamanho-do-banco: 18 MB
+PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)

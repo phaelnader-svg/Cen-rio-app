@@ -182,18 +182,14 @@ test.describe.serial('Interface — geometria dos formulários', () => {
         paymentTerms: 'À vista',
         items,
       });
-    const receber = (o: { id: string; items: { id: string; quantity: number }[] }) =>
-      send('/api/v1/receipts', {
-        orderId: o.id,
-        pickupId: null,
-        origin: 'ENTREGUE_PELO_CLIENTE',
-        lines: o.items.map((i) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-          condition: 'BOA',
-          location: 'Área de recebimento',
-        })),
+    // Recebimentos removidos (16/11/2026): a chegada é a marca "Peças na oficina" do pedido.
+    const receber = async (o: { id: string; version: number }) => {
+      const r = await page.request.post(`/api/v1/orders/${o.id}/arrived`, {
+        data: { version: o.version },
+        headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
       });
+      expect(r.ok(), `arrived: ${await r.text()}`).toBe(true);
+    };
     const semRecebimento = await pedido([
       { pieceType: 'SOFA', description: 'Sofá geometria', quantity: 1 },
     ]);
@@ -208,6 +204,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
     await receber(paraEntrega);
     const os = await send('/api/v1/service-orders', {
       orderId: paraEntrega.id,
+      materialPurchased: true,
       items: [
         {
           orderItemId: paraEntrega.items[0].id,
@@ -240,33 +237,21 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       ['/painel/pedidos/novo', null, null],
       ['/painel/servicos/novo', null, null],
       [ids.pedido && `/painel/pedidos/${ids.pedido}`, null, null],
-      [`/painel/pedidos/${semRecebimento.id}`, null, 'Solicitar retirada'],
+      [`/painel/pedidos/${semRecebimento.id}`, null, 'Agendar'],
       [ids.pedido && `/painel/pedidos/${ids.pedido}/editar`, null, null],
       ['/painel/retiradas', null, null],
       ['/painel/roteiro', null, null],
       [`/painel/roteiro?data=${hoje}`, null, null],
-      ['/painel/recebimentos', null, null],
-      ['/painel/recebimentos/novo', null, null],
       ['/painel/os', null, null],
       [`/painel/os/nova?pedido=${recebido.id}`, null, null],
       [ids.os && `/painel/os/${ids.os}`, null, null],
-      ['/painel/medicoes', null, null],
-      [ids.medicao && `/painel/medicoes/${ids.medicao}`, null, null],
-      ['/painel/materiais', null, null],
-      ['/painel/compras', null, null],
-      ['/painel/compras/novo', null, null],
-      [ids.compra && `/painel/compras/${ids.compra}`, null, null],
-      ['/painel/fornecedores', null, 'Novo fornecedor'],
-      ['/painel/recebimento-materiais', null, null],
-      ['/painel/estoque', null, null],
-      ['/painel/estoque', null, 'Novo material'],
-      ['/painel/prontidao', null, null],
-      ['/painel/planejamento', null, null],
+      ['/painel/estoque-oficina', null, null],
       ['/painel/producao/a-planejar', null, null],
       ['/painel/producao/planejamento', null, null],
       ['/painel/producao', null, null],
-      ['/painel/producao/modelos', null, 'Novo modelo'],
-      ['/painel/ajuda', null, null],
+      ['/painel/producao/modelos', null, null],
+      ['/painel/producao/modelos', 'Etapas de produção', 'Novo modelo'],
+      ['/painel/producao/modelos', 'Materiais padrão', null],
       ['/painel/reprogramacao', null, null],
       ['/painel/qualidade', null, null],
       ['/painel/qualidade', 'Checklists', 'Novo checklist'],

@@ -26,15 +26,8 @@ import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
 import { createTestApp, db, loginAdmin, resetDatabase, setupTablet } from './helpers';
-import { createCustomer, createOrder, createPickup, receiptBody } from './commercial-helpers';
-import {
-  createMeasurement,
-  fillAndSubmit,
-  gestorUserId,
-  grant,
-  nextFriday,
-} from './measurement-helpers';
-import { confirmedFabricPurchase, createSupplier, linen, ok, receive } from './purchasing-helpers';
+import { createCustomer, createOrder, createPickup, markArrived } from './commercial-helpers';
+import { gestorUserId, grant } from './measurement-helpers';
 import {
   act,
   addOs,
@@ -94,7 +87,7 @@ async function installSimplified() {
 
 // ─────────────────────────── Produção → qualidade → embalagem ───────────────────────────
 
-/** OS aberta (peça recebida) com UMA peça, mais materiais medidos, comprados e recebidos. */
+/** OS aberta com UMA peça (as peças marcadas como na oficina). */
 async function pieceWithMaterials(
   admin: Client,
   name: string,
@@ -104,13 +97,10 @@ async function pieceWithMaterials(
   const order = await createOrder(admin, customer, [
     { pieceType: piece.pieceType, description: name, quantity: 1 },
   ]);
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]),
-  );
+  const rec = await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
   expect(rec.status, JSON.stringify(rec.body)).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
+    materialPurchased: true,
     orderId: order.id,
     items: [
       {
@@ -123,27 +113,6 @@ async function pieceWithMaterials(
   });
   expect(so.status, JSON.stringify(so.body)).toBe(201);
   const item = so.body.items[0] as { id: string };
-  // Materiais pelo fluxo real: medição aprovada → compra confirmada → recebimento conferido.
-  const m = (
-    await createMeasurement(admin, {
-      serviceOrderId: so.body.id,
-      kind: 'ROTINA',
-      assigneeUserId: await gestorUserId(),
-      dueDate: nextFriday(),
-    })
-  ).body;
-  const sub = await fillAndSubmit(admin, m, { items: [linen(item.id)] });
-  expect(sub.status, JSON.stringify(sub.body)).toBe(200);
-  const appr = await post(admin, `/api/v1/measurements/${m.id}/request/approve`, {
-    version: sub.body.request.version,
-  });
-  expect(appr.status, JSON.stringify(appr.body)).toBe(200);
-  const req = await db().materialRequirement.findFirstOrThrow({
-    where: { serviceOrderId: so.body.id, origin: 'SOLICITACAO_APROVADA' },
-  });
-  const supplier = await createSupplier(admin, `Fornecedor ${name}`);
-  const po = await confirmedFabricPurchase(admin, supplier.id, req);
-  expect((await receive(admin, po.id, [ok(po.items[0].id, 12)])).status).toBe(201);
   return { soId: so.body.id as string, itemId: item.id };
 }
 
@@ -201,29 +170,21 @@ async function inspectAndApprove(c: Client, inspectionId: string) {
   return r.body as { status: string };
 }
 
-/** Embalagem pela tela de embalagem: inicia a tarefa e conclui com proteção e local. */
+/**
+ * Reformulação S1: não há embalagem. Aprovada, a peça já está pronta para entrega; aqui só se
+ * confere que nada de embalagem nasceu e a peça vai para a expedição pelo mapa da oficina.
+ */
 async function packOnTablet(c: Client, itemId: string) {
-  const p = await db().packagingRecord.findFirstOrThrow({
-    where: { serviceOrderItemId: itemId },
-    orderBy: { createdAt: 'desc' },
-  });
-  expect(p.status).toBe('PENDENTE');
-  const st = await act(c, p.taskId!, 'start');
-  expect(st.status, JSON.stringify(st.body)).toBe(200);
-  expect((await db().packagingRecord.findUniqueOrThrow({ where: { id: p.id } })).status).toBe(
-    'EM_ANDAMENTO',
-  );
-  expect(await stage(itemId)).toBe('EM_EMBALAGEM');
-  const loc = await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } });
-  const cur = await db().packagingRecord.findUniqueOrThrow({ where: { id: p.id } });
-  const r = await post(c, `/api/v1/packaging/${p.id}/complete`, {
-    protection: 'PLASTICO_BOLHA',
-    locationId: loc.id,
-    version: cur.version,
-  });
+  expect(await db().packagingRecord.count({ where: { serviceOrderItemId: itemId } })).toBe(0);
+  expect(
+    await db().productionTask.count({
+      where: { serviceOrderItemId: itemId, activity: 'EMBALAGEM' },
+    }),
+  ).toBe(0);
+  expect(await stage(itemId)).toBe('PRONTA_ENTREGA');
+  const loc = await db().itemLocation.findFirstOrThrow({ where: { key: 'EXPEDICAO' } });
+  const r = await post(c, `/api/v1/pieces/${itemId}/move`, { locationId: loc.id, note: 'Pronta' });
   expect(r.status, JSON.stringify(r.body)).toBe(200);
-  expect(r.body).toMatchObject({ status: 'CONCLUIDA', location: { label: 'Expedição' } });
-  return p;
 }
 
 /** Tablets da equipe de produção; todos chegam às 08:30 (relógio operacional fixo, 09:00). */
@@ -276,7 +237,7 @@ async function reformaToPacked(admin: Client, tablets: Record<string, Client>, n
   await planned(admin, piece, p.ricardo);
   const t = await tasksOf(piece.itemId);
   expect(t.map((x) => [x.activity, x.assigneeUserId, x.templateId])).toEqual([
-    ['DESMONTAGEM', p.joao, REFORMA],
+    ['DESMONTAGEM', null, REFORMA], // livre: o João pega no tablet
     ['CORTE_TECIDO', p.ricardo, REFORMA],
     ['MONTAGEM', p.ricardo, REFORMA],
   ]);
@@ -311,14 +272,10 @@ async function reformaToPacked(admin: Client, tablets: Record<string, Client>, n
   expect(await db().qualityInspection.findUniqueOrThrow({ where: { id: insp!.id } })).toMatchObject(
     { status: 'APROVADA', decidedById: p.thiago },
   );
-  expect(await stage(piece.itemId)).toBe('AGUARDANDO_EMBALAGEM');
-  const pack = await db().packagingRecord.findFirstOrThrow({
-    where: { serviceOrderItemId: piece.itemId },
-  });
-  expect(pack.assigneeUserId).toBe(p.joao);
-  // 5) Embalagem (João).
+  // Reformulação S1: aprovada → pronta para entrega (sem embalagem); a peça vai para a expedição.
+  expect(await stage(piece.itemId)).toBe('PRONTA_ENTREGA');
   await packOnTablet(tablets.João!, piece.itemId);
-  return { ...piece, inspectionId: insp!.id, packagingId: pack.id };
+  return { ...piece, inspectionId: insp!.id };
 }
 
 describe('F5-04 — reforma (modelo simplificado) até qualidade e embalagem', () => {
@@ -334,15 +291,12 @@ describe('F5-04 — reforma (modelo simplificado) até qualidade e embalagem', (
       include: { currentLocation: true },
     });
     expect(item.currentLocation?.key).toBe('EXPEDICAO');
-    expect(
-      await db().packagingRecord.findUniqueOrThrow({ where: { id: piece.packagingId } }),
-    ).toMatchObject({ status: 'CONCLUIDA', protection: 'PLASTICO_BOLHA' });
-    // Todas as tarefas do modelo e a tarefa de embalagem concluídas; nenhuma tarefa extra.
+    // Todas as tarefas do modelo concluídas; nenhuma tarefa extra (S1: nem de embalagem).
     const all = await db().productionTask.findMany({
       where: { serviceOrderItemId: piece.itemId, status: { not: 'CANCELADA' } },
     });
     expect(all.map((x) => x.activity).sort()).toEqual(
-      ['CORTE_TECIDO', 'DESMONTAGEM', 'EMBALAGEM', 'MONTAGEM'].sort(),
+      ['CORTE_TECIDO', 'DESMONTAGEM', 'MONTAGEM'].sort(),
     );
     expect(all.every((x) => x.status === 'CONCLUIDA')).toBe(true);
   });
@@ -364,7 +318,7 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     await planned(admin, piece, p.thiago);
     const t = await tasksOf(piece.itemId);
     expect(t.map((x) => [x.activity, x.assigneeUserId, x.templateId])).toEqual([
-      ['PREPARACAO_MDF', p.thiago, CABECEIRA],
+      ['PREPARACAO_MDF', null, CABECEIRA], // livre: o Thiago pega
       ['REVESTIMENTO', p.thiago, CABECEIRA],
     ]);
     await doTask(tablets.Thiago!, t[0]!.id);
@@ -415,11 +369,6 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     expect(
       await db().qualityInspection.findUniqueOrThrow({ where: { id: row0!.id } }),
     ).toMatchObject({ status: 'APROVADA', decidedById: p.joao, inspectorUserId: p.joao });
-    expect(await stage(piece.itemId)).toBe('AGUARDANDO_EMBALAGEM');
-    const pack = await db().packagingRecord.findFirstOrThrow({
-      where: { serviceOrderItemId: piece.itemId },
-    });
-    expect(pack.assigneeUserId).toBe(p.joao);
     await packOnTablet(joao, piece.itemId);
     expect(await stage(piece.itemId)).toBe('PRONTA_ENTREGA');
   });
@@ -435,7 +384,7 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     await planned(admin, piece, p.ricardo);
     const t = await tasksOf(piece.itemId);
     expect(t.map((x) => [x.activity, x.assigneeUserId])).toEqual([
-      ['PREPARACAO_MDF', p.thiago],
+      ['PREPARACAO_MDF', null], // livre: o Thiago pega
       ['REVESTIMENTO', p.ricardo],
     ]);
     // Revestimento depende da preparação.
@@ -452,7 +401,6 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     expect(
       (await db().qualityInspection.findUniqueOrThrow({ where: { id: row0!.id } })).decidedById,
     ).toBe(p.gestor);
-    expect(await stage(piece.itemId)).toBe('AGUARDANDO_EMBALAGEM');
     await packOnTablet(tablets.João!, piece.itemId);
     expect(await stage(piece.itemId)).toBe('PRONTA_ENTREGA');
   });

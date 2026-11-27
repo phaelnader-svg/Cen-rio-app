@@ -77,7 +77,7 @@ export function Stat({
 }) {
   return (
     <Card className="p-4">
-      <p className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{label}</p>
+      <p className="text-sm font-medium text-ink-muted">{label}</p>
       <p
         data-testid={testId}
         className={clsx(
@@ -102,7 +102,15 @@ export type FormField = {
   required?: boolean;
   hint?: string;
   initial?: string;
+  /**
+   * Select com a última opção "+ Nova categoria…": escolhida, aparece um campo para digitar o nome
+   * (valor em `<name>__novo`; ver `NEW_OPTION`).
+   */
+  allowNew?: string;
 };
+
+/** Valor da opção "cadastrar nova" de um select do financeiro. */
+export const NEW_OPTION = '__novo__';
 
 /**
  * Formulário genérico do financeiro: os valores em dinheiro são digitados em reais
@@ -141,7 +149,11 @@ export function FormDialog({
   );
   const [key] = useState(newIdempotencyKey);
   const { m, error, setError } = useFinSend(onClose);
-  const missing = fields.some((f) => f.required && !values[f.name]?.trim());
+  const missing = fields.some(
+    (f) =>
+      (f.required && !values[f.name]?.trim()) ||
+      (f.allowNew && values[f.name] === NEW_OPTION && !values[`${f.name}__novo`]?.trim()),
+  );
   const submit = () => {
     try {
       const money = (name: string) => {
@@ -177,7 +189,7 @@ export function FormDialog({
       )}
       {children}
       <div className="grid gap-3 sm:grid-cols-2">
-        {fields.map((f) => (
+        {fields.flatMap((f) => [
           <Field
             key={f.name}
             label={f.label}
@@ -197,6 +209,7 @@ export function FormDialog({
                       {o.label}
                     </option>
                   ))}
+                  {f.allowNew && <option value={NEW_OPTION}>{f.allowNew}</option>}
                 </Select>
               ) : f.type === 'textarea' ? (
                 <Textarea
@@ -215,8 +228,31 @@ export function FormDialog({
                 />
               )
             }
-          </Field>
-        ))}
+          </Field>,
+          ...(f.allowNew && values[f.name] === NEW_OPTION
+            ? [
+                <Field
+                  key={`${f.name}__novo`}
+                  label="Nome da nova categoria"
+                  required
+                  hint="Fica salva na lista para as próximas despesas."
+                >
+                  {(p) => (
+                    <Input
+                      {...p}
+                      autoFocus
+                      maxLength={30}
+                      data-testid={`${f.name}-new-name`}
+                      value={values[`${f.name}__novo`] ?? ''}
+                      onChange={(e) =>
+                        setValues((v) => ({ ...v, [`${f.name}__novo`]: e.target.value }))
+                      }
+                    />
+                  )}
+                </Field>,
+              ]
+            : []),
+        ])}
       </div>
     </Dialog>
   );

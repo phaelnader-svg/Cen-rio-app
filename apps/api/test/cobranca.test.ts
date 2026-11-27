@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { address, createCustomer, receiptBody } from './commercial-helpers';
+import { address, createCustomer, generateOsFromOrder, markArrived } from './commercial-helpers';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase, setupTablet } from './helpers';
 import { day, today, userIdOf } from './production-helpers';
@@ -166,8 +166,9 @@ async function arriveAndOpen(
   orderId: string,
   lines: { orderItemId: string; quantity: number }[],
 ) {
-  ok(await post(admin, '/api/v1/receipts', receiptBody(orderId, lines)), 201);
-  // Novo serviço: a OS nasce automaticamente na chegada.
+  ok(await markArrived(orderId, lines), 201);
+  // Fluxo da OS (2026-11-18): a OS é gerada à mão depois da chegada.
+  await generateOsFromOrder(admin, orderId);
   const sos = await db().serviceOrder.findMany({
     where: { orderId },
     include: { items: true },
@@ -364,7 +365,8 @@ describe('Retirada com cartão, instrução de pagamento e registro da equipe (A
     ])
       expect((await andre.get(path)).status, path).toBe(403);
 
-    // Retirada realizada: a cobrança vence (evento real) — Central acusa retirado com saldo.
+    // Retirada realizada: a cobrança passa a contar (evento real). 2026-11-26 (Raphael): o Pix dos
+    // 50% costuma vir outro dia — vence 3 dias depois da chegada; até lá é só "a cobrar".
     const v1 = (await db().pickupRequest.findUniqueOrThrow({ where: { id: pickupId! } })).version;
     const s1 = ok<unknown>(
       await post(andre, `/api/v1/logistics/pickups/${pickupId}/step`, {
@@ -381,13 +383,11 @@ describe('Retirada com cartão, instrução de pagamento e registro da equipe (A
       }),
     );
     const [r] = await recs(admin, orderId);
-    expect(r).toMatchObject({ effectiveDueDate: today(), overdue: true, daysOverdue: 0 });
+    expect(r).toMatchObject({ effectiveDueDate: day(3), overdue: false, daysOverdue: 0 });
     const att = ok<{ items: { key: string; category: string; title: string }[] }>(
       await admin.get('/api/v1/attention'),
     );
-    expect(att.items.find((i) => i.key === `COBRANCA:VENCIDA:${r!.id}`)).toMatchObject({
-      category: 'CRITICO',
-    });
+    expect(att.items.find((i) => i.key === `COBRANCA:VENCIDA:${r!.id}`)).toBeUndefined();
 
     // A equipe informa: registro operacional, nenhum recebimento.
     const key = idemKey();
@@ -749,7 +749,7 @@ describe('Alteração de valor (AM-6, AM-13)', () => {
 });
 
 describe('Valor por peça e receita por OS (AM-2/AM-3)', () => {
-  it('16–18, 36–38: sofá 3.000 + poltrona 1.000; soma diferente recusada; chegada parcial estável', async () => {
+  it('16–18, 36–38: sofá 3.000 + poltrona 1.000; soma diferente recusada; OS do fechamento com as duas peças', async () => {
     const admin = await loginAdmin(app);
     // 38. Soma diferente do valor fechado: recusada (nada criado).
     const before = await db().commercialOrder.count();
@@ -780,28 +780,32 @@ describe('Valor por peça e receita por OS (AM-2/AM-3)', () => {
 
     const { orderId, order } = await service(admin, { items: ITEMS([300000, 100000]) });
     const [sofa, armchair] = order.items;
-    // 36. Só o sofá chegou: OS do sofá = 3.000 (não 4.000).
-    const so1 = await arriveAndOpen(admin, orderId, [{ orderItemId: sofa!.id, quantity: 1 }]);
-    let r1 = await resultOf(admin, so1.id);
-    expect(r1).toMatchObject({ revenueCents: 300000, revenueEstimated: false });
-    let f = await fin(admin, orderId);
-    expect(f.pieces.find((p) => p.orderItemId === armchair!.id)).toMatchObject({
-      pendingCents: 100000,
-      attributedCents: 0,
+    // 36–37 (D1): a OS nasce no fechamento com as duas peças; a receita dela é a soma dos
+    // valores por peça (3.000 + 1.000), e a chegada marcada depois não muda nada.
+    const so1 = await arriveAndOpen(admin, orderId, [
+      { orderItemId: sofa!.id, quantity: 1 },
+      { orderItemId: armchair!.id, quantity: 1 },
+    ]);
+    expect(so1.items.map((i) => i.orderItemId).sort()).toEqual([sofa!.id, armchair!.id].sort());
+    expect(await resultOf(admin, so1.id)).toMatchObject({
+      revenueCents: 400000,
+      revenueEstimated: false,
     });
-    // 37. A poltrona chega depois: OS do sofá continua 3.000; OS da poltrona = 1.000.
-    const so2 = await arriveAndOpen(admin, orderId, [{ orderItemId: armchair!.id, quantity: 1 }]);
-    expect(so2.id).not.toBe(so1.id);
-    r1 = await resultOf(admin, so1.id);
-    expect(r1.revenueCents).toBe(300000);
-    expect((await resultOf(admin, so2.id)).revenueCents).toBe(100000);
-    f = await fin(admin, orderId);
+    const f = await fin(admin, orderId);
     expect(f.itemValuesUsed).toBe(true);
-    expect(f.serviceOrders.map((s) => s.revenueCents).sort()).toEqual([100000, 300000]);
+    expect(f.serviceOrders.map((s) => s.revenueCents)).toEqual([400000]);
+    for (const [piece, cents] of [
+      [sofa!, 300000],
+      [armchair!, 100000],
+    ] as const)
+      expect(f.pieces.find((p) => p.orderItemId === piece.id)).toMatchObject({
+        pendingCents: 0,
+        attributedCents: cents,
+      });
     // A entrada paga no pedido não duplica receita em nenhuma OS (caixa ≠ receita).
     const [entry] = await recs(admin, orderId);
     ok(await pay(admin, entry!, 200000));
-    expect((await resultOf(admin, so1.id)).revenueCents).toBe(300000);
+    expect((await resultOf(admin, so1.id)).revenueCents).toBe(400000);
     // Distribuição manual não se aplica a pedido com valor por peça.
     expect(
       (

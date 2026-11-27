@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DELIVERY_STATUS_LABEL,
   INSPECTION_STATUS_LABEL,
@@ -6,7 +7,6 @@ import {
   deliveryCode,
   inspectionCode,
   logisticsCode,
-  packagingCode,
   taskCode,
   type AttentionItemDto,
   type LogisticsKind,
@@ -15,6 +15,7 @@ import {
 import type { PrismaClient } from '@cenario/db';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { serviceDeadlines } from '../deadlines/service';
+import { moduleEnabled } from '../../core/modules';
 import { pieceCode, pieceInclude } from './common';
 
 const base = {
@@ -96,32 +97,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
     });
   }
 
-  // Embalagens aprovadas sem responsável.
-  const unassigned = await prisma.packagingRecord.findMany({
-    where: { status: 'PENDENTE', assigneeUserId: null },
-    include: { serviceOrderItem: { include: pieceInclude } },
-  });
-  for (const r of unassigned) {
-    const p = r.serviceOrderItem;
-    items.push({
-      ...base,
-      key: `QUALIDADE:embalagem:${r.id}`,
-      type: 'QUALIDADE',
-      category: 'ACAO',
-      title: `${packagingCode(r.number)} · ${pieceCode(p)} · ${p.description}`,
-      description: 'Aprovada pela qualidade, sem ninguém disponível para embalar.',
-      serviceOrder: { id: p.serviceOrder.id, code: serviceOrderCode(p.serviceOrder.number) },
-      employee: null,
-      priority: p.serviceOrder.priority,
-      status: r.status,
-      statusLabel: 'Aguardando responsável',
-      at: r.createdAt.toISOString(),
-      deadline: dateOnly(p.serviceOrder.promisedDate),
-      nextActions: ['Designar quem embala (tapeceiro só com autorização)'],
-      link: `/painel/qualidade?tab=packaging&foco=${r.id}`,
-    });
-  }
-
   // Peças prontas para entrega ainda sem agendamento (informativo; nunca agenda sozinho). A peça
   // que voltou de uma entrega frustrada já está no item da frustrada (reagendar): não repete.
   const ready = await prisma.serviceOrderItem.findMany({
@@ -135,6 +110,8 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
     prisma,
     ready.map((p) => p.serviceOrderId),
   );
+  // Fase 1: com a logística desligada, a entrega é confirmada direto na OS (sem agendamento).
+  const logisticsOn = await moduleEnabled(prisma, 'logistica');
   for (const p of ready) {
     const promised = dateOnly(p.serviceOrder.promisedDate);
     items.push({
@@ -151,8 +128,14 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       statusLabel: 'Pronta para entrega',
       at: p.updatedAt.toISOString(),
       deadline: promised,
-      nextActions: ['Agendar a entrega com o cliente'],
-      link: `/painel/entregas?tab=ready&foco=${p.id}`,
+      nextActions: [
+        logisticsOn
+          ? 'Agendar a entrega com o cliente'
+          : 'Entregar ao cliente e marcar como entregue na OS',
+      ],
+      link: logisticsOn
+        ? `/painel/entregas?tab=ready&foco=${p.id}`
+        : `/painel/os/${p.serviceOrder.id}?tab=entrega`,
     });
   }
 
@@ -216,7 +199,7 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       type: 'LOGISTICA',
       category: 'ACAO',
       title: `${deliveryCode(d.number)} · ${d.customer.name}`,
-      description: `Tentativa frustrada (${d.attempts} tentativa(s))${d.occurrences[0] ? `: ${LOGISTICS_KIND_LABEL[d.occurrences[0].kind as LogisticsKind]} — ${d.occurrences[0].description}` : ''}.`,
+      description: `Tentativa frustrada (${plural(d.attempts, 'tentativa', 'tentativas')})${d.occurrences[0] ? `: ${LOGISTICS_KIND_LABEL[d.occurrences[0].kind as LogisticsKind]} — ${d.occurrences[0].description}` : ''}.`,
       serviceOrder: null,
       employee: null,
       priority: 'ALTA',

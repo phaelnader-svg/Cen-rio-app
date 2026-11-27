@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -53,6 +53,8 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
     test.setTimeout(300_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     const setClock = (iso: string | null) => call(page, 'POST', '/api/test/clock', { now: iso });
     let planId = '';
     try {
@@ -83,6 +85,23 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
           { serviceOrderItemId: so.items[1]!.id, upholstererUserId: w('Márcio').userId },
         ],
       });
+      // A preparação nasce livre (2026-11-19). Aqui o gestor a entrega ao João, para o cenário
+      // da fila dele (destaque + próximas) continuar coberto.
+      const generated = await call(page, 'GET', `/api/v1/production-plans/${planId}`);
+      for (const t of generated.tasks as {
+        id: string;
+        version: number;
+        stepClass: string | null;
+        assignee: unknown;
+      }[]) {
+        if (t.stepClass !== 'PREPARACAO' || t.assignee) continue;
+        const r = await page.request.fetch(`/api/v1/production-tasks/${t.id}`, {
+          method: 'PUT',
+          data: { assigneeUserId: w('João').userId, version: t.version },
+          headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+        });
+        expect(r.ok(), await r.text()).toBe(true);
+      }
       const draft = await call(page, 'GET', `/api/v1/production-plans/${planId}`);
       await call(page, 'POST', `/api/v1/production-plans/${planId}/publish`, {
         version: draft.version,
@@ -124,15 +143,14 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
       await expect(jt.getByTestId('queue-all-1')).toContainText(`${so.code}/1`);
       await jt.getByRole('button', { name: 'Voltar à minha semana' }).click();
 
-      // Ricardo: nada executável ainda — motivo explicado, nenhuma ação liberada.
+      // Ricardo: a trava formal de materiais saiu (16/11/2026) — o corte de tecido não espera
+      // compra; ele vê a própria fila como titular da peça.
       const rt = ricardo.page;
-      await expect(rt.getByTestId('week-nothing')).toBeVisible();
-      await expect(rt.getByTestId('week-reasons')).toContainText('aguardando');
-      await expect(rt.getByRole('button', { name: 'Iniciar' })).toHaveCount(0);
+      await expect(rt.getByTestId('my-week')).toContainText(`${so.code}/1`);
       await expect(rt.getByTestId('piece-owner').first()).toHaveText(
         'Você é o tapeceiro titular desta peça.',
       );
-      await shot(rt, '02-ricardo-aguardando');
+      await shot(rt, '02-ricardo-titular');
       // Márcio só vê as poltronas; Thiago (sem fila) mantém a tela anterior e as inspeções.
       await expect(marcio.page.getByTestId('my-week')).toContainText(`${so.code}/2`);
       await expect(marcio.page.getByTestId('my-week')).not.toContainText(`${so.code}/1`);
@@ -199,6 +217,7 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
       await shot(jt, '04-fila-completa');
       for (const c of [joao, ricardo, marcio, thiago]) await c.context.close();
     } finally {
+      await setMaterialsGate(page, false).catch(() => undefined);
       if (planId) {
         const p = await call(page, 'GET', `/api/v1/production-plans/${planId}`);
         for (const t of p.tasks as { id: string; status: string }[])

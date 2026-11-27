@@ -45,61 +45,15 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   if (t.startsWith('session.')) keys.push(['sessions'], ['devices']);
   if (t.startsWith('company.')) keys.push(['company'], ['me']);
   // Fase 2 — fluxo comercial → oficina
-  const flow = [
-    ['orders'],
-    ['order'],
-    ['pickups'],
-    ['pickup'],
-    ['receipts'],
-    ['receipts-pending'],
-    ['so-available'],
-  ];
+  const flow = [['orders'], ['order'], ['pickups'], ['pickup'], ['so-available']];
   if (t.startsWith('customer.')) keys.push(['customers'], ['customer'], ['customer-lookup']);
-  if (t.startsWith('order.') || t.startsWith('pickup.') || t.startsWith('receipt.'))
-    keys.push(...flow, ['customer']);
-  if (t.startsWith('service_order.')) keys.push(['service-orders'], ['service-order'], ...flow);
+  if (t.startsWith('order.') || t.startsWith('pickup.')) keys.push(...flow, ['customer']);
+  if (t.startsWith('service_order.'))
+    keys.push(['service-orders'], ['service-order'], ['workshop-map'], ...flow);
   if (t === 'attachment.changed') keys.push(['attachments']);
-  // Simplificação Fase 3 — central "Aguardando chegada" (peças e materiais) nos tablets.
-  if (
-    ['order.', 'pickup.', 'receipt.', 'service_order.', 'purchase_order.', 'material'].some((p) =>
-      t.startsWith(p),
-    )
-  )
-    keys.push(['arrivals'], ['material-arrivals'], ['logistics-route']);
-  // Fase 3 — medições e solicitações de materiais
-  if (t.startsWith('measurement.') || t.startsWith('material_request.')) {
-    keys.push(
-      ['measurements'],
-      ['measurement'],
-      ['my-measurements'],
-      ['measurements-awaiting'],
-      ['planning'],
-      ['consolidated'],
-      ['service-order'],
-    );
-  }
-  // Fase 4 — compras, recebimento, estoque e prontidão
-  const purchasing = [
-    ['needs'],
-    ['purchase-orders'],
-    ['purchase-order'],
-    ['pending-receipts'],
-    ['stock-items'],
-    ['stock-movements'],
-    ['stock-reservations'],
-    ['leftovers'],
-    ['readiness'],
-    ['os-readiness'],
-    ['service-order'],
-  ];
-  if (
-    ['supplier.', 'purchase_order.', 'material.', 'material_receipt.', 'stock.', 'leftover.'].some(
-      (p) => t.startsWith(p),
-    )
-  )
-    keys.push(['suppliers'], ...purchasing);
-  if (t.startsWith('measurement.') || t.startsWith('material_request.'))
-    keys.push(['needs'], ['readiness'], ['os-readiness']);
+  // Roteiro do dia: retiradas e entregas mudam as paradas.
+  if (['order.', 'pickup.', 'service_order.'].some((p) => t.startsWith(p)))
+    keys.push(['logistics-route']);
   // Fase 5 — produção
   if (t.startsWith('production.') || t === 'material.readiness_changed') {
     keys.push(
@@ -143,14 +97,12 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     );
   }
   if (t === 'notification.created') keys.push(['production-task'], ['my-tasks']);
-  // Fase 8 — ajuda, reprogramação e histórico do planejamento.
-  if (t.startsWith('help.') || t.startsWith('production.task_')) {
-    keys.push(['help-requests'], ['help-request'], ['my-help'], ['skills'], ['alternatives']);
-  }
+  // Fase 8 — reprogramação, competências e histórico do planejamento.
+  if (t.startsWith('production.task_')) keys.push(['skills'], ['alternatives']);
   if (t.startsWith('help.') || t.startsWith('reschedule.') || t.startsWith('planning.')) {
     keys.push(['reschedule-proposals'], ['planning-actions'], ['my-tasks'], ['production-board']);
   }
-  if (t.startsWith('attendance.')) keys.push(['reschedule-proposals'], ['help-requests']);
+  if (t.startsWith('attendance.')) keys.push(['reschedule-proposals']);
   // Fase 9 — ocorrências e central de atenção (exceções vindas de vários módulos).
   if (t.startsWith('issue.')) {
     keys.push(
@@ -172,13 +124,12 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   // Prazos e serviços em risco: prazo/andamento da OS, prazo do pedido, chegada das peças e
   // planejamento mudam os itens PRAZO_OS / PRAZO_PEDIDO (Central e Início) e o estado na OS.
   if (['service_order.', 'order.', 'receipt.', 'production.plan_'].some((p) => t.startsWith(p)))
-    keys.push(['attention'], ['service-orders'], ['service-order']);
+    keys.push(['attention'], ['service-orders'], ['service-order'], ['os-state']);
   if (t === 'attachment.changed') keys.push(['issue']);
-  // Fase 10 — qualidade, embalagem, expedição, entregas, logística e devoluções.
+  // Fase 10 — qualidade, expedição, entregas, logística e devoluções (S1: sem embalagem).
   const quality = [
     ['inspections'],
     ['inspection'],
-    ['packaging'],
     ['pieces'],
     ['piece'],
     ['deliveries'],
@@ -190,18 +141,18 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     ['returns'],
     ['locations'],
     ['attention'],
+    // Reformulação, Fase 2: estado geral da OS no cabeçalho.
+    ['os-state'],
   ];
   if (
-    ['quality.', 'packaging.', 'item.', 'delivery.', 'logistics.', 'return.'].some((p) =>
-      t.startsWith(p),
-    ) ||
+    ['quality.', 'item.', 'delivery.', 'logistics.', 'return.'].some((p) => t.startsWith(p)) ||
     t.startsWith('production.task_') ||
     t === 'pickup.updated' ||
     t === 'pickup.status_changed'
   )
     keys.push(...quality, ['my-tasks'], ['production-task'], ['fin']);
   if (t === 'notification.created')
-    keys.push(['inspections'], ['packaging'], ['logistics-jobs'], ['logistics-route']);
+    keys.push(['inspections'], ['logistics-jobs'], ['logistics-route']);
   if (t === 'quality.template_changed') keys.push(['quality-templates']);
   // Fase 11: eventos financeiros (sem valores) só chegam a quem vê o financeiro.
   if (t.startsWith('finance.')) keys.push(['fin']);
@@ -209,6 +160,15 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   // Central e o Início (só invalidação; o conteúdo vem da API com as permissões de quem vê).
   if (['finance.', 'material.', 'purchase_order.', 'stock.'].some((p) => t.startsWith(p)))
     keys.push(['attention'], ['overview']);
+  // Reformulação, Fase 1: lista simples de materiais da OS e estoque simples (sem valores).
+  if (t === 'os_materials.changed')
+    keys.push(['os-material-list'], ['os-material-suggestions'], ['production-task'], ['fin']);
+  // Reformulação, Fase 2: modelos de serviço (materiais padrão) e efeito nas sugestões das OS.
+  if (t === 'service_models.changed') keys.push(['service-models'], ['os-material-suggestions']);
+  if (t.startsWith('production.template') || t.startsWith('quality.template'))
+    keys.push(['service-models']);
+  if (t === 'inventory.changed') keys.push(['inventory'], ['os-material-list']);
+  if (t === 'delivery.updated' || t.startsWith('item.')) keys.push(['direct-delivery']);
   if (keys.some((k) => k[0] === 'attention')) keys.push(['overview']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }

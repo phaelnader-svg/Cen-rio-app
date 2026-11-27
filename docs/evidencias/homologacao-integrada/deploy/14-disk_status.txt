@@ -1,0 +1,23 @@
+• disk_status {} → job 15e81d1e-4a72-40f8-a0ee-63dbe6061c95 (mensagem 22599167708805378)
+$ df -h
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        30G   19G  9.8G  66% /
+udev            958M     0  958M   0% /dev
+tmpfs           989M     0  989M   0% /dev/shm
+tmpfs           198M  980K  197M   1% /run
+tmpfs           5.0M     0  5.0M   0% /run/lock
+efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda15      124M   12M  112M  10% /boot/efi
+overlay          30G   19G  9.8G  66% /var/lib/docker/rootfs/overlayfs/d977155c6ab0fc255d705bc80d0b94d79b4671dcc8ebe70ee0468ecee82a8be4
+overlay          30G   19G  9.8G  66% /var/lib/docker/rootfs/overlayfs/6017dc4ab6f2d286a039a718d963be9f7840b3793c22db5c4a7ae52549d986ec
+overlay          30G   19G  9.8G  66% /var/lib/docker/rootfs/overlayfs/9b8f3d2ede06c82ab7e7dcf8624f6b40ddbefc59f181a6e46ae29bb10cb9a402
+overlay          30G   19G  9.8G  66% /var/lib/docker/rootfs/overlayfs/5a52e521b7538c74d3ab149326d7caca83f4b9a0a410fb8b2892294eb71bc2c4
+overlay          30G   19G  9.8G  66% /var/lib/docker/rootfs/overlayfs/2a700ca96357f3a62e15df5bdd78a17827ccce434877521062f3e21d49e3453d
+$ docker system df
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          13        5         14.36GB   4.16MB (0%)
+Containers      5         5         114.7kB   0B (0%)
+Local Volumes   5         5         105MB     0B (0%)
+Build Cache     0         0         0B        0B
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env exec -T backup du -sh /data/backups
+12M	/data/backups

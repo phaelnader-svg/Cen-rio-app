@@ -1,5 +1,4 @@
 import {
-  MATERIALS_PENDING_STATES,
   PRODUCTION_STOP_BLOCKERS,
   closingWeekStart,
   deliveryCode,
@@ -10,6 +9,7 @@ import {
   type ServiceTimelineDto,
   type TimelineDomain,
   type TimelineEntryDto,
+  pickupStatusLabel,
 } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { Errors } from '../../lib/errors';
@@ -31,8 +31,9 @@ const STAGE_GROUP: Record<string, keyof NonNullable<OverviewDto['operations']>['
   AGUARDANDO_INSPECAO: 'quality',
   EM_INSPECAO: 'quality',
   EM_CORRECAO: 'rework',
-  AGUARDANDO_EMBALAGEM: 'packaging',
-  EM_EMBALAGEM: 'packaging',
+  // Só histórico (S1): etapa de embalagem gravada antes da remoção conta como pronta.
+  AGUARDANDO_EMBALAGEM: 'ready',
+  EM_EMBALAGEM: 'ready',
   BLOQUEIO_EXPEDICAO: 'blocked',
   PRONTA_ENTREGA: 'ready',
   ENTREGA_AGENDADA: 'scheduled',
@@ -72,7 +73,7 @@ export async function managementRoutes(app: FastifyInstance) {
         await Promise.all([
           prisma.serviceOrder.count({ where: active }),
           prisma.serviceOrder.count({
-            where: { ...active, materialsReadiness: { in: [...MATERIALS_PENDING_STATES] } },
+            where: { ...active, simpleMaterials: { some: { removedAt: null, available: false } } },
           }),
           prisma.serviceOrderItem.groupBy({
             by: ['fulfillmentStage'],
@@ -96,7 +97,6 @@ export async function managementRoutes(app: FastifyInstance) {
         production: 0,
         quality: 0,
         rework: 0,
-        packaging: 0,
         blocked: 0,
         ready: 0,
         scheduled: 0,
@@ -305,7 +305,7 @@ export async function managementRoutes(app: FastifyInstance) {
         orderId
           ? prisma.pickupEvent.findMany({
               where: { pickup: { orderId } },
-              include: { pickup: { select: { number: true } } },
+              include: { pickup: { select: { number: true, kind: true } } },
               orderBy: { occurredAt: 'desc' },
               take,
             })
@@ -407,7 +407,7 @@ export async function managementRoutes(app: FastifyInstance) {
           e.occurredAt,
           'RETIRADA',
           e.kind,
-          `Retirada ${pickupCode(e.pickup.number)}${e.toStatus ? ` → ${e.toStatus}` : ''}`,
+          `${e.pickup.kind === 'NO_LOCAL' ? 'No local' : 'Retirada'} ${pickupCode(e.pickup.number)}${e.toStatus ? ` → ${pickupStatusLabel(e.toStatus, e.pickup.kind)}` : ''}`,
           e.note,
           who(e.recordedById),
         );

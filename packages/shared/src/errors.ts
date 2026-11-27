@@ -18,6 +18,12 @@ export const ERROR_CODES = {
   UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
   BUSINESS_RULE: 'BUSINESS_RULE',
   POSSIBLE_DUPLICATE: 'POSSIBLE_DUPLICATE',
+  /** Reformulação, Fase 0: a funcionalidade está desligada nas configurações da empresa. */
+  MODULE_DISABLED: 'MODULE_DISABLED',
+  /** Cobrança: a assinatura da empresa venceu (passou a tolerância). Só a tela de assinatura abre. */
+  SUBSCRIPTION_REQUIRED: 'SUBSCRIPTION_REQUIRED',
+  /** Criar conta / esqueci a senha: a verificação anti-robô não passou. */
+  CAPTCHA_FAILED: 'CAPTCHA_FAILED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 

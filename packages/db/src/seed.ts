@@ -14,7 +14,6 @@ import { hash } from '@node-rs/argon2';
 import {
   DEFAULT_LOCATIONS,
   DEFAULT_PRODUCTION_TEMPLATES,
-  SIMPLIFIED_PRODUCTION_TEMPLATES,
   classifyStep,
   DEFAULT_QUALITY_TEMPLATES,
   DEFAULT_ROLES,
@@ -24,6 +23,7 @@ import {
   passwordPolicySchema,
 } from '@cenario/shared';
 import { createPrismaClient } from './index';
+import { scopedPrismaClient } from './scoped';
 
 const ARGON2_OPTIONS = { memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
 
@@ -72,14 +72,64 @@ const LOGISTICS = [
   { fullName: 'Izaías', displayName: 'Izaías', color: '#BE185D' },
 ] as const;
 
+/** Empresa da instalação: a Cenário Estofados (multi-empresa, etapa 2). */
+export const SEED_COMPANY_ID = 1;
+
 export async function runSeed(options: { withTeam?: boolean; log?: (m: string) => void } = {}) {
   const log = options.log ?? ((m: string) => console.log(m));
-  const prisma = createPrismaClient();
+  const base = createPrismaClient();
+  // Multi-empresa: o seed trabalha na empresa da instalação (nº 1), com a trava do banco ativa
+  // e liberado para atravessar empresas só onde precisa conferir dados (ex.: e-mail único).
+  const prisma = scopedPrismaClient(base, () => ({ companyId: SEED_COMPANY_ID, bypass: true }));
   try {
+    // 0. A empresa da instalação (multi-empresa: empresa nº 1). Vem antes de tudo, porque toda
+    // tabela de empresa aponta para ela.
+    await prisma.companySettings.upsert({
+      where: { id: SEED_COMPANY_ID },
+      // A empresa da plataforma não paga a assinatura e tem o plano superior (com o jogo).
+      create: {
+        id: SEED_COMPANY_ID,
+        tradeName: 'Cenário Estofados',
+        plan: 'gestao_jogo',
+        billingCourtesy: true,
+        // A tapeçaria da instalação usa as chaves e webhooks do servidor (liberado no painel).
+        serverConnections: true,
+        // A tapeçaria da instalação já está montada: sem perguntas do começo nem e-mails do teste.
+        setupDoneAt: new Date(),
+        gettingStartedHiddenAt: new Date(),
+        onboardingEmails: ['boas-vindas', 'dia-2', 'dia-5', 'fim-teste'],
+        platformNewNoticeAt: new Date(),
+      },
+      update: {},
+    });
+    // Registro interno da plataforma (id 0): e-mails do painel, LGPD do site, registros. Não é
+    // tapeçaria e ninguém entra nele (migration 20270909000000_plataforma_separada).
+    await prisma.companySettings.upsert({
+      where: { id: 0 },
+      create: {
+        id: 0,
+        tradeName: 'Cenário Gestão (plataforma)',
+        isPlatform: true,
+        billingCourtesy: true,
+        setupDoneAt: new Date(),
+        gettingStartedHiddenAt: new Date(),
+        platformNewNoticeAt: new Date(),
+      },
+      update: {},
+    });
+    // O id foi gravado explicitamente: a sequência precisa andar até ele (senão a próxima empresa
+    // criada tentaria usar o mesmo número).
+    await prisma.$executeRaw`SELECT setval('company_settings_id_seq', GREATEST((SELECT MAX(id) FROM company_settings), 1))`;
+    // Os orçamentos da Cenário Estofados são numerados a partir de 10200 (migration
+    // 20270413000000_orcamentos). Com a numeração por empresa, o ponto de partida fica no contador.
+    await prisma.$executeRaw`INSERT INTO company_counters (company_id, key, last_value)
+      VALUES (${SEED_COMPANY_ID}, 'quotes', 10199) ON CONFLICT DO NOTHING`;
+    log('✔ Configurações da empresa presentes.');
+
     // 1. Funções padrão e permissões
     for (const def of DEFAULT_ROLES) {
       const role = await prisma.role.upsert({
-        where: { key: def.key },
+        where: { companyId_key: { companyId: SEED_COMPANY_ID, key: def.key } },
         create: { key: def.key, name: def.name, description: def.description, system: def.system },
         update: {},
       });
@@ -101,14 +151,6 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
     }
     log('✔ Funções padrão sincronizadas.');
 
-    // 2. Configurações da empresa
-    await prisma.companySettings.upsert({
-      where: { id: 1 },
-      create: { id: 1, tradeName: 'Cenário Estofados' },
-      update: {},
-    });
-    log('✔ Configurações da empresa presentes.');
-
     // 3. Gestor
     const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
     const password = process.env.SEED_ADMIN_PASSWORD;
@@ -122,7 +164,9 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       if (existing) {
         log(`• Gestor ${email} já existe — mantido sem alterações.`);
       } else {
-        const gestorRole = await prisma.role.findUniqueOrThrow({ where: { key: GESTOR_ROLE_KEY } });
+        const gestorRole = await prisma.role.findUniqueOrThrow({
+          where: { companyId_key: { companyId: SEED_COMPANY_ID, key: GESTOR_ROLE_KEY } },
+        });
         await prisma.$transaction(async (tx) => {
           const user = await tx.user.create({
             data: {
@@ -130,6 +174,8 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
               displayName: name.slice(0, 60),
               passwordHash: await hash(password, ARGON2_OPTIONS),
               credentialsChangedAt: new Date(),
+              // Informado por quem instala: não precisa confirmar pelo link.
+              emailConfirmedAt: new Date(),
               roles: { create: { roleId: gestorRole.id } },
             },
           });
@@ -166,7 +212,9 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
           where: { displayName: member.displayName },
         });
         if (exists) continue;
-        const role = await prisma.role.findUniqueOrThrow({ where: { key: member.roleKey } });
+        const role = await prisma.role.findUniqueOrThrow({
+          where: { companyId_key: { companyId: SEED_COMPANY_ID, key: member.roleKey } },
+        });
         await prisma.$transaction(async (tx) => {
           const user = await tx.user.create({
             data: { displayName: member.displayName, roles: { create: { roleId: role.id } } },
@@ -188,7 +236,9 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
 
     // Fase 10: André e Izaías (logística terceirizada), sem PIN.
     if (options.withTeam ?? process.env.SEED_TEAM !== 'false') {
-      const role = await prisma.role.findUniqueOrThrow({ where: { key: LOGISTICS_ROLE_KEY } });
+      const role = await prisma.role.findUniqueOrThrow({
+        where: { companyId_key: { companyId: SEED_COMPANY_ID, key: LOGISTICS_ROLE_KEY } },
+      });
       for (const member of LOGISTICS) {
         if (await prisma.employee.findFirst({ where: { displayName: member.displayName } }))
           continue;
@@ -265,42 +315,8 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       log('✔ Modelos de produção iniciais criados.');
     }
 
-    // Simplificação Fase 5: responsável padrão inicial das etapas de preparação dos modelos
-    // simplificados (criados pela migration) — João na desmontagem da reforma, Thiago na
-    // preparação da cabeceira. Só enquanto o modelo NUNCA foi editado (versão 1: toda gravação
-    // pelo cadastro incrementa a versão) e a etapa está vazia — uma etapa vazia num modelo
-    // editado é decisão do gestor (usar o responsável global) e nunca é preenchida. Os
-    // funcionários não têm identificador estável além do id: só vale um ÚNICO funcionário ativo
-    // com o nome exato; ausente ou repetido, nada é configurado (nunca uma escolha arbitrária).
-    // A elegibilidade (ativo, competência) é conferida a cada geração.
-    const initialStepAssignees = [
-      { templateId: SIMPLIFIED_PRODUCTION_TEMPLATES[0]!.id, position: 1, name: 'João' },
-      { templateId: SIMPLIFIED_PRODUCTION_TEMPLATES[1]!.id, position: 1, name: 'Thiago' },
-    ];
-    for (const a of initialStepAssignees) {
-      const template = await prisma.productionTemplate.findUnique({
-        where: { id: a.templateId },
-        include: { steps: { where: { position: a.position } } },
-      });
-      const step = template?.steps[0];
-      if (!template || template.version !== 1 || !step) continue;
-      if (step.defaultAssigneeUserId || step.stepClass !== 'PREPARACAO') continue;
-      const people = await prisma.employee.findMany({
-        where: { displayName: a.name, active: true, user: { active: true } },
-        take: 2,
-      });
-      if (people.length !== 1) {
-        log(
-          `• Responsável da etapa "${step.name}" não configurado: ${people.length ? `mais de um funcionário ativo chamado ${a.name}` : `nenhum funcionário ativo chamado ${a.name}`} — defina em Produção → Modelos.`,
-        );
-        continue;
-      }
-      await prisma.productionTemplateStep.update({
-        where: { id: step.id },
-        data: { defaultAssigneeUserId: people[0]!.userId },
-      });
-      log(`✔ ${a.name} definido como responsável padrão da etapa "${step.name}".`);
-    }
+    // 2026-11-19: etapas de preparação/desmontagem não têm responsável padrão — ficam livres no
+    // tablet para quem tem a competência e está disponível (o primeiro que inicia fica com ela).
 
     // Fase 10: checklists de qualidade e localizações internas iniciais.
     if ((await prisma.qualityTemplate.count()) === 0) {
@@ -328,7 +344,7 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       skipDuplicates: true,
     });
   } finally {
-    await prisma.$disconnect();
+    await base.$disconnect();
   }
 }
 

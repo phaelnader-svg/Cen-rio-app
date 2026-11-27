@@ -50,7 +50,9 @@ function allows(
   kind: 'WEB' | 'DEVICE',
   perms: ReadonlySet<Permission>,
 ): boolean {
-  if ('public' in access || 'device' in access) return true;
+  if ('public' in access || 'device' in access || 'webhook' in access) return true;
+  // Painel da plataforma: nenhuma sessão de empresa entra (login próprio, cookie próprio).
+  if ('platform' in access) return false;
   if (access.session !== 'any' && access.session !== kind) return false;
   const surface: Permission = kind === 'WEB' ? 'painel.acessar' : 'producao.acessar';
   const required = [...(access.surfaceExempt ? [] : [surface]), ...(access.permissions ?? [])];
@@ -75,7 +77,9 @@ async function probeDenied(client: Client, kind: 'WEB' | 'DEVICE', userId: strin
       },
     );
     checked += 1;
-    if (res.status !== 403) leaks.push(`${r.method} ${r.url} → ${res.status}`);
+    // Painel da plataforma: login próprio; a sessão da empresa nem conta (401, não 403).
+    const denied = 'platform' in r.access ? 401 : 403;
+    if (res.status !== denied) leaks.push(`${r.method} ${r.url} → ${res.status}`);
   }
   return { checked, leaks };
 }
@@ -87,13 +91,67 @@ describe('Matriz de acesso: todas as rotas', () => {
     for (const r of all) expect(r.access, `${r.method} ${r.url}`).toBeTruthy();
     const open = all.filter((r) => 'public' in r.access).map((r) => `${r.method} ${r.url}`);
     // Só login, saúde, prontidão e o estado de vinculação do tablet são públicos.
+    // Também públicas: troca/revogação de token OAuth (servidor a servidor, autenticam o aplicativo
+    // pelo segredo dele). E o "Criar conta" (multi-empresa, etapa 4): cria uma empresa nova, com
+    // limite por IP e global, e nunca dá acesso a uma empresa que já existe.
     expect(open.sort()).toEqual(
       [
+        'POST /api/oauth/token',
+        'POST /api/oauth/revoke',
         'GET /api/health',
         'GET /api/ready',
         'GET /api/tablet/status',
         'POST /api/auth/login',
+        'POST /api/auth/signup',
         'POST /api/tablet/pair',
+        // Cobrança e conta (2026-11-17): chave pública do anti-robô, "esqueci minha senha" (mesma
+        // resposta exista ou não a conta, com limites), senha nova e confirmação de e-mail pelo
+        // link de uso único (só o hash do token fica guardado).
+        'GET /api/auth/signup-config',
+        'POST /api/auth/password/forgot',
+        'POST /api/auth/password/reset',
+        'POST /api/auth/email/confirm',
+        // Melhorias rodada 2 (2026-11-17): segundo passo do login com verificação em duas etapas
+        // (só vale com o desafio assinado do primeiro passo, que expira em minutos).
+        'POST /api/auth/login/2fa',
+        // LGPD (2026-11-25): pedido sobre dados pessoais pelo formulário público, com limite por IP
+        // e global, campo isca e anti-robô; só grava o pedido, não devolve dado nenhum.
+        'POST /api/v1/privacy/requests',
+        // Links do cliente, sem conta: cada um só abre com o token HMAC do próprio registro (?t=).
+        'GET /api/public/proposta/:id',
+        'POST /api/public/proposta/:id/aprovar',
+        'GET /api/public/album/:id',
+        'GET /api/public/album/:id/foto/:fileId',
+        // A retirada pelo link só mostra o dia (2026-11-24: o cliente não escolhe mais).
+        'GET /api/public/agendar/:id',
+        // Contrato do serviço para o cliente ler e baixar (2026-11-25), também pelo token ?t=.
+        'GET /api/public/contrato/:id',
+        'GET /api/public/contrato/:id/pdf',
+        // "Como ficou?" depois da entrega (etapa 3, 2026-11-27): nota de 1 a 5, pelo token ?t=.
+        'GET /api/public/avaliar/:id',
+        'POST /api/public/avaliar/:id',
+        // Página de status e aviso de manutenção (sem dado de empresa nenhuma) e o registro de
+        // erros do navegador (corpo limitado a 16 KB; vale o limite anônimo por IP de todas as rotas).
+        'GET /api/public/aviso',
+        'GET /api/public/status',
+        'POST /api/public/client-error',
+        // Painel da plataforma (2026-11-25): a tela de entrar pergunta se o acesso já foi criado
+        // (só sim/não) e o login próprio do painel, com os mesmos limites do login das empresas.
+        // Funcionário termina o cadastro pelo link (2026-11-26): token aleatório de uso único que
+        // vale 7 dias (só o hash fica guardado); só mostra nome, função e empresa da própria pessoa
+        // e só grava a foto e o PIN dela. Vale o limite anônimo por IP de todas as rotas.
+        'GET /api/public/convite/:token',
+        'POST /api/public/convite/:token',
+        'POST /api/public/convite/:token/foto',
+        // Demonstração marcada pelo site (2026-11-27): campo-isca, limite por IP (5 por hora) e
+        // geral (60 por hora); só grava o pedido na plataforma, nada de empresa nenhuma.
+        'POST /api/public/demonstracao',
+        'GET /api/plataforma/estado',
+        'POST /api/plataforma/entrar',
+        // "Esqueci a senha" do painel (sempre 204, limite por IP e por e-mail) e a senha nova pelo
+        // link do e-mail (vale 1 hora e uma vez só).
+        'POST /api/plataforma/esqueci',
+        'POST /api/plataforma/nova-senha',
       ].sort(),
     );
   });
@@ -126,6 +184,18 @@ describe('Matriz de acesso: todas as rotas', () => {
     const leaks: string[] = [];
     for (const r of routes()) {
       if (r.method === 'GET') continue;
+      // Token OAuth (servidor a servidor): não usa cookie; sem o segredo do aplicativo → 401.
+      if ('public' in r.access && r.access.serverToServer) {
+        const res = await foreign.req(r.method as 'POST', r.url, {});
+        if (res.status !== 401) leaks.push(`${r.method} ${r.url} → ${res.status}`);
+        continue;
+      }
+      // Webhooks (Meta, Asaas, Clicksign): não usam cookie; sem a assinatura do provedor → 401.
+      if ('webhook' in r.access) {
+        const res = await foreign.req(r.method as 'POST', r.url, {});
+        if (res.status !== 401) leaks.push(`${r.method} ${r.url} → ${res.status}`);
+        continue;
+      }
       const res = await foreign.req(
         r.method as 'POST',
         concrete(r.url),

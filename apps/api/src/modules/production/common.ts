@@ -1,11 +1,12 @@
+import { plural } from '@cenario/shared';
 import {
   inspectionCode,
   EVENT_TYPES,
   TASK_WAITING,
   anyPermissionAudience,
+  isFreeHelperTask,
   evaluateRelease,
   formatServiceOrderItemCode,
-  q3,
   issueCode,
   localParts,
   type IssueKind,
@@ -25,7 +26,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { notify, taskNotice } from '../notifications/notify';
-import { onReadinessChanged, readinessOf } from '../purchasing/common';
+import { requireCompanyId } from '../../core/tenant';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -41,6 +42,8 @@ export const READ_TASK = {
 } as const;
 
 export const MANAGEMENT = anyPermissionAudience('producao.ver', 'producao.planejar');
+/** Quem executa produção (tablets): recebe as mudanças das tarefas livres de preparação. */
+const EXECUTORS = anyPermissionAudience('producao.executar');
 export const audienceFor = (...userIds: (string | null | undefined)[]) =>
   [MANAGEMENT, ...[...new Set(userIds.filter(Boolean))].map((u) => `user:${u}`)].join(
     '|',
@@ -52,7 +55,7 @@ export const canViewAll = (request: FastifyRequest) =>
   canManage(request) || (request.auth?.permissions.has('producao.ver') ?? false);
 
 export async function company(db: Tx | PrismaClient) {
-  const c = await db.companySettings.findUnique({ where: { id: 1 } });
+  const c = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   return {
     timezone: c?.timezone ?? 'America/Sao_Paulo',
     workdayStart: c?.workdayStart ?? '08:30',
@@ -117,7 +120,6 @@ export const taskInclude = {
       },
     },
   },
-  packagingRecord: { select: { id: true } },
 } as const;
 export type TaskRow = Prisma.ProductionTaskGetPayload<{ include: typeof taskInclude }>;
 
@@ -228,14 +230,13 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
         }
       : null,
     qualityFor:
-      t.inspection && (t.activity === 'CORRECAO' || t.activity === 'EMBALAGEM')
+      t.inspection && t.activity === 'CORRECAO'
         ? {
             inspectionId: t.inspection.id,
             code: inspectionCode(t.inspection.number),
-            kind: t.activity,
-            note: t.activity === 'CORRECAO' ? t.inspection.decisionNote : null,
-            defects: t.activity === 'CORRECAO' ? t.inspection.items : [],
-            packagingId: t.packagingRecord?.id ?? null,
+            kind: 'CORRECAO' as const,
+            note: t.inspection.decisionNote,
+            defects: t.inspection.items,
           }
         : null,
     version: t.version,
@@ -295,10 +296,14 @@ export async function domainTaskEvent(
     status: string;
     assigneeUserId: string | null;
     serviceOrderId: string;
+    stepClass?: string | null;
   },
   extra: Record<string, unknown> = {},
   extraUsers: (string | null)[] = [],
 ) {
+  // Preparação (livre ou recém-pegada): todos os tablets de produção atualizam, para a tarefa
+  // aparecer para quem está disponível e sumir dos outros assim que alguém pega.
+  const everyone = task.stepClass === 'PREPARACAO' ? `|${EXECUTORS}` : '';
   await appendEvent(tx, actor, {
     type,
     aggregateType: 'production_task',
@@ -311,40 +316,7 @@ export async function domainTaskEvent(
       assigneeUserId: task.assigneeUserId,
       ...extra,
     } as Prisma.InputJsonValue,
-    audience: audienceFor(task.assigneeUserId, ...extraUsers),
-  });
-}
-
-// ─────────────────────────── Materiais por tarefa (Fase 6) ───────────────────────────
-
-type Readiness = Awaited<ReturnType<typeof readinessOf>>;
-
-/**
- * Materiais de uma tarefa. Sem vínculos, vale a prontidão da OS inteira
- * (comportamento conservador da Fase 5). Com vínculos, bastam os materiais
- * vinculados estarem cobertos (recebidos/reservados) — desde que não haja
- * medição ou solicitação pendente na OS (que poderia criar novas necessidades).
- */
-export async function taskMaterialsReady(
-  db: Tx | PrismaClient,
-  task: { id: string; serviceOrderId: string; requiresMaterials: boolean },
-  cache = new Map<string, Readiness>(),
-): Promise<boolean> {
-  if (!task.requiresMaterials) return true;
-  let r = cache.get(task.serviceOrderId);
-  if (!r) {
-    r = await readinessOf(db, task.serviceOrderId);
-    cache.set(task.serviceOrderId, r);
-  }
-  const links = await db.productionTaskMaterial.findMany({
-    where: { taskId: task.id },
-    select: { requirementId: true },
-  });
-  if (!links.length) return r.state === 'COMPLETO';
-  if (r.openMeasurements + r.pendingRequests + r.forecasts > 0) return false;
-  return links.every((l) => {
-    const line = r.lines.find((x) => x.requirementId === l.requirementId);
-    return Boolean(line) && q3(line!.covered) >= q3(line!.need);
+    audience: `${audienceFor(task.assigneeUserId, ...extraUsers)}${everyone}` as typeof MANAGEMENT,
   });
 }
 
@@ -411,7 +383,6 @@ export async function reevaluateTasks(
   if (!taskIds.length) return 0;
   let changed = 0;
   await lockTasks(tx, taskIds);
-  const readiness = new Map<string, Readiness>();
   const blocked: BlockedTask[] = [];
   const tz = (await company(tx)).timezone;
   const starts = new Map<string, Date | null>();
@@ -427,35 +398,25 @@ export async function reevaluateTasks(
       where: { id },
       include: {
         plan: { select: { status: true, mode: true } },
-        serviceOrder: {
-          select: {
-            status: true,
-            items: { select: { id: true, orderItem: { select: { receivedQuantity: true } } } },
-          },
-        },
+        serviceOrder: { select: { status: true } },
         dependsOn: { include: { dependsOn: { select: { status: true } } } },
       },
     });
     if (!t || !(TASK_WAITING as readonly string[]).includes(t.status)) continue;
-    const materialsReady = await taskMaterialsReady(tx, t, readiness);
     const openIssue = await hasBlockingIssue(tx, t.id);
-    const items = t.serviceOrderItemId
-      ? t.serviceOrder.items.filter((i) => i.id === t.serviceOrderItemId)
-      : t.serviceOrder.items;
     const result = evaluateRelease({
       osActive: t.serviceOrder.status === 'ABERTA',
-      pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
       // Tarefa de apoio (Fase 8) nasce de uma tarefa principal já liberada.
       published:
         t.plan?.status === 'PUBLICADO' ||
         Boolean(t.supportForTaskId || t.issueId || t.inspectionId),
-      assigned: Boolean(t.assigneeUserId),
+      // Preparação livre: sem responsável de propósito (o primeiro ajudante disponível pega).
+      assigned:
+        Boolean(t.assigneeUserId) || isFreeHelperTask({ ...t, planMode: t.plan?.mode ?? null }),
       // Etapa cancelada (não aplicável) não segura as seguintes.
       dependenciesDone: t.dependsOn.every(
         (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
       ),
-      materialsReady,
-      requiresMaterials: t.requiresMaterials,
       manuallyBlocked: Boolean(t.blockedReason),
       openIssue,
       scheduledAt: t.scheduledAt,
@@ -521,15 +482,6 @@ export async function waitingTaskIds(
   return rows.map((r) => r.id);
 }
 
-// Mudança de prontidão de materiais (Fase 4) reavalia as tarefas que exigem materiais.
-onReadinessChanged(async (tx, actor, serviceOrderId) => {
-  await reevaluateTasks(
-    tx,
-    actor,
-    await waitingTaskIds(tx, { serviceOrderId, requiresMaterials: true }),
-  );
-});
-
 /**
  * Libera as tarefas cujo horário programado chegou (executado periodicamente e
  * idempotente: tarefas já liberadas não geram novos eventos).
@@ -575,7 +527,33 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
         take: 500,
       })
     : [];
-  const ids = [...new Set([...byTime, ...byStart].map((t) => t.id))].sort();
+  // Remoção dos módulos de materiais e recebimentos: tarefas que continuam gravadas com os
+  // bloqueios antigos (MATERIAIS, PECA_NAO_RECEBIDA) são reavaliadas aqui e liberadas, sem
+  // depender de alguém mexer nelas. Idempotente.
+  const byLegacy = await prisma.productionTask.findMany({
+    where: {
+      status: { in: [...TASK_WAITING] },
+      blockers: { hasSome: ['MATERIAIS', 'PECA_NAO_RECEBIDA'] },
+    },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+    take: 500,
+  });
+  // Tarefas livres de preparação (2026-11-19) gravadas antes com "sem responsável": liberadas
+  // aqui, sem depender de alguém mexer nelas. Idempotente.
+  const byFree = await prisma.productionTask.findMany({
+    where: {
+      status: { in: [...TASK_WAITING] },
+      stepClass: 'PREPARACAO',
+      assigneeUserId: null,
+      blockers: { has: 'SEM_RESPONSAVEL' },
+      plan: { mode: 'FILA_SEMANAL' },
+    },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+    take: 500,
+  });
+  const ids = [...new Set([...byTime, ...byStart, ...byLegacy, ...byFree].map((t) => t.id))].sort();
   if (!ids.length) return 0;
   const system: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
   return prisma.$transaction(async (tx) => {
@@ -584,7 +562,7 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
       await audit(tx, system, {
         action: 'production.release_tick',
         entityType: 'production_task',
-        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado ou data de início.`,
+        summary: `${plural(changed, 'tarefa reavaliada', 'tarefas reavaliadas')} pelo horário programado, data de início ou bloqueios antigos removidos.`,
       });
     return changed;
   });

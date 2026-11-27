@@ -1,4 +1,7 @@
 import {
+  addBusinessDays,
+  installmentsOf,
+  MAX_INSTALLMENTS,
   paymentPlan,
   paymentPlanProblem,
   EVENT_TYPES,
@@ -10,6 +13,7 @@ import {
   type OwnTeamSettingsDto,
   type PickupTeam,
 } from '@cenario/shared';
+import { deadlineCalendar } from '../deadlines/service';
 import { createReceivable } from '../finance/revenue';
 import { shopTimezone, todayIso } from '../finance/common';
 import type { PrismaClient, Tx } from '@cenario/db';
@@ -23,12 +27,14 @@ import { canPlanLabor, canPlanUpholsterer } from '../orders/planned-intent';
 import { loadTeam, upholsterersOf } from '../production/distribution';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { asSnapshot, dateOnly, orderCode, pickupCode } from '../commercial/common';
 import { createCustomer } from '../customers/service';
 import { createOrder } from '../orders/service';
 import { createPickup } from '../pickups/service';
 import { workers } from '../production/plans';
 import { usersWith } from '../quality/common';
+import { requireCompanyId } from '../../core/tenant';
 
 /**
  * Simplificação Fase 2 — "Novo serviço": cliente + serviço fechado + retirada em UMA operação.
@@ -75,7 +81,9 @@ async function peopleOf(db: Tx | PrismaClient, team: PickupTeam): Promise<Person
  * Inativo/inelegível = pendência explícita; o sistema nunca escolhe outro silenciosamente.
  */
 export async function ownTeamSettings(db: Tx | PrismaClient): Promise<OwnTeamSettingsDto> {
-  const settings = await db.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+  const settings = await db.companySettings.findUniqueOrThrow({
+    where: { id: requireCompanyId() },
+  });
   const candidates = await ownTeamPeople(db);
   const userId = settings.ownTeamDefaultUserId;
   if (!userId)
@@ -100,7 +108,9 @@ export async function ownTeamSettings(db: Tx | PrismaClient): Promise<OwnTeamSet
 
 /** Recebedor configurado da logística (André), se ainda executa logística terceirizada. */
 async function outsourcedDefault(db: Tx | PrismaClient): Promise<Person | null> {
-  const settings = await db.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+  const settings = await db.companySettings.findUniqueOrThrow({
+    where: { id: requireCompanyId() },
+  });
   if (!settings.logisticsPayeeUserId) return null;
   return (
     (await outsourcedPeople(db)).find((p) => p.userId === settings.logisticsPayeeUserId) ?? null
@@ -138,6 +148,108 @@ async function addCustomerAddress(
   return created;
 }
 
+/**
+ * Retirada agendada de um pedido, com responsável, participantes e custo da viagem (Fase 6).
+ * Usada pelo Novo serviço e pelos Retrabalhos (2026-11-18), sempre dentro da transação de quem chama.
+ */
+export async function schedulePickup(
+  tx: Tx,
+  actor: ActorContext,
+  perms: ReadonlySet<string>,
+  input: {
+    orderId: string;
+    addressId: string | null;
+    pickup: z.output<typeof newServiceSchema>['pickup'] & object;
+    items: { orderItemId: string; quantity: number }[];
+  },
+) {
+  const p = input.pickup;
+  const addressId = input.addressId;
+  let responsible: Person | null = null;
+  // 3. Responsável: escolhido, ou o padrão da equipe (nunca um qualquer).
+  const people = await peopleOf(tx, p.team);
+  if (p.logisticsUserId) {
+    responsible = people.find((x) => x.userId === p.logisticsUserId) ?? null;
+    if (!responsible)
+      throw Errors.validation(
+        [
+          {
+            path: 'pickup.logisticsUserId',
+            message: 'Responsável não pertence à equipe escolhida.',
+          },
+        ],
+        'Responsável não pertence à equipe escolhida.',
+      );
+  } else if (p.team === 'EQUIPE_PROPRIA') {
+    const own = await ownTeamSettings(tx);
+    if (own.problem)
+      throw Errors.business(
+        own.problem === 'NAO_CONFIGURADO'
+          ? 'Responsável padrão da equipe própria não configurado. Escolha o responsável (ou configure em Empresa).'
+          : `Responsável padrão da equipe própria (${own.displayName ?? '—'}) está ${own.problem === 'INATIVO' ? 'inativo' : 'sem permissão para executar'}. Escolha outro responsável.`,
+      );
+    responsible = { userId: own.userId!, displayName: own.displayName! };
+  } else {
+    responsible = await outsourcedDefault(tx);
+  }
+  const allPeople = [...(await ownTeamPeople(tx)), ...(await outsourcedPeople(tx))];
+  const participants = p.participantUserIds.map((id) => {
+    const person = allPeople.find((x) => x.userId === id);
+    if (!person)
+      throw Errors.validation(
+        [{ path: 'pickup.participantUserIds', message: 'Participante inválido.' }],
+        'Participante inválido ou inativo.',
+      );
+    return person;
+  });
+  const hasCost = Boolean(p.amountCents);
+  // 4. Retirada das peças, com o custo total único da viagem (Fase 6).
+  const pickup = await createPickup(tx, actor, perms, {
+    orderId: input.orderId,
+    kind: p.kind,
+    addressId,
+    scheduledDate: p.scheduledDate ?? null,
+    windowStart: p.windowStart ?? null,
+    windowEnd: null,
+    team: p.team,
+    // Fase 3: participantes são vínculo estruturado (não mais texto nas observações).
+    teamNotes: p.notes ?? null,
+    participantUserIds: p.participantUserIds,
+    instructions: p.instructions ?? null,
+    externalReference: null,
+    bringSamples: p.bringSamples ?? false,
+    samplesDescription: p.samplesDescription ?? null,
+    bringCardMachine: p.bringCardMachine ?? false,
+    items: input.items,
+    logisticsUserId: responsible?.userId ?? null,
+    tripCost: hasCost
+      ? { amountCents: p.amountCents!, participantUserIds: p.participantUserIds }
+      : undefined,
+  });
+  const cost = hasCost
+    ? await tx.logisticsCost.findFirst({
+        where: { pickupId: pickup.id, status: { not: 'CANCELADO' } },
+      })
+    : null;
+  return { responsible, participants, pickup, cost };
+}
+
+/** Taxas da maquininha cadastradas na Base de dados do orçamento ("3X" → 3 parcelas). */
+async function cardFees(db: PrismaClient) {
+  const rows = await db.quoteCatalogItem.findMany({
+    where: { kind: 'TAXA_MAQUINA', rateBps: { not: null } },
+    select: { name: true, rateBps: true },
+  });
+  const byN = new Map<number, number>();
+  for (const r of rows) {
+    const n = installmentsOf(r.name);
+    if (n >= 1 && n <= MAX_INSTALLMENTS && !byN.has(n)) byN.set(n, r.rateBps!);
+  }
+  return [...byN.entries()]
+    .map(([installments, rateBps]) => ({ installments, rateBps }))
+    .sort((a, b) => a.installments - b.installments);
+}
+
 export async function serviceRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -146,7 +258,9 @@ export async function serviceRoutes(app: FastifyInstance) {
     { config: { access: NEW_SERVICE } },
     async (request): Promise<NewServiceDefaultsDto> => {
       const perms = request.auth!.permissions;
-      const settings = await prisma.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+      const settings = await prisma.companySettings.findUniqueOrThrow({
+        where: { id: requireCompanyId() },
+      });
       const outsourced = await outsourcedDefault(prisma);
       return {
         ownTeam: await ownTeamSettings(prisma),
@@ -161,12 +275,14 @@ export async function serviceRoutes(app: FastifyInstance) {
         suggestedPickupCostCents: perms.has('financeiro.gerenciar')
           ? settings.defaultPickupCostCents
           : null,
+        workingDays: settings.workingDays.length ? settings.workingDays : [1, 2, 3, 4, 5],
         canSetValues: perms.has('pedidos.valores'),
         canSetTripCost: perms.has('financeiro.gerenciar'),
         canCreateCustomer: perms.has('clientes.gerenciar'),
         upholsterers: canPlanUpholsterer(perms) ? upholsterersOf(await loadTeam(prisma)) : [],
         canPlanUpholsterer: canPlanUpholsterer(perms),
         canPlanLabor: canPlanLabor(perms),
+        cardFees: perms.has('pedidos.valores') ? await cardFees(prisma) : [],
       };
     },
   );
@@ -186,6 +302,8 @@ export async function serviceRoutes(app: FastifyInstance) {
       if (c.mode === 'EXISTENTE' && c.addressId && c.newAddress)
         throw Errors.validation(undefined, 'Escolha um endereço existente OU informe um novo.');
       const p = input.pickup;
+      // Fase 1: com a logística desligada, o "Novo serviço" só aceita peças trazidas pelo cliente.
+      if (p) await assertModuleEnabled(prisma, 'logistica');
       const actor = actorFrom(request);
 
       const result = await prisma.$transaction(async (tx) => {
@@ -234,8 +352,21 @@ export async function serviceRoutes(app: FastifyInstance) {
           }
         }
 
-        // 2. Pedido = serviço fechado (valores só com pedidos.valores; OS automática na chegada).
+        // 2. Pedido = serviço fechado (valores só com pedidos.valores; OS automática no fechamento).
         const s = input.service;
+        // 2026-11-18: prazo em dias úteis contado do dia da retirada (ou de hoje, se o cliente
+        // traz as peças). A data enviada pela tela é só a prévia; vale a calculada aqui.
+        let promisedDate = s.promisedDate;
+        // 2026-11-25: "No local" termina no próprio dia do serviço.
+        if (p?.kind === 'NO_LOCAL' && p.scheduledDate) promisedDate = p.scheduledDate;
+        else if (s.deliveryBusinessDays) {
+          const cal = await deadlineCalendar(tx);
+          promisedDate = addBusinessDays(
+            p?.scheduledDate ?? cal.today,
+            s.deliveryBusinessDays,
+            cal.workingDays,
+          );
+        }
         const order = await createOrder(tx, actor, perms, {
           customerId,
           pickupAddressId: addressId,
@@ -244,12 +375,17 @@ export async function serviceRoutes(app: FastifyInstance) {
           agreedValueCents: s.agreedValueCents,
           paymentTerms: s.paymentTerms,
           notes: s.notes,
-          promisedDate: s.promisedDate,
+          promisedDate,
           technicalNotes: s.technicalNotes,
           autoServiceOrder: true,
           customerDropOff: !p,
           items: s.items,
         });
+        if (s.deliveryBusinessDays)
+          await tx.commercialOrder.update({
+            where: { id: order.id },
+            data: { deliveryBusinessDays: s.deliveryBusinessDays },
+          });
 
         // Cobrança (AM-1): a condição estruturada gera as cobranças NA MESMA transação (e com a
         // mesma idempotência do Novo serviço): nunca há pedido sem as cobranças da condição.
@@ -263,7 +399,9 @@ export async function serviceRoutes(app: FastifyInstance) {
           });
           if (problem) throw Errors.business(problem);
           const today = todayIso(await shopTimezone(tx));
-          for (const d of paymentPlan(s.agreedValueCents!, s.payment, today))
+          for (const d of paymentPlan(s.agreedValueCents!, s.payment, today, {
+            customerDropOff: !p,
+          }))
             await createReceivable(tx, actor, {
               orderId: order.id,
               description: d.description,
@@ -278,82 +416,50 @@ export async function serviceRoutes(app: FastifyInstance) {
 
         // 3–4. Retirada (opcional): sem ela o cliente entrega as peças na tapeçaria — nada de
         // responsável, participantes, custo de logística ou agenda.
-        let responsible: Person | null = null;
-        let participants: Person[] = [];
-        let pickup: Awaited<ReturnType<typeof createPickup>> | null = null;
-        let cost: Awaited<ReturnType<typeof tx.logisticsCost.findFirst>> = null;
         const items = await tx.commercialOrderItem.findMany({
           where: { orderId: order.id },
           orderBy: { position: 'asc' },
         });
-        if (p) {
-          // 3. Responsável: escolhido, ou o padrão da equipe (nunca um qualquer).
-          const people = await peopleOf(tx, p.team);
-          if (p.logisticsUserId) {
-            responsible = people.find((x) => x.userId === p.logisticsUserId) ?? null;
-            if (!responsible)
-              throw Errors.validation(
-                [
-                  {
-                    path: 'pickup.logisticsUserId',
-                    message: 'Responsável não pertence à equipe escolhida.',
-                  },
-                ],
-                'Responsável não pertence à equipe escolhida.',
-              );
-          } else if (p.team === 'EQUIPE_PROPRIA') {
-            const own = await ownTeamSettings(tx);
-            if (own.problem)
-              throw Errors.business(
-                own.problem === 'NAO_CONFIGURADO'
-                  ? 'Responsável padrão da equipe própria não configurado. Escolha o responsável (ou configure em Empresa).'
-                  : `Responsável padrão da equipe própria (${own.displayName ?? '—'}) está ${own.problem === 'INATIVO' ? 'inativo' : 'sem permissão para executar'}. Escolha outro responsável.`,
-              );
-            responsible = { userId: own.userId!, displayName: own.displayName! };
-          } else {
-            responsible = await outsourcedDefault(tx);
-          }
-          const allPeople = [...(await ownTeamPeople(tx)), ...(await outsourcedPeople(tx))];
-          participants = p.participantUserIds.map((id) => {
-            const person = allPeople.find((x) => x.userId === id);
-            if (!person)
-              throw Errors.validation(
-                [{ path: 'pickup.participantUserIds', message: 'Participante inválido.' }],
-                'Participante inválido ou inativo.',
-              );
-            return person;
+        const { responsible, participants, pickup, cost } = p
+          ? await schedulePickup(tx, actor, perms, {
+              orderId: order.id,
+              addressId,
+              pickup: p,
+              items: items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
+            })
+          : { responsible: null, participants: [] as Person[], pickup: null, cost: null };
+        // Melhoria 78: o orçamento aprovado fica ligado ao pedido (e não vira pedido duas vezes).
+        if (input.quoteId) {
+          const quote = await tx.quote.findFirst({ where: { id: input.quoteId, deletedAt: null } });
+          if (!quote) throw Errors.notFound('Orçamento');
+          if (quote.orderId)
+            throw Errors.business(`O orçamento nº ${quote.number} já virou um pedido.`);
+          await tx.quote.update({
+            where: { id: quote.id },
+            data: {
+              orderId: order.id,
+              status: 'APROVADO',
+              followUpAt: null,
+              lostReason: null,
+              ...(quote.status !== 'APROVADO' ? { statusChangedAt: new Date() } : {}),
+              ...(quote.approvedAt ? {} : { approvedAt: new Date(), approvedVia: 'PAINEL' }),
+              version: { increment: 1 },
+            },
           });
-          const hasCost = Boolean(p.amountCents);
-          // 4. Retirada de TODAS as peças, com o custo total único da viagem (Fase 6).
-          pickup = await createPickup(tx, actor, perms, {
-            orderId: order.id,
-            addressId,
-            scheduledDate: p.scheduledDate ?? null,
-            windowStart: p.windowStart ?? null,
-            windowEnd: null,
-            team: p.team,
-            // Fase 3: participantes são vínculo estruturado (não mais texto nas observações).
-            teamNotes: p.notes ?? null,
-            participantUserIds: p.participantUserIds,
-            instructions: p.instructions ?? null,
-            externalReference: null,
-            items: items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
-            logisticsUserId: responsible?.userId ?? null,
-            tripCost: hasCost
-              ? { amountCents: p.amountCents!, participantUserIds: p.participantUserIds }
-              : undefined,
+          await audit(tx, actor, {
+            action: 'quotes.converted',
+            entityType: 'quote',
+            entityId: quote.id,
+            summary: `Orçamento nº ${quote.number} virou o pedido ${orderCode(order.number)}.`,
           });
-          cost = hasCost
-            ? await tx.logisticsCost.findFirst({
-                where: { pickupId: pickup.id, status: { not: 'CANCELADO' } },
-              })
-            : null;
         }
+        // Fluxo da OS (2026-11-18): o fechamento cria só o pedido e a retirada. A OS é gerada à
+        // mão no pedido, depois que a peça chega na tapeçaria.
         await audit(tx, actor, {
           action: 'service.created',
           entityType: 'commercial_order',
           entityId: order.id,
-          summary: `Novo serviço: ${customerName} — pedido ${orderCode(order.number)} e ${pickup ? `retirada ${pickupCode(pickup.number)}` : 'entrega das peças pelo cliente (sem retirada)'}${created ? ' (cliente novo)' : ''}.`,
+          summary: `Novo serviço: ${customerName} — pedido ${orderCode(order.number)} e ${pickup ? `${pickup.kind === 'NO_LOCAL' ? 'serviço no local' : 'retirada'} ${pickupCode(pickup.number)}` : 'entrega das peças pelo cliente (sem retirada)'}${created ? ' (cliente novo)' : ''}.`,
           changes: {
             customerId,
             customerCreated: created,
@@ -418,9 +524,11 @@ export async function serviceRoutes(app: FastifyInstance) {
   app.put('/api/v1/company/own-team', { config: { access: OWN_TEAM_MANAGE } }, async (request) => {
     const input = ownTeamSettingsSchema.parse(request.body);
     return prisma.$transaction(async (tx) => {
-      if (!(await lockRow(tx, 'company_settings', 1)))
+      if (!(await lockRow(tx, 'company_settings', requireCompanyId())))
         throw Errors.notFound('Configuração da empresa');
-      const before = await tx.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+      const before = await tx.companySettings.findUniqueOrThrow({
+        where: { id: requireCompanyId() },
+      });
       if (before.version !== input.version) throw Errors.versionConflict(before.version);
       if (input.userId) {
         const candidates = await ownTeamPeople(tx);
@@ -435,7 +543,7 @@ export async function serviceRoutes(app: FastifyInstance) {
       }
       const actor = actorFrom(request);
       const updated = await tx.companySettings.update({
-        where: { id: 1 },
+        where: { id: requireCompanyId() },
         data: {
           ownTeamDefaultUserId: input.userId,
           updatedById: actor.userId,

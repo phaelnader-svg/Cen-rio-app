@@ -5,7 +5,7 @@ import type { PrismaClient, Tx } from '@cenario/db';
 export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   COMMERCIAL_ORDER: ['pedidos.ver', 'os.ver'],
   PICKUP: ['retiradas.ver', 'pedidos.ver'],
-  RECEIPT: ['pedidos.ver', 'recebimentos.registrar', 'os.ver'],
+  RECEIPT: ['pedidos.ver', 'os.ver'],
   SERVICE_ORDER: ['os.ver'],
   SERVICE_ORDER_ITEM: ['os.ver'],
   PRODUCTION_TASK: ['producao.ver', 'producao.planejar'],
@@ -22,13 +22,15 @@ export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
 export const MANAGE_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   COMMERCIAL_ORDER: ['pedidos.gerenciar'],
   PICKUP: ['retiradas.gerenciar'],
-  RECEIPT: ['recebimentos.registrar'],
+  // Recebimentos removidos: fotos antigas só para consulta.
+  RECEIPT: [],
   SERVICE_ORDER: ['os.gerenciar'],
   SERVICE_ORDER_ITEM: ['os.gerenciar'],
   PRODUCTION_TASK: ['producao.planejar'],
   PRODUCTION_ISSUE: ['ocorrencias.gerenciar'],
   QUALITY_INSPECTION: ['qualidade.gerenciar'],
-  PACKAGING: ['qualidade.gerenciar'],
+  // Reformulação S1: fotos de embalagem antigas só para consulta (ninguém envia nem remove).
+  PACKAGING: [],
   DELIVERY: ['entregas.gerenciar'],
   LOGISTICS_OCCURRENCE: ['entregas.gerenciar'],
   FINANCE_PAYABLE: ['financeiro.gerenciar'],
@@ -154,7 +156,7 @@ export async function uploadableAsTaskAssignee(
 /**
  * Fase 10: participação direta (null = não é um tipo da Fase 10).
  * - inspeção: o inspetor designado (envio só com a inspeção aberta);
- * - embalagem: quem embala (envio enquanto não concluída);
+ * - embalagem (só histórico, S1): quem embalou vê; ninguém envia;
  * - entrega e ocorrência logística: o responsável pela entrega (e quem registrou a ocorrência).
  */
 async function viewableAsQualityParticipant(
@@ -176,15 +178,8 @@ async function viewableAsQualityParticipant(
         })) > 0
       );
     case 'PACKAGING':
-      return (
-        (await db.packagingRecord.count({
-          where: {
-            id,
-            assigneeUserId: userId,
-            ...(upload ? { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } } : {}),
-          },
-        })) > 0
-      );
+      if (upload) return false;
+      return (await db.packagingRecord.count({ where: { id, assigneeUserId: userId } })) > 0;
     case 'DELIVERY':
       return (
         (await db.delivery.count({

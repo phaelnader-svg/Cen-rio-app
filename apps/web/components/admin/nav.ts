@@ -1,22 +1,15 @@
-import type { Permission } from '@cenario/shared';
+import type { ModuleKey, Permission } from '@cenario/shared';
 import {
+  Bot,
   ClipboardPlus,
-  Boxes,
+  Calculator,
   Building2,
-  ListChecks,
-  PackagePlus,
-  ShoppingCart,
-  Store,
   Contact,
-  PackageCheck,
   PackageOpen,
-  CalendarCheck,
   CalendarRange,
-  Ruler,
   ClipboardList,
   FileSignature,
   GitPullRequestArrow,
-  HandHelping,
   Hammer,
   LayoutDashboard,
   RadioTower,
@@ -24,17 +17,21 @@ import {
   ShieldCheck,
   Siren,
   TabletSmartphone,
+  PlugZap,
   Truck,
-  Undo2,
+  RotateCcw,
+  Gauge,
   Wallet,
+  CreditCard,
   BadgeCheck,
   UserCheck,
-  UserCog,
   Users,
   Workflow,
   Route,
   type LucideIcon,
-  ListTodo,
+  Warehouse,
+  Sun,
+  Map as MapIcon,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -42,6 +39,26 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   anyOf?: Permission[];
+  /**
+   * Todas obrigatórias (além de `anyOf`, se houver). Para itens cuja tela exige mais de uma
+   * permissão na API — o menu nunca mostra o que a tela não deixaria usar.
+   */
+  allOf?: Permission[];
+  /** Reformulação, Fase 0: some do menu quando a funcionalidade está desligada. */
+  module?: ModuleKey;
+  /** Só aparece com a cobrança ligada (BILLING_ENABLED). */
+  billingOnly?: boolean;
+  /** Multi-empresa: só para o dono da plataforma (gestor da Cenário Estofados). */
+  platformOnly?: true;
+  /**
+   * Revisão geral (2026-11-18, item 3): telas irmãs viram abas de uma entrada só do menu. O item
+   * com `parent` não aparece no menu; aparece como aba no topo das telas da família.
+   */
+  parent?: string;
+  /** Nome da tela como aba (quando difere do nome no menu). */
+  tabLabel?: string;
+  /** Fora do menu e das abas: abre por link (ex.: pelo sininho ou pelo orçamento). */
+  hidden?: true;
 }
 
 /**
@@ -50,38 +67,36 @@ export interface NavItem {
  */
 export const NAV_GROUPS = [
   'Início',
+  // 2026-11-18 (pedido do dono): Financeiro logo acima de Serviços.
+  'Financeiro',
   'Serviços',
   'Produção',
-  'Compras',
-  'Financeiro',
   'Administração',
 ] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
 const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/atencao', 'Início'],
+  ['/painel/escritorio', 'Início'],
   ['/painel/servicos', 'Serviços'],
   ['/painel/clientes', 'Serviços'],
+  ['/painel/orcamentos', 'Serviços'],
   ['/painel/pedidos', 'Serviços'],
   ['/painel/retiradas', 'Serviços'],
   ['/painel/roteiro', 'Serviços'],
-  ['/painel/recebimentos', 'Serviços'],
   ['/painel/os', 'Serviços'],
   ['/painel/qualidade', 'Serviços'],
   ['/painel/entregas', 'Serviços'],
   ['/painel/devolucoes', 'Serviços'],
+  ['/painel/retrabalhos', 'Serviços'],
+  ['/painel/producao/modelos', 'Administração'],
   ['/painel/producao', 'Produção'],
-  ['/painel/ajuda', 'Produção'],
   ['/painel/reprogramacao', 'Produção'],
   ['/painel/competencias', 'Produção'],
-  ['/painel/medicoes', 'Produção'],
-  ['/painel/planejamento', 'Produção'],
   ['/painel/presenca', 'Produção'],
-  ['/painel/compras', 'Compras'],
-  ['/painel/fornecedores', 'Compras'],
-  ['/painel/recebimento-materiais', 'Compras'],
-  ['/painel/estoque', 'Compras'],
-  ['/painel/prontidao', 'Compras'],
-  ['/painel/materiais', 'Compras'],
+  ['/painel/estoque-oficina', 'Produção'],
+  ['/painel/produtividade', 'Produção'],
+  ['/painel/funcionarios', 'Produção'],
+  ['/painel/funcoes', 'Produção'],
   ['/painel/financeiro', 'Financeiro'],
 ];
 export function navGroupOf(href: string): NavGroup {
@@ -91,140 +106,76 @@ export function navGroupOf(href: string): NavGroup {
 
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
-  // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).
+  // 2026-11-25: agentes do escritório trabalhando sozinhos (plano com o jogo; só o dono).
   {
-    href: '/painel/servicos/novo',
-    label: 'Novo serviço',
-    icon: ClipboardPlus,
-    anyOf: ['pedidos.gerenciar'],
+    href: '/painel/escritorio',
+    label: 'Escritório',
+    icon: Bot,
+    allOf: ['jogo.acessar', 'agentes.gerenciar'],
+    module: 'ambiente_interativo',
   },
+  // Revisão geral (item 2): os avisos ficam no sininho; esta tela abre pelo "Ver todos" dele.
   {
     href: '/painel/atencao',
-    label: 'Central de atenção',
+    label: 'Avisos e pendências',
     icon: Siren,
     anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
-  },
-  { href: '/painel/funcionarios', label: 'Funcionários', icon: Users, anyOf: ['funcionarios.ver'] },
-  {
-    href: '/painel/funcoes',
-    label: 'Funções e permissões',
-    icon: ShieldCheck,
-    anyOf: ['funcoes.ver'],
+    hidden: true,
   },
   {
-    href: '/painel/dispositivos',
-    label: 'Dispositivos e sessões',
-    icon: TabletSmartphone,
-    anyOf: ['dispositivos.ver', 'sessoes.ver'],
+    href: '/painel/financeiro',
+    label: 'Financeiro',
+    icon: Wallet,
+    anyOf: ['financeiro.ver'],
   },
-  { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
+  // Revisão geral (itens 3 e 4): o menu segue o caminho real da peça. O serviço nasce do
+  // orçamento aprovado ("Fechar serviço"); "Novo serviço" saiu do menu (a tela continua).
+  {
+    href: '/painel/orcamentos',
+    label: 'Orçamentos',
+    icon: Calculator,
+    anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'],
+  },
+  {
+    href: '/painel/servicos/novo',
+    label: 'Fechar serviço',
+    icon: ClipboardPlus,
+    // B1: a tela usa /api/v1/services/new-defaults e /api/v1/services, que exigem as duas.
+    allOf: ['pedidos.gerenciar', 'retiradas.gerenciar'],
+    hidden: true,
+  },
   {
     href: '/painel/pedidos',
-    label: 'Pedidos comerciais',
+    label: 'Pedidos',
     icon: FileSignature,
     anyOf: ['pedidos.ver'],
   },
-  { href: '/painel/retiradas', label: 'Retiradas', icon: Truck, anyOf: ['retiradas.ver'] },
+  // Reformulação, Fase 1: telas operacionais da logística somem com o módulo desligado (os dados
+  // e o histórico continuam lá; as entregas passam a ser confirmadas na própria OS).
+  {
+    href: '/painel/retiradas',
+    label: 'Retiradas',
+    tabLabel: 'Agenda de retiradas',
+    icon: Truck,
+    anyOf: ['retiradas.ver'],
+    module: 'logistica',
+  },
   {
     href: '/painel/roteiro',
     label: 'Roteiro do dia',
     icon: Route,
     anyOf: ['entregas.ver', 'retiradas.ver'],
-  },
-  {
-    href: '/painel/recebimentos',
-    label: 'Recebimentos',
-    icon: PackageCheck,
-    anyOf: ['recebimentos.registrar', 'pedidos.ver'],
+    module: 'logistica',
+    parent: '/painel/retiradas',
   },
   { href: '/painel/os', label: 'Ordens de serviço', icon: ClipboardList, anyOf: ['os.ver'] },
+  // 2026-11-18: "Retrabalhos" substitui "Devoluções" no menu (o histórico das devoluções continua
+  // guardado e abre pelo endereço antigo). Serviço a refazer: prazo, retirada e OS em vermelho.
   {
-    href: '/painel/medicoes',
-    label: 'Medições',
-    icon: Ruler,
-    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
-  },
-  {
-    href: '/painel/planejamento',
-    label: 'Planejamento de sexta',
-    icon: CalendarCheck,
-    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
-  },
-  {
-    // Simplificação Fase 4: Produção → A planejar (fila de serviços recebidos e planejamento).
-    href: '/painel/producao/a-planejar',
-    label: 'Produção — A planejar',
-    icon: ListTodo,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/producao/planejamento',
-    label: 'Planejamento de produção',
-    icon: CalendarRange,
-    anyOf: ['producao.planejar'],
-  },
-  {
-    href: '/painel/producao',
-    label: 'Quadro de produção',
-    icon: Hammer,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/ajuda',
-    label: 'Pedidos de ajuda',
-    icon: HandHelping,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/reprogramacao',
-    label: 'Reprogramação',
-    icon: GitPullRequestArrow,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/competencias',
-    label: 'Competências da equipe',
-    icon: UserCog,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/producao/modelos',
-    label: 'Modelos de produção',
-    icon: Workflow,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/compras',
-    label: 'Compras',
-    icon: ShoppingCart,
-    anyOf: ['compras.ver', 'compras.gerenciar', 'compras.aprovar'],
-  },
-  {
-    href: '/painel/fornecedores',
-    label: 'Fornecedores',
-    icon: Store,
-    anyOf: ['compras.ver', 'compras.gerenciar'],
-  },
-  { href: '/painel/recebimento-materiais', label: 'Recebimento de materiais', icon: PackagePlus },
-  {
-    href: '/painel/estoque',
-    label: 'Estoque',
-    icon: Boxes,
-    anyOf: ['estoque.ver', 'estoque.gerenciar', 'compras.ver'],
-  },
-  {
-    href: '/painel/prontidao',
-    label: 'Prontidão de materiais',
-    icon: ListChecks,
-    anyOf: ['os.ver', 'estoque.ver', 'compras.ver', 'materiais.ver'],
-  },
-  // Rodada 3 (F10-02): a lista consolidada (bruta) dos materiais aprovados não ficava acessível pelo
-  // menu (só por um link no planejamento).
-  {
-    href: '/painel/materiais',
-    label: 'Materiais aprovados',
-    icon: ClipboardList,
-    anyOf: ['materiais.ver', 'materiais.aprovar', 'compras.ver'],
+    href: '/painel/retrabalhos',
+    label: 'Retrabalhos',
+    icon: RotateCcw,
+    anyOf: ['os.ver', 'os.gerenciar'],
   },
   {
     href: '/painel/qualidade',
@@ -238,33 +189,223 @@ export const NAV: NavItem[] = [
     icon: PackageOpen,
     anyOf: ['entregas.ver', 'entregas.gerenciar'],
   },
+  { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
+  // Oficina sem tablet (2026-11-24): o que está na oficina hoje, por tapeceiro, com o botão da
+  // próxima etapa (feito para o celular).
   {
-    href: '/painel/devolucoes',
-    label: 'Devoluções',
-    icon: Undo2,
-    anyOf: ['devolucoes.gerenciar'],
+    href: '/painel/producao/hoje',
+    label: 'Hoje na oficina',
+    icon: Sun,
+    anyOf: ['os.ver', 'producao.ver', 'producao.planejar'],
+  },
+  // Revisão geral (item 8): a semana da oficina numa entrada só — montar, acompanhar e decidir
+  // as mudanças. "Competências da equipe" segue por link.
+  {
+    href: '/painel/producao/programacao',
+    label: 'Semana da oficina',
+    tabLabel: 'Montar a semana',
+    icon: CalendarRange,
+    anyOf: ['producao.ver', 'producao.planejar'],
   },
   {
-    href: '/painel/financeiro',
-    label: 'Financeiro',
-    icon: Wallet,
-    anyOf: ['financeiro.ver'],
+    href: '/painel/producao',
+    label: 'Quadro de produção',
+    tabLabel: 'Quem está fazendo o quê',
+    icon: Hammer,
+    anyOf: ['producao.ver', 'producao.planejar'],
+    parent: '/painel/producao/programacao',
+  },
+  {
+    href: '/painel/reprogramacao',
+    label: 'Reprogramação',
+    tabLabel: 'Mudanças para decidir',
+    icon: GitPullRequestArrow,
+    anyOf: ['producao.ver', 'producao.planejar'],
+    parent: '/painel/producao/programacao',
+  },
+  // Reformulação, Fase 2: onde cada peça está fisicamente (áreas da oficina).
+  {
+    href: '/painel/producao/mapa',
+    label: 'Mapa da oficina',
+    icon: MapIcon,
+    anyOf: [
+      'os.ver',
+      'producao.ver',
+      'producao.planejar',
+      'qualidade.gerenciar',
+      'entregas.ver',
+      'entregas.gerenciar',
+    ],
+  },
+  // Reformulação, Fase 1: estoque simples da oficina (independente das OS).
+  {
+    href: '/painel/estoque-oficina',
+    label: 'Estoque da oficina',
+    icon: Warehouse,
+    anyOf: ['estoque.ver', 'estoque.gerenciar'],
+  },
+  // Revisão geral (item 3): a equipe numa entrada só (funcionários, presença, produtividade e
+  // o que cada função pode fazer).
+  {
+    href: '/painel/funcionarios',
+    label: 'Equipe',
+    tabLabel: 'Funcionários',
+    icon: Users,
+    anyOf: ['funcionarios.ver'],
   },
   {
     href: '/painel/presenca',
     label: 'Presença da equipe',
+    tabLabel: 'Presença',
     icon: UserCheck,
     anyOf: ['presenca.ver', 'presenca.gerenciar'],
+    parent: '/painel/funcionarios',
   },
-  { href: '/painel/empresa', label: 'Empresa', icon: Building2, anyOf: ['empresa.ver'] },
-  { href: '/painel/auditoria', label: 'Auditoria', icon: ScrollText, anyOf: ['auditoria.ver'] },
+  // 2026-11-18: Produtividade saiu do Financeiro.
+  {
+    href: '/painel/produtividade',
+    label: 'Produtividade',
+    icon: Gauge,
+    anyOf: ['financeiro.ver'],
+    parent: '/painel/funcionarios',
+  },
+  {
+    href: '/painel/funcoes',
+    label: 'Funções e permissões',
+    icon: ShieldCheck,
+    anyOf: ['funcoes.ver'],
+    parent: '/painel/funcionarios',
+  },
+  // Revisão geral (item 3): os ajustes da empresa numa entrada só.
+  {
+    href: '/painel/empresa',
+    label: 'Empresa',
+    tabLabel: 'Dados da empresa',
+    icon: Building2,
+    anyOf: ['empresa.ver'],
+  },
+  {
+    href: '/painel/producao/modelos',
+    // Reformulação, Fase 2: etapas + checklist + materiais padrão num só lugar.
+    label: 'Modelos de serviço',
+    icon: Workflow,
+    anyOf: ['producao.ver', 'producao.planejar', 'qualidade.gerenciar', 'os.gerenciar'],
+    parent: '/painel/empresa',
+  },
+  {
+    href: '/painel/dispositivos',
+    label: 'Tablets e acessos',
+    icon: TabletSmartphone,
+    anyOf: ['dispositivos.ver', 'sessoes.ver'],
+    parent: '/painel/empresa',
+  },
+  // Cobrança: plano, situação e pagamento da assinatura do Cenário Gestão.
+  {
+    href: '/painel/assinatura',
+    label: 'Assinatura',
+    icon: CreditCard,
+    anyOf: ['empresa.ver'],
+    billingOnly: true,
+    parent: '/painel/empresa',
+  },
+  {
+    href: '/painel/auditoria',
+    label: 'Histórico de alterações',
+    tabLabel: 'Histórico',
+    icon: ScrollText,
+    anyOf: ['auditoria.ver'],
+    parent: '/painel/empresa',
+  },
+  // Empresas, cobrança e preços saíram daqui (2026-11-25): painel da plataforma em /plataforma.
+  // Aplicativos com acesso delegado (ex.: Firma Viva): cadastrar, ver e revogar autorizações.
+  {
+    href: '/painel/aplicativos',
+    label: 'Aplicativos conectados',
+    icon: PlugZap,
+    anyOf: ['empresa.configurar', 'sessoes.ver'],
+    // Melhoria 157: tela técnica, só para o suporte da plataforma.
+    platformOnly: true,
+  },
   {
     href: '/painel/sincronizacao',
     label: 'Sincronização',
     icon: RadioTower,
     anyOf: ['sincronizacao.diagnosticar'],
+    platformOnly: true,
   },
 ];
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [];
+
+type Visible = NavItem & { group: NavGroup };
+
+/** Todas as telas que o perfil pode abrir (menu + abas), na ordem do menu. */
+export function visiblePages(
+  perms: ReadonlySet<Permission>,
+  modules: Partial<Record<ModuleKey, boolean>>,
+  platformOwner = false,
+  billingEnabled = true,
+): Visible[] {
+  return NAV.filter((i) => !i.platformOnly || platformOwner)
+    .filter((i) => !i.billingOnly || billingEnabled)
+    .filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
+    .filter((i) => !i.allOf || i.allOf.every((p) => perms.has(p)))
+    .filter((i) => !i.module || modules[i.module])
+    .map((i) => ({ ...i, group: navGroupOf(i.parent ?? i.href) }));
+}
+
+/** Raiz da família de uma tela (ela mesma, se não tiver `parent`). */
+const rootOf = (i: NavItem) => i.parent ?? i.href;
+
+/**
+ * Itens do menu visíveis para um conjunto de permissões e funcionalidades ligadas, na ordem do
+ * menu. Uma entrada por família: com o nome e o ícone da raiz e o endereço da primeira tela da
+ * família que o perfil pode abrir (quem não abre a raiz entra pela aba que pode). `also` lista as
+ * telas da família, para o item ficar marcado em qualquer uma delas.
+ */
+export function visibleNav(
+  perms: ReadonlySet<Permission>,
+  modules: Partial<Record<ModuleKey, boolean>>,
+  platformOwner = false,
+  billingEnabled = true,
+): (Visible & { also: string[] })[] {
+  const pages = visiblePages(perms, modules, platformOwner, billingEnabled);
+  const out: (Visible & { also: string[]; n: number })[] = [];
+  NAV.forEach((root, n) => {
+    if (root.parent || root.hidden) return;
+    const family = pages.filter((p) => rootOf(p) === root.href);
+    if (family.length === 0) return;
+    const entry = family.find((p) => p.href === root.href) ?? family[0]!;
+    out.push({
+      ...entry,
+      label: root.label,
+      icon: root.icon,
+      group: navGroupOf(root.href),
+      also: family.map((p) => p.href),
+      n,
+    });
+  });
+  return out
+    .sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n)
+    .map(({ n: _n, ...i }) => i);
+}
+
+/** Tela atual pelo endereço: a de prefixo mais longo entre as visíveis. */
+export function currentPage<T extends { href: string }>(pathname: string, pages: T[]) {
+  const matches = (href: string) =>
+    href === '/painel' ? pathname === '/painel' : pathname.startsWith(href);
+  return pages.filter((p) => matches(p.href)).sort((a, b) => b.href.length - a.href.length)[0];
+}
+
+/** Abas da família da tela atual (só quando há mais de uma tela visível na família). */
+export function familyTabs(pathname: string, pages: Visible[]) {
+  const cur = currentPage(pathname, pages);
+  if (!cur || cur.hidden) return null;
+  const family = pages.filter((p) => rootOf(p) === rootOf(cur));
+  if (family.length < 2) return null;
+  return {
+    active: cur.href,
+    tabs: family.map((p) => ({ href: p.href, label: p.tabLabel ?? p.label })),
+  };
+}

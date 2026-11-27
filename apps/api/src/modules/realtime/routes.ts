@@ -14,6 +14,7 @@ export async function realtimeRoutes(app: FastifyInstance) {
       const auth = request.auth!;
       hub.attach(socket, {
         sessionId: auth.sessionId,
+        companyId: auth.companyId,
         userId: auth.userId,
         kind: auth.kind,
         deviceId: auth.deviceId,

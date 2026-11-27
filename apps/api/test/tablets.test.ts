@@ -1,6 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabaseWithMaterialsGate,
+} from './helpers';
 import {
   act,
   addOs,
@@ -14,15 +21,6 @@ import {
   uploadPhoto,
   userIdOf,
 } from './production-helpers';
-import {
-  approvedNeeds,
-  confirmedFabricPurchase,
-  createSupplier,
-  linen,
-  ok,
-  receive,
-  staples,
-} from './purchasing-helpers';
 
 /** Fase 6 — interface operacional dos tablets: Meu dia, execução, avisos e materiais por tarefa. */
 let app: App;
@@ -36,7 +34,7 @@ beforeAll(async () => {
 });
 afterAll(() => app.close());
 beforeEach(async () => {
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   (app.ctx.hub as unknown as { feed: { lastSeq: bigint } }).feed.lastSeq = 0n;
 });
 afterEach(async () => {
@@ -242,7 +240,7 @@ describe('Avisos (notificações)', () => {
     const afterPublish = await notices(joao);
     expect(afterPublish.map((n) => n.kind).sort()).toEqual(['TAREFA_ATRIBUIDA', 'TAREFA_LIBERADA']);
     expect(afterPublish.find((n) => n.kind === 'TAREFA_ATRIBUIDA')!.body).toMatch(
-      /2 tarefa\(s\) para você, 1 liberada/,
+      /2 tarefas para você, 1 liberada/,
     );
     const m = await notices(marcio);
     expect(m.filter((n) => n.kind === 'TAREFA_ATRIBUIDA')).toHaveLength(1);
@@ -343,7 +341,7 @@ describe('Avisos (notificações)', () => {
     const added = (await notices(marcio)).slice(before);
     expect(added).toHaveLength(1);
     expect(added[0]).toMatchObject({ kind: 'TAREFA_ATRIBUIDA' });
-    expect(added[0]!.body).toMatch(/incluída na programação da semana: \d+ tarefa\(s\) para você/);
+    expect(added[0]!.body).toMatch(/incluída na programação da semana: \d+ tarefas? para você/);
   });
 
   it('tempo real e reconexão: avisos chegam só ao destinatário e são recuperados', async () => {
@@ -377,87 +375,16 @@ describe('Avisos (notificações)', () => {
   });
 });
 
-describe('Materiais por tarefa', () => {
-  it('corte vinculado ao tecido é liberado; costura sem vínculo e montagem seguem bloqueadas', async () => {
-    const admin = await loginAdmin(app);
-    const { so, reqs } = await approvedNeeds(admin, 'Cliente Materiais', (s) => [
-      linen(s.items[0].id),
-      staples(),
-    ]);
-    const fabric = reqs.find((r) => r.kind === 'TECIDO')!;
-    const other = reqs.find((r) => r.kind !== 'TECIDO')!;
-    const marcio = await userIdOf('Márcio');
-    const joao = await userIdOf('João');
-    const plan = await createPlan(admin);
-    const added = (
-      await addOs(admin, plan.id, { serviceOrderId: so.id, principalUserId: marcio, date: day(-1) })
-    ).body;
-    const t = (a: string) => sofaTask(added, so.items[0].id, a);
-    for (const a of ['DESMONTAGEM', 'PREPARACAO']) await assign(admin, t(a), joao);
-    // Validação: só materiais aprovados desta OS.
-    const foreign = await admin.put(`/api/v1/production-tasks/${t('CORTE_TECIDO').id}/materials`, {
-      requirementIds: ['00000000-0000-4000-8000-000000000000'],
-      version: t('CORTE_TECIDO').version,
-    });
-    expect(foreign.status).toBe(422);
-    const linked = await admin.put(`/api/v1/production-tasks/${t('CORTE_TECIDO').id}/materials`, {
-      requirementIds: [fabric.id],
-      version: t('CORTE_TECIDO').version,
-    });
-    expect(linked.status).toBe(200);
-    const draft = (await admin.get(`/api/v1/production-plans/${plan.id}`)).body;
-    const published = await publish(admin, draft);
-    const p = (a: string) => sofaTask(published, so.items[0].id, a);
-    expect(p('CORTE_TECIDO')).toMatchObject({ status: 'BLOQUEADA', blockers: ['MATERIAIS'] });
-
-    // Chega só o tecido: o corte (vinculado) libera; a costura (sem vínculo) espera a OS inteira.
-    const supplier = await createSupplier(admin, 'Fornecedor Materiais');
-    const po = await confirmedFabricPurchase(admin, supplier.id, fabric);
-    await receive(admin, po.id, [ok(po.items[0].id, 12)]);
-    const get = async (a: string) => (await admin.get(`/api/v1/production-tasks/${p(a).id}`)).body;
-    expect((await get('CORTE_TECIDO')).status).toBe('LIBERADA');
-    expect((await get('CORTE_TECIDO')).taskMaterials).toBe('DISPONIVEIS');
-    expect((await get('COSTURA')).blockers).toContain('MATERIAIS');
-    expect((await get('DESMONTAGEM')).status).toBe('LIBERADA');
-    expect(
-      (await db().serviceOrder.findUniqueOrThrow({ where: { id: so.id } })).materialsReadiness,
-    ).not.toBe('COMPLETO');
-
-    // Vincular a montagem a um material faltante não a libera (nunca começa sem material).
-    const montagem = await get('MONTAGEM');
-    await admin.put(`/api/v1/production-tasks/${montagem.id}/materials`, {
-      requirementIds: [other.id],
-      reason: 'Montagem usa os grampos',
-      version: montagem.version,
-    });
-    const m2 = await get('MONTAGEM');
-    expect(m2.blockers).toContain('MATERIAIS');
-    expect(m2.taskMaterials).toBe('FALTANDO');
-    // O tablet do Márcio inicia o corte; o servidor confere os materiais vinculados no início.
-    const tMarcio = await tabletOf(app, admin, 'Márcio', '736152');
-    expect((await act(tMarcio, p('CORTE_TECIDO').id, 'start')).body.status).toBe('EM_EXECUCAO');
-    expect((await act(tMarcio, montagem.id, 'start')).status).toBe(422);
-  });
-});
-
 describe('Permissões e concorrência', () => {
   it('tablet não altera tarefas de outra pessoa nem planeja; leituras simultâneas não duplicam', async () => {
     const { tJoao, tMarcio, doPublish } = await scenario('complete');
     const t = await doPublish();
     const corte = t('CORTE_TECIDO');
-    // João não age na tarefa do Márcio, nem vincula materiais, nem altera.
+    // João não age na tarefa do Márcio, nem altera.
     for (const a of ['start', 'pause', 'resume', 'progress', 'complete'])
       expect(
         (await act(tJoao, corte.id, a, { note: 'x y', reason: 'FIM_EXPEDIENTE' })).status,
       ).toBe(403);
-    expect(
-      (
-        await tJoao.put(`/api/v1/production-tasks/${corte.id}/materials`, {
-          requirementIds: [],
-          version: corte.version,
-        })
-      ).status,
-    ).toBe(403);
     expect((await tJoao.get(`/api/v1/production-tasks/${corte.id}`)).status).toBe(403);
     // Duas marcações "todas lidas" simultâneas: contagem consistente.
     const [a, b] = await Promise.all([

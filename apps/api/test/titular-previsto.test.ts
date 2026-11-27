@@ -2,15 +2,20 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
+import {
+  createCustomer,
+  createOrder,
+  generateOsFromOrder,
+  panelUserWith,
+} from './commercial-helpers';
 import { day, userIdOf } from './production-helpers';
 
 /**
  * Estabilização da Simplificação, Fase 2 — o fechamento do serviço registra o tapeceiro titular e
  * a mão de obra PREVISTA de cada peça (Fase 1 §4.3 opção B). Rastreio:
  * tela → contrato (`newServiceSchema`) → API (`POST /services`) → persistência
- * (`commercial_order_items.planned_*`) → OS gerada na chegada (titular + mão de obra combinada,
- * valor por unidade × quantidade que chegou) → planejamento (titular da peça) → financeiro
+ * (`commercial_order_items.planned_*`) → OS gerada no fechamento (titular + mão de obra combinada,
+ * valor por unidade × quantidade) → planejamento (titular da peça) → financeiro
  * (obrigação PREVISTO; nada pago, nada duplicado).
  */
 let app: App;
@@ -27,37 +32,42 @@ const put = (c: Client, path: string, body: unknown) =>
 
 type Intent = { plannedUpholstererUserId?: string | null; plannedLaborUnitCents?: number | null };
 
-async function closeService(c: Client, sofa: Intent, poltronas: Intent) {
-  return post(c, '/api/v1/services', {
-    customer: {
-      mode: 'NOVO',
-      kind: 'PF',
-      name: 'Cliente Titular Previsto',
-      phone: null,
-      allowSimilar: true,
+async function closeService(c: Client, sofa: Intent, poltronas: Intent, key = idemKey()) {
+  return post(
+    c,
+    '/api/v1/services',
+    {
+      customer: {
+        mode: 'NOVO',
+        kind: 'PF',
+        name: 'Cliente Titular Previsto',
+        phone: null,
+        allowSimilar: true,
+      },
+      service: {
+        contractedService: 'Reforma completa',
+        promisedDate: day(30),
+        items: [
+          {
+            pieceType: 'SOFA',
+            description: 'Sofá 3 lugares',
+            quantity: 1,
+            serviceType: 'REFORMA_COMPLETA',
+            ...sofa,
+          },
+          {
+            pieceType: 'POLTRONA',
+            description: 'Poltronas',
+            quantity: 2,
+            serviceType: 'TROCA_DE_TECIDO',
+            ...poltronas,
+          },
+        ],
+      },
+      pickup: null,
     },
-    service: {
-      contractedService: 'Reforma completa',
-      promisedDate: day(30),
-      items: [
-        {
-          pieceType: 'SOFA',
-          description: 'Sofá 3 lugares',
-          quantity: 1,
-          serviceType: 'REFORMA_COMPLETA',
-          ...sofa,
-        },
-        {
-          pieceType: 'POLTRONA',
-          description: 'Poltronas',
-          quantity: 2,
-          serviceType: 'TROCA_DE_TECIDO',
-          ...poltronas,
-        },
-      ],
-    },
-    pickup: null,
-  });
+    key,
+  );
 }
 
 const orderOf = async (c: Client, id: string) => {
@@ -74,8 +84,6 @@ const orderOf = async (c: Client, id: string) => {
     }[];
   };
 };
-const receive = (c: Client, orderId: string, lines: { orderItemId: string; quantity: number }[]) =>
-  post(c, '/api/v1/receipts', receiptBody(orderId, lines));
 const osItems = (orderId: string) =>
   db().serviceOrderItem.findMany({
     where: { serviceOrder: { orderId } },
@@ -111,9 +119,10 @@ describe('A. Fechamento: persistência e validação', () => {
       [{ userId: ricardo, displayName: 'Ricardo' }, 30000],
       [{ userId: marcio, displayName: 'Márcio' }, 15000],
     ]);
-    // Previsto ≠ pago: nenhuma obrigação, OS ou pagamento antes da chegada.
-    expect(await db().productionPayable.count()).toBe(0);
+    // Fluxo da OS (2026-11-18): o fechamento não gera OS nem obrigação; o previsto fica no
+    // pedido e preenche a OS quando ela for gerada.
     expect(await db().serviceOrder.count()).toBe(0);
+    expect(await db().productionPayable.count()).toBe(0);
     const log = await db().auditLog.findFirstOrThrow({
       where: { action: 'order.created', entityId: r.body.order.id },
     });
@@ -207,163 +216,54 @@ describe('A. Fechamento: persistência e validação', () => {
   });
 });
 
-describe('B. Chegada: a OS nasce com o titular e a mão de obra prevista', () => {
-  it('chegadas parciais somam o previsto (unidade × quantidade); repetição e concorrência não duplicam', async () => {
+describe('B. A OS gerada no pedido vem com o titular e a mão de obra prevista', () => {
+  it('OS com todas as peças; previsto = unidade × quantidade; repetição do fechamento não duplica', async () => {
     const admin = await loginAdmin(app);
     const ricardo = await userIdOf('Ricardo');
     const marcio = await userIdOf('Márcio');
-    const r = await closeService(
-      admin,
+    const key = idemKey();
+    const intent = [
       { plannedUpholstererUserId: ricardo, plannedLaborUnitCents: 30000 },
       { plannedUpholstererUserId: marcio, plannedLaborUnitCents: 15000 },
-    );
+    ] as const;
+    const r = await closeService(admin, intent[0], intent[1], key);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body).not.toHaveProperty('serviceOrder');
+    // Mesma chave: mesmo resultado, nada em dobro.
+    expect((await closeService(admin, intent[0], intent[1], key)).body).toEqual(r.body);
     const orderId = r.body.order.id as string;
-    const [sofa, poltronas] = (await orderOf(admin, orderId)).items;
-    // 1ª chegada: o sofá e UMA poltrona (mesma chave repetida → mesmo resultado).
-    const key = idemKey();
-    const body = receiptBody(orderId, [
-      { orderItemId: sofa!.id, quantity: 1 },
-      { orderItemId: poltronas!.id, quantity: 1 },
-    ]);
-    const first = await post(admin, '/api/v1/receipts', body, key);
-    expect(first.status, JSON.stringify(first.body)).toBe(201);
-    expect((await post(admin, '/api/v1/receipts', body, key)).body).toEqual(first.body);
-    let items = await osItems(orderId);
+    expect(await db().serviceOrder.count({ where: { orderId } })).toBe(0);
+    await generateOsFromOrder(admin, orderId);
+    expect(await db().serviceOrder.count({ where: { orderId } })).toBe(1);
+    const items = await osItems(orderId);
     expect(items.map((i) => [i.description, i.quantity, i.upholstererUserId])).toEqual([
       ['Sofá 3 lugares', 1, ricardo],
-      ['Poltronas', 1, marcio],
+      ['Poltronas', 2, marcio],
     ]);
-    let rows = await payables(orderId);
+    const rows = await payables(orderId);
     expect(rows.map((p) => [p.serviceOrderItemId, p.professionalUserId, p.agreedCents])).toEqual([
       [items[0]!.id, ricardo, 30000],
-      [items[1]!.id, marcio, 15000],
+      [items[1]!.id, marcio, 30000],
     ]);
     // Previsto, não pago.
     expect(rows.every((p) => p.status === 'PREVISTO' && p.paidCents === 0)).toBe(true);
-    expect(rows[1]!.notes).toBe('Prevista no fechamento: 1 × 150,00 por unidade.');
     // O planejamento vê a peça com o titular (nenhuma escolha manual necessária).
     const owners = await db().serviceOrderItemOwnerChange.count({
       where: { serviceOrderItemId: { in: items.map((i) => i.id) } },
     });
     expect(owners).toBe(2);
-
-    // 2ª poltrona chega: nova OS só com ela; total das poltronas = 2 × 15000.
-    const second = await receive(admin, orderId, [{ orderItemId: poltronas!.id, quantity: 1 }]);
-    expect(second.status, JSON.stringify(second.body)).toBe(201);
-    items = await osItems(orderId);
-    expect(items).toHaveLength(3);
-    expect(items[2]).toMatchObject({
-      description: 'Poltronas',
-      quantity: 1,
-      upholstererUserId: marcio,
-    });
-    rows = await payables(orderId);
-    expect(rows).toHaveLength(3);
-    expect(
-      rows.filter((p) => p.professionalUserId === marcio).reduce((a, p) => a + p.agreedCents, 0),
-    ).toBe(30000);
-    // Nada sobra para receber: outra chegada é recusada e não cria obrigação.
-    const extra = await receive(admin, orderId, [{ orderItemId: poltronas!.id, quantity: 1 }]);
-    expect(extra.status).toBe(409);
-    expect(extra.body.error.message).toBe('"Poltronas" já foi totalmente recebida.');
-    expect(await db().productionPayable.count()).toBe(3);
-  });
-
-  it('duas chegadas simultâneas: uma OS e uma obrigação por chegada, sem duplicar', async () => {
-    const admin = await loginAdmin(app);
-    const marcio = await userIdOf('Márcio');
-    const r = await closeService(
-      admin,
-      {},
-      { plannedUpholstererUserId: marcio, plannedLaborUnitCents: 15000 },
-    );
-    const orderId = r.body.order.id as string;
-    const poltronas = (await orderOf(admin, orderId)).items[1]!;
-    const [a, b] = await Promise.all([
-      receive(admin, orderId, [{ orderItemId: poltronas.id, quantity: 1 }]),
-      receive(admin, orderId, [{ orderItemId: poltronas.id, quantity: 1 }]),
-    ]);
-    expect([a.status, b.status]).toEqual([201, 201]);
-    const rows = await payables(orderId);
-    expect(rows.map((p) => p.agreedCents)).toEqual([15000, 15000]);
-    expect(new Set(rows.map((p) => p.serviceOrderItemId)).size).toBe(2);
-    // O sofá, sem intenção, segue o fluxo anterior quando chegar.
-  });
-
-  it('titular indisponível na chegada: a OS nasce sem titular e sem mão de obra, com aviso — a chegada não é bloqueada', async () => {
-    const admin = await loginAdmin(app);
-    const ricardo = await userIdOf('Ricardo');
-    const r = await closeService(
-      admin,
-      { plannedUpholstererUserId: ricardo, plannedLaborUnitCents: 30000 },
-      {},
-    );
-    const orderId = r.body.order.id as string;
-    const sofa = (await orderOf(admin, orderId)).items[0]!;
-    await db().employee.updateMany({ where: { userId: ricardo }, data: { active: false } });
-    const got = await receive(admin, orderId, [{ orderItemId: sofa.id, quantity: 1 }]);
-    expect(got.status, JSON.stringify(got.body)).toBe(201);
-    const [item] = await osItems(orderId);
-    expect(item!.upholstererUserId).toBeNull();
-    expect(item!.serviceOrder.notes).toContain(
-      '"Sofá 3 lugares": titular previsto (Ricardo) indisponível na chegada — defina o titular no planejamento.',
-    );
-    expect(await payables(orderId)).toEqual([]);
-    const log = await db().auditLog.findFirstOrThrow({
-      where: { action: 'service_order.planned_intent_not_applied' },
-    });
-    expect(log.entityId).toBe(item!.serviceOrder.id);
-    // A intenção continua no pedido (para o gestor decidir); nada é inventado.
-    expect((await orderOf(admin, orderId)).items[0]!.plannedUpholsterer?.userId).toBe(ricardo);
-  });
-
-  it('titular deixou de ser tapeceiro principal: titular aplicado, mão de obra não lançada (com aviso)', async () => {
-    const admin = await loginAdmin(app);
-    const ricardo = await userIdOf('Ricardo');
-    const r = await closeService(
-      admin,
-      { plannedUpholstererUserId: ricardo, plannedLaborUnitCents: 30000 },
-      {},
-    );
-    const orderId = r.body.order.id as string;
-    const sofa = (await orderOf(admin, orderId)).items[0]!;
-    // Ricardo passa para a função de cabeceiras (produção ativa) com corte e costura.
-    const roles = await db().role.findMany({
-      where: { key: { in: ['tapeceiro', 'cabeceiras_qualidade'] } },
-    });
-    const roleId = (k: string) => roles.find((x) => x.key === k)!.id;
-    await db().userRole.delete({
-      where: { userId_roleId: { userId: ricardo, roleId: roleId('tapeceiro') } },
-    });
-    await db().userRole.create({
-      data: { userId: ricardo, roleId: roleId('cabeceiras_qualidade') },
-    });
-    const emp = await db().employee.findFirstOrThrow({ where: { userId: ricardo } });
-    await db().employeeSkill.upsert({
-      where: { employeeId_skill: { employeeId: emp.id, skill: 'CORTE_COSTURA' } },
-      create: { employeeId: emp.id, skill: 'CORTE_COSTURA' },
-      update: {},
-    });
-
-    const got = await receive(admin, orderId, [{ orderItemId: sofa.id, quantity: 1 }]);
-    expect(got.status, JSON.stringify(got.body)).toBe(201);
-    const [item] = await osItems(orderId);
-    expect(item!.upholstererUserId).toBe(ricardo);
-    expect(item!.serviceOrder.notes).toContain('mão de obra prevista não lançada');
-    expect(await payables(orderId)).toEqual([]);
   });
 
   it('legado / sem intenção: OS sem titular e sem mão de obra, como antes', async () => {
     const admin = await loginAdmin(app);
     const r = await closeService(admin, {}, {});
     const orderId = r.body.order.id as string;
+    await generateOsFromOrder(admin, orderId);
     const order = await orderOf(admin, orderId);
     expect(
       order.items.every((i) => !i.plannedUpholsterer && i.plannedLaborUnitCents === null),
     ).toBe(true);
-    const got = await receive(admin, orderId, [{ orderItemId: order.items[0]!.id, quantity: 1 }]);
-    expect(got.status).toBe(201);
-    expect((await osItems(orderId)).map((i) => i.upholstererUserId)).toEqual([null]);
+    expect((await osItems(orderId)).map((i) => i.upholstererUserId)).toEqual([null, null]);
     expect(await payables(orderId)).toEqual([]);
     // Pedido antigo (cadastro manual, sem OS automática): DTO compatível, sem intenção.
     const customer = await createCustomer(admin, { name: 'Cliente Antigo', allowSimilar: true });
@@ -375,7 +275,7 @@ describe('B. Chegada: a OS nasce com o titular e a mão de obra prevista', () =>
   });
 });
 
-describe('C. Alteração posterior (antes da chegada) — vale só para as OS futuras', () => {
+describe('C. Alteração posterior ao fechamento — vale só para as OS futuras', () => {
   it('troca titular e valor com versão; OS e obrigação já geradas não mudam', async () => {
     const admin = await loginAdmin(app);
     const ricardo = await userIdOf('Ricardo');
@@ -386,13 +286,9 @@ describe('C. Alteração posterior (antes da chegada) — vale só para as OS fu
       { plannedUpholstererUserId: ricardo, plannedLaborUnitCents: 15000 },
     );
     const orderId = r.body.order.id as string;
-    let order = await orderOf(admin, orderId);
+    await generateOsFromOrder(admin, orderId);
+    const order = await orderOf(admin, orderId);
     const poltronas = order.items[1]!;
-    // 1 poltrona chega com Ricardo.
-    expect(
-      (await receive(admin, orderId, [{ orderItemId: poltronas.id, quantity: 1 }])).status,
-    ).toBe(201);
-    order = await orderOf(admin, orderId);
     const path = `/api/v1/orders/${orderId}/planned-intent`;
     const change = {
       version: order.version,
@@ -413,16 +309,10 @@ describe('C. Alteração posterior (antes da chegada) — vale só para as OS fu
     // Versão antiga: recusada.
     const stale = await put(admin, path, change);
     expect(stale.status).toBe(409);
-    // A 2ª poltrona chega com Márcio/17000; a 1ª continua com Ricardo/15000.
-    expect(
-      (await receive(admin, orderId, [{ orderItemId: poltronas.id, quantity: 1 }])).status,
-    ).toBe(201);
+    // A OS (já gerada) e a obrigação continuam com Ricardo/15000 por unidade.
     const rows = await payables(orderId);
-    expect(rows.map((p) => [p.professionalUserId, p.agreedCents])).toEqual([
-      [ricardo, 15000],
-      [marcio, 17000],
-    ]);
-    expect((await osItems(orderId)).map((i) => i.upholstererUserId)).toEqual([ricardo, marcio]);
+    expect(rows.map((p) => [p.professionalUserId, p.agreedCents])).toEqual([[ricardo, 30000]]);
+    expect((await osItems(orderId)).map((i) => i.upholstererUserId)).toEqual([null, ricardo]);
     const log = await db().auditLog.findFirstOrThrow({
       where: { action: 'order.planned_intent_updated', entityId: orderId },
     });

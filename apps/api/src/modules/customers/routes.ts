@@ -22,7 +22,9 @@ import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
+import { serviceStates } from '../commercial/status';
 import { Errors } from '../../lib/errors';
+import { loadOperationalStates } from '../service-orders/operational';
 import { idParams } from '../presenters';
 import {
   CUSTOMER_AUDIENCE,
@@ -43,7 +45,7 @@ const VIEW = { session: 'WEB', permissions: ['clientes.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['clientes.gerenciar'] } as const;
 const AUDIENCE = CUSTOMER_AUDIENCE;
 
-const addressParams = z.object({ id: z.string().uuid(), addressId: z.string().uuid() });
+const addressParams = z.object({ id: z.guid(), addressId: z.guid() });
 
 function toAddressDto(a: CustomerAddress): CustomerAddressDto {
   return { id: a.id, isPrimary: a.isPrimary, ...snapshotAddress(a) };
@@ -51,6 +53,7 @@ function toAddressDto(a: CustomerAddress): CustomerAddressDto {
 
 type CustomerFull = Customer & {
   addresses: CustomerAddress[];
+  referredBy: { id: string; name: string } | null;
   _count: { orders: number; serviceOrders: number };
 };
 
@@ -60,6 +63,7 @@ const fullInclude = {
     orderBy: [{ isPrimary: 'desc' as const }, { createdAt: 'asc' as const }],
   },
   _count: { select: { orders: true, serviceOrders: true } },
+  referredBy: { select: { id: true, name: true } },
 } satisfies Prisma.CustomerInclude;
 
 function toDto(c: CustomerFull): CustomerDto {
@@ -70,6 +74,9 @@ function toDto(c: CustomerFull): CustomerDto {
     whatsapp: c.whatsapp,
     email: c.email,
     notes: c.notes,
+    birthDay: c.birthDay,
+    birthMonth: c.birthMonth,
+    referredBy: c.referredBy,
     active: c.active,
     addresses: c.addresses.map(toAddressDto),
     orderCount: c._count.orders,
@@ -193,6 +200,11 @@ export async function customerRoutes(app: FastifyInstance) {
         take: 50,
       }),
     ]);
+    // Fase 3: o mesmo estado geral da lista e do cabeçalho da OS.
+    const states = await loadOperationalStates(
+      prisma,
+      serviceOrders.map((x) => x.id),
+    );
     return {
       orders: orders.map((o) => ({
         id: o.id,
@@ -210,6 +222,7 @@ export async function customerRoutes(app: FastifyInstance) {
         priority: s.priority,
         pieceCount: s.items.reduce((a, i) => a + i.quantity, 0),
         createdAt: s.createdAt.toISOString(),
+        operationalState: states.get(s.id)?.state ?? null,
       })),
       changes: changes.map((c) => ({
         id: c.id,
@@ -256,6 +269,10 @@ export async function customerRoutes(app: FastifyInstance) {
         if (!rows.length) throw Errors.notFound('Cliente');
         const before = await tx.customer.findUniqueOrThrow({ where: { id } });
         if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (input.referredById === id)
+          throw Errors.validation(undefined, 'O cliente não pode ter indicado a si mesmo.');
+        if (input.referredById && !(await tx.customer.count({ where: { id: input.referredById } })))
+          throw Errors.validation(undefined, 'Quem indicou não está no cadastro de clientes.');
         const dup = await findDuplicates(tx, input, id);
         // Só alerta sobre semelhança se o dado relevante mudou.
         const changedContact =
@@ -277,6 +294,10 @@ export async function customerRoutes(app: FastifyInstance) {
             whatsapp: input.whatsapp ?? null,
             email: input.email ?? null,
             notes: input.notes ?? null,
+            // Só muda o que veio (telas antigas não mandam e não apagam).
+            birthDay: input.birthDay,
+            birthMonth: input.birthMonth,
+            referredById: input.referredById,
             searchText: searchTextFor(input),
             version: { increment: 1 },
           },
@@ -328,6 +349,27 @@ export async function customerRoutes(app: FastifyInstance) {
       const before = await tx.customer.findUnique({ where: { id } });
       if (!before) throw Errors.notFound('Cliente');
       if (before.version !== input.version) throw Errors.versionConflict(before.version);
+      // 2026-11-26: cliente com serviço em andamento não vai para a lixeira (o pedido, a agenda
+      // e a OS dele continuariam valendo sem o cliente na lista).
+      if (!input.active) {
+        const orders = await tx.commercialOrder.findMany({
+          where: { customerId: id, status: { not: 'CANCELADO' } },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            items: { select: { receivedQuantity: true, returnedQuantity: true } },
+          },
+        });
+        const states = await serviceStates(tx, orders);
+        const open = orders.filter((o) => states.get(o.id)?.serviceState === 'EM_ANDAMENTO');
+        if (open.length)
+          throw Errors.business(
+            `${before.name} tem serviço em andamento (${open
+              .map((o) => orderCode(o.number))
+              .join(', ')}). Termine ou cancele o pedido antes de excluir o cliente.`,
+          );
+      }
       const after = await tx.customer.update({
         where: { id, version: input.version },
         data: { active: input.active, version: { increment: 1 } },

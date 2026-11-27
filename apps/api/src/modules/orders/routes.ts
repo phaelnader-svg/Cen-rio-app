@@ -1,8 +1,10 @@
 import {
   EVENT_TYPES,
+  reworkCode,
   itemValuesProblem,
   anyPermissionAudience,
   cancelOrderSchema,
+  markOrderArrivedSchema,
   createOrderSchema,
   orderPlannedIntentSchema,
   orderQuerySchema,
@@ -49,21 +51,19 @@ import { syncTripCost } from '../finance/trip-costs';
 import { assertIntentEligible, canPlanLabor, canPlanUpholsterer } from './planned-intent';
 import { createOrder } from './service';
 import { orderDeadlines, serviceDeadlines } from '../deadlines/service';
-import { changeServiceOrderPromisedDate } from '../service-orders/routes';
-import { cancelForecastsOfOrder, removeForecastsOfItems } from '../purchasing/forecasts';
+import { cancelServiceOrder, changeServiceOrderPromisedDate } from '../service-orders/routes';
 import { cancelOrderFinance, lockOrderReceivables, recordAgreedValue } from '../finance/revenue';
 import { resolvePickupAssignment } from '../notifications/notify';
+import { PICKUP_ARRIVAL_PENDING, receivePickupAtWorkshop } from '../pickups/arrival';
+import { emitPickupEvent } from '../pickups/routes';
+import { announcePickupChange } from '../pickups/service';
 
 const PROMISED_ACTION = 'order.promised_date_changed';
 const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem prazo');
 
 const VIEW = { session: 'WEB', permissions: ['pedidos.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['pedidos.gerenciar'] } as const;
-export const ORDER_AUDIENCE = anyPermissionAudience(
-  'pedidos.ver',
-  'recebimentos.registrar',
-  'os.gerenciar',
-);
+export const ORDER_AUDIENCE = anyPermissionAudience('pedidos.ver', 'os.gerenciar');
 
 type OrderFull = CommercialOrder & {
   customer: Customer;
@@ -86,6 +86,7 @@ function toSummary(
     items: Pick<CommercialOrderItem, 'quantity' | 'receivedQuantity' | 'returnedQuantity'>[];
   },
   state: { returnedPieces: number; serviceState: OrderSummaryDto['serviceState'] },
+  flow: Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework' | 'onSite'>,
 ): OrderSummaryDto {
   return {
     id: o.id,
@@ -100,7 +101,55 @@ function toSummary(
     returnedPieces: state.returnedPieces,
     serviceState: state.serviceState,
     createdAt: o.createdAt.toISOString(),
+    serviceOrderCount: flow.serviceOrderCount,
+    nextPickup: flow.nextPickup,
+    onSite: flow.onSite,
+    rework: flow.rework ?? null,
+    version: o.version,
   };
+}
+
+/** Fluxo da OS (2026-11-18): OS ativas e próxima retirada de cada pedido. */
+async function orderFlow(db: PrismaClient | Tx, ids: string[]) {
+  const [sos, pickups, reworks, onSite] = await Promise.all([
+    db.serviceOrder.groupBy({
+      by: ['orderId'],
+      where: { orderId: { in: ids }, status: { not: 'CANCELADA' } },
+      _count: { _all: true },
+    }),
+    db.pickupRequest.findMany({
+      where: { orderId: { in: ids }, status: { in: PICKUP_ARRIVAL_PENDING } },
+      select: { orderId: true, scheduledDate: true, windowStart: true, kind: true },
+      orderBy: [{ scheduledDate: 'asc' }, { number: 'asc' }],
+    }),
+    db.rework.findMany({
+      where: { orderId: { in: ids } },
+      select: { id: true, number: true, orderId: true },
+    }),
+    db.pickupRequest.findMany({
+      where: { orderId: { in: ids }, kind: 'NO_LOCAL', status: { not: 'CANCELADA' } },
+      select: { orderId: true },
+      distinct: ['orderId'],
+    }),
+  ]);
+  const out = new Map<
+    string,
+    Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework' | 'onSite'>
+  >();
+  for (const id of ids) {
+    const p = pickups.find((x) => x.orderId === id);
+    out.set(id, {
+      serviceOrderCount: sos.find((x) => x.orderId === id)?._count._all ?? 0,
+      nextPickup: p
+        ? { scheduledDate: dateOnly(p.scheduledDate), windowStart: p.windowStart, kind: p.kind }
+        : null,
+      onSite: onSite.some((x) => x.orderId === id),
+      rework: ((r) => (r ? { id: r.id, code: reworkCode(r.number) } : null))(
+        reworks.find((x) => x.orderId === id),
+      ),
+    });
+  }
+  return out;
 }
 
 export async function loadOrderDto(
@@ -117,7 +166,11 @@ export async function loadOrderDto(
   const valuesVisible = can(request, 'pedidos.valores');
   const plannedLaborVisible = can(request, 'financeiro.ver');
   return {
-    ...toSummary(o, (await serviceStates(db, [o])).get(o.id)!),
+    ...toSummary(
+      o,
+      (await serviceStates(db, [o])).get(o.id)!,
+      (await orderFlow(db, [o.id])).get(o.id)!,
+    ),
     pickupAddressId: o.pickupAddressId,
     pickupAddress: asSnapshot(o.pickupAddressSnapshot),
     description: o.description,
@@ -134,6 +187,7 @@ export async function loadOrderDto(
       notes: i.notes,
       receivedQuantity: i.receivedQuantity,
       inActivePickups: alloc.inPickups(i.id),
+      inOnSiteVisits: alloc.inOnSiteVisits(i.id),
       inServiceOrders: alloc.inServiceOrders(i.id),
       returnedQuantity: i.returnedQuantity,
       plannedUpholsterer:
@@ -206,6 +260,14 @@ export async function orderRoutes(app: FastifyInstance) {
     const where: Prisma.CommercialOrderWhereInput = {
       ...(q.status ? { status: q.status } : {}),
       ...(q.customerId ? { customerId: q.customerId } : {}),
+      ...(q.stage === 'SEM_OS'
+        ? {
+            status: q.status ?? { not: 'CANCELADO' },
+            serviceOrders: { none: { status: { not: 'CANCELADA' } } },
+          }
+        : q.stage === 'COM_OS'
+          ? { serviceOrders: { some: { status: { not: 'CANCELADA' } } } }
+          : {}),
       ...(q.q
         ? {
             OR: [
@@ -230,8 +292,12 @@ export async function orderRoutes(app: FastifyInstance) {
       }),
     ]);
     const states = await serviceStates(prisma, rows);
+    const flows = await orderFlow(
+      prisma,
+      rows.map((r) => r.id),
+    );
     return {
-      items: rows.map((r) => toSummary(r, states.get(r.id)!)),
+      items: rows.map((r) => toSummary(r, states.get(r.id)!, flows.get(r.id)!)),
       total,
     } satisfies PageDto<OrderSummaryDto>;
   });
@@ -415,13 +481,6 @@ export async function orderRoutes(app: FastifyInstance) {
           );
         }
       }
-      // Etapa 3 (AB-7): previsão virgem sai junto com a peça; com qualquer vínculo, recusa.
-      await removeForecastsOfItems(
-        tx,
-        actorFrom(request),
-        id,
-        before.items.filter((i) => !keepIds.has(i.id)),
-      );
       await tx.commercialOrderItem.deleteMany({
         where: { orderId: id, id: { notIn: [...keepIds] } },
       });
@@ -578,7 +637,12 @@ export async function orderRoutes(app: FastifyInstance) {
           throw Errors.business('O prazo informado é igual ao atual.');
         await tx.commercialOrder.update({
           where: { id, version: input.version },
-          data: { promisedDate: parseDateOnly(input.promisedDate), version: { increment: 1 } },
+          // Data escolhida à mão: deixa de acompanhar o dia da retirada (prazo em dias úteis).
+          data: {
+            promisedDate: parseDateOnly(input.promisedDate),
+            deliveryBusinessDays: null,
+            version: { increment: 1 },
+          },
         });
         const code = orderCode(before.number);
         const applied: string[] = [];
@@ -622,6 +686,72 @@ export async function orderRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * "Peça chegou": marca como na tapeçaria todas as peças do pedido que ainda não chegaram —
+   * as que estavam numa retirada (que passa a "Recebida na oficina") e as que o cliente trouxe.
+   * Depois disso o pedido oferece "Gerar OS".
+   */
+  app.post(
+    '/api/v1/orders/:id/arrived',
+    { config: { access: MANAGE, idempotent: true } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = markOrderArrivedSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        if (!(await lockOrder(tx, id))) throw Errors.notFound('Pedido');
+        await lockOrderItems(tx, id);
+        const before = await tx.commercialOrder.findUniqueOrThrow({
+          where: { id },
+          include: { items: true },
+        });
+        if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (before.status === 'CANCELADO')
+          throw Errors.business('Pedido cancelado não pode ser alterado.');
+        // Fluxo da OS (2026-11-18): a peça que estava numa retirada também chega por aqui.
+        const pickups = await tx.pickupRequest.findMany({
+          where: { orderId: id, status: { in: PICKUP_ARRIVAL_PENDING } },
+          select: { id: true },
+          orderBy: { number: 'asc' },
+        });
+        const receivedPickups: string[] = [];
+        for (const p of pickups)
+          if (await receivePickupAtWorkshop(tx, actor, p.id, 'peça chegou, marcado no pedido'))
+            receivedPickups.push(p.id);
+        const items = receivedPickups.length
+          ? await tx.commercialOrderItem.findMany({ where: { orderId: id } })
+          : before.items;
+        const alloc = await itemAllocations(tx, id);
+        const marked: { orderItemId: string; from: number; to: number }[] = [];
+        for (const i of items) {
+          const to = Math.max(i.receivedQuantity, i.quantity - alloc.inPickups(i.id));
+          if (to === i.receivedQuantity) continue;
+          await tx.commercialOrderItem.update({
+            where: { id: i.id },
+            data: { receivedQuantity: to },
+          });
+          marked.push({ orderItemId: i.id, from: i.receivedQuantity, to });
+        }
+        if (!marked.length && !receivedPickups.length)
+          throw Errors.business('Não há peças a marcar: todas já chegaram na tapeçaria.');
+        await tx.commercialOrder.update({
+          where: { id },
+          data: { version: { increment: 1 } },
+        });
+        await refreshOrderStatus(tx, id);
+        await audit(tx, actor, {
+          action: 'order.pieces_arrived',
+          entityType: 'commercial_order',
+          entityId: id,
+          summary: `Pedido ${orderCode(before.number)}: peças marcadas como na tapeçaria.`,
+          changes: { items: marked, pickups: receivedPickups },
+        });
+        await emitOrderEvent(tx, request, id);
+      });
+      return loadOrderDto(prisma, request, id);
+    },
+  );
+
   app.post(
     '/api/v1/orders/:id/cancel',
     { config: { access: { session: 'WEB', permissions: ['pedidos.cancelar'] } } },
@@ -642,6 +772,13 @@ export async function orderRoutes(app: FastifyInstance) {
           );
         }
         const actor = actorFrom(request);
+        // A OS nasce no fechamento do serviço: cancelar o pedido cancela as OS ativas dele.
+        const activeOs = await tx.serviceOrder.findMany({
+          where: { orderId: id, status: 'ABERTA' },
+          select: { id: true },
+        });
+        for (const so of activeOs)
+          await cancelServiceOrder(tx, actor, so.id, `Pedido cancelado: ${input.reason}`);
         // Cobrança (AM-11): cobranças sem recebimento canceladas; com valor líquido recebido,
         // decisão explícita (reter e/ou reembolsar) na mesma transação — antes de cancelar.
         const finance = await cancelOrderFinance(tx, actor, id, input.reason, input.finance);
@@ -655,9 +792,6 @@ export async function orderRoutes(app: FastifyInstance) {
             version: { increment: 1 },
           },
         });
-        // Etapa 3: previsões de compra (pré-OS) deixam de gerar compra; compras e recebidos
-        // existentes permanecem (sem destino / candidato a sobra).
-        const cancelledForecasts = await cancelForecastsOfOrder(tx, actor, id, input.reason);
         // Retiradas ainda ativas são canceladas junto, com registro na linha do tempo.
         const pickups = await tx.pickupRequest.findMany({
           where: { orderId: id, status: { in: [...ACTIVE_PICKUP_STATUSES] } },
@@ -680,6 +814,34 @@ export async function orderRoutes(app: FastifyInstance) {
           });
           await syncTripCost(tx, actor, { pickupId: p.id }, `pedido cancelado: ${input.reason}`);
           await resolvePickupAssignment(tx, actor, p.id);
+          // 2026-11-26: agenda e celular abertos se atualizam; o responsável é avisado.
+          await emitPickupEvent(tx, actor, p.id, EVENT_TYPES.PICKUP_STATUS_CHANGED);
+          await announcePickupChange(tx, actor, p.id, 'CANCELADA', input.reason);
+        }
+        // 2026-11-26: o orçamento que virou este pedido fica solto (volta a "Enviado") e pode
+        // virar serviço de novo ou ser recusado; o histórico guarda o pedido cancelado.
+        const quotes = await tx.quote.findMany({
+          where: { orderId: id },
+          select: { id: true, number: true },
+        });
+        for (const q of quotes) {
+          await tx.quote.update({
+            where: { id: q.id },
+            data: {
+              orderId: null,
+              status: 'ENVIADO',
+              statusChangedAt: new Date(),
+              approvedAt: null,
+              approvedVia: null,
+              version: { increment: 1 },
+            },
+          });
+          await audit(tx, actor, {
+            action: 'quotes.released',
+            entityType: 'quote',
+            entityId: q.id,
+            summary: `Orçamento nº ${q.number} voltou para "Enviado": o pedido ${orderCode(before.number)} foi cancelado.`,
+          });
         }
         await audit(tx, actor, {
           action: 'order.cancelled',
@@ -689,7 +851,7 @@ export async function orderRoutes(app: FastifyInstance) {
           changes: {
             reason: input.reason,
             cancelledPickups: pickups.length,
-            cancelledForecasts: cancelledForecasts.length,
+            cancelledServiceOrders: activeOs.length,
             receivedCents: finance.receivedCents,
             retainedCents: finance.retainedCents,
           },

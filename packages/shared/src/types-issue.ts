@@ -7,7 +7,7 @@ import type {
   IssueKind,
   IssueStatus,
 } from './issue-domain';
-import type { MaterialUnit } from './measurements-domain';
+import type { MaterialUnit } from './materials-domain';
 import type { TaskStatus } from './production-domain';
 
 export interface IssueTaskRefDto {
@@ -42,8 +42,6 @@ export interface IssueDto {
   serviceOrder: { id: string; code: string; promisedDate: string | null };
   reporter: { userId: string; displayName: string };
   material: {
-    requirementId: string | null;
-    stockItemId: string | null;
     description: string;
     quantity: number;
     unit: MaterialUnit;

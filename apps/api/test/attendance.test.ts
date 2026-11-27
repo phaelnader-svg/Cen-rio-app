@@ -12,6 +12,7 @@ import {
   idemKey,
   loginAdmin,
   resetDatabase,
+  naEmpresa1,
 } from './helpers';
 import { panelUserWith } from './commercial-helpers';
 import {
@@ -203,10 +204,10 @@ describe('Ausência presumida e impacto na produção', () => {
     });
 
     setClock('09:29');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(0);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(0);
     setClock('09:30');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(1);
-    expect(await detectAbsences(app.ctx.prisma)).toBe(0); // idempotente
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(1);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(0); // idempotente
 
     const joao = await teamDay(admin, 'João');
     expect(joao).toMatchObject({
@@ -335,7 +336,7 @@ describe('Ausência presumida e impacto na produção', () => {
       ).status,
     ).toBe(200);
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(0);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(0);
     expect((await teamDay(admin, 'Márcio')).availability).toBe('AUSENTE');
     // Atestado guarda só o fato informado (nenhum campo médico existe no registro).
     const atestado = await db().operationalAttendance.findFirstOrThrow({
@@ -414,7 +415,7 @@ describe('Ausência presumida e impacto na produção', () => {
     // Ausência confirmada de quem não chegou; funcionário é avisado.
     const joao = await employeeByName('João');
     setClock('09:40');
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     const confirmed = await action(admin, {
       employeeId: joao.id,
       action: 'CONFIRMAR_AUSENCIA',
@@ -631,7 +632,7 @@ describe('Permissões, configuração, tempo real e reconexão', () => {
     const lastSeq = ev.event.seq as string;
     await wGestor.close(); // painel perde a conexão
     setClock('09:30');
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     const back = track(await WsClient.connect(app, admin, lastSeq));
     await back.waitFor((m) => m.kind === 'replay.done');
     // Ricardo, Márcio e Thiago não confirmaram: três eventos recuperados na reconexão.

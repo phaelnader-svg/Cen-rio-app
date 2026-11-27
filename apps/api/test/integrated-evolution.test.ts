@@ -4,7 +4,7 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import type { Client } from './helpers';
 import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, markArrived } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { act, addOs, createPlan, publish, tabletOf, today, userIdOf } from './production-helpers';
 import { allowAll } from './labor-helpers';
@@ -116,17 +116,14 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
     ]);
     expect(
       (
-        await post(
-          admin,
-          '/api/v1/receipts',
-          receiptBody(
-            order.id,
-            order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-          ),
+        await markArrived(
+          order.id,
+          order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
         )
       ).status,
     ).toBe(201);
     const r = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: order.id,
       items: order.items.map((i: { id: string }, k: number) => ({
         orderItemId: i.id,
@@ -205,16 +202,23 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
     laborB = await lab('Márcio', B, 80000);
   });
 
-  it('2. João: desmontagem e preparação; titular: toda a tapeçaria da peça; Thiago inspeciona (sem autoinspeção)', async () => {
+  it('2. preparação livre (fica com o João); titular: toda a tapeçaria da peça; Thiago inspeciona (sem autoinspeção)', async () => {
     const TAP = ['CORTE_TECIDO', 'COSTURA', 'MONTAGEM', 'ACABAMENTO'];
     for (const a of TAP) {
       expect(of(A, a).assignee!.userId).toBe(ids['Ricardo']);
       expect(of(B, a).assignee!.userId).toBe(ids['Márcio']);
     }
+    // Preparação nasce livre (2026-11-19): ninguém escolhido.
     for (const a of ['DESMONTAGEM', 'PREPARACAO']) {
-      expect(of(A, a).assignee!.userId).toBe(ids['João']);
-      expect(of(B, a).assignee!.userId).toBe(ids['João']);
+      expect(of(A, a).assignee).toBeNull();
+      expect(of(B, a).assignee).toBeNull();
     }
+    // Daqui em diante o roteiro exercita a fila de quem já pegou a preparação: fica com o João.
+    await db().productionTask.updateMany({
+      where: { planId: plan.id, stepClass: 'PREPARACAO' },
+      data: { assigneeUserId: ids['João'] },
+    });
+    plan = await planOf(plan.id);
     const d = (await admin.get(`/api/v1/production-plans/${plan.id}/distribution`)).body as {
       pieces: { upholsterer: { userId: string } | null; inspector: { userId: string } | null }[];
       pendencyCount: number;
@@ -388,12 +392,7 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
       reason: 'Tecido do cliente já na oficina',
     });
     expect((await act(m, corteB.id, 'start')).status).toBe(200);
-    // Ajuda (cenário 6): o Márcio pede apoio; ele continua o responsável principal da etapa.
-    const help = await post(m, '/api/v1/help-requests', { taskId: corteB.id, kind: 'PARAFUSAR' });
-    expect(help.status, JSON.stringify(help.body)).toBe(201);
     expect((await taskRow(corteB.id)).assigneeUserId).toBe(ids['Márcio']);
-    const support = await db().productionTask.findMany({ where: { supportForTaskId: corteB.id } });
-    expect(support.every((t) => t.assigneeUserId !== ids['Márcio'])).toBe(true);
     const url = `/api/v1/service-order-items/${B}/upholsterer`;
     const body = {
       userId: ids['Ricardo'],

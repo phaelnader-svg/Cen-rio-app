@@ -19,7 +19,8 @@ export const PRODUCTION_ACTIVITIES = [
   'ACABAMENTO',
   'APOIO',
   'OUTRA',
-  // Fase 10 — correção após reprovação e embalagem após aprovação (ligadas à inspeção).
+  // Fase 10 — correção após reprovação (ligada à inspeção). EMBALAGEM: só histórico (Reformulação
+  // S1) — nenhuma tarefa de embalagem nasce mais; as antigas continuam legíveis.
   'CORRECAO',
   'EMBALAGEM',
 ] as const;
@@ -41,8 +42,8 @@ export const PRODUCTION_ACTIVITY_LABEL: Record<ProductionActivity, string> = {
   EMBALAGEM: 'Embalagem',
 };
 /**
- * Atividades que o gestor programa em modelos e tarefas manuais. Correção e embalagem só nascem
- * do fluxo de qualidade (ligadas à inspeção), nunca avulsas.
+ * Atividades que o gestor programa em modelos e tarefas manuais. Correção só nasce do fluxo de
+ * qualidade (ligada à inspeção), nunca avulsa; embalagem não existe mais (S1).
  */
 export const PLANNABLE_ACTIVITIES = [
   'DESMONTAGEM',
@@ -171,6 +172,8 @@ export const NOTIFICATION_KINDS = [
   'ENTREGA_ATRIBUIDA',
   'ENTREGA_CONCLUIDA',
   'OCORRENCIA_LOGISTICA',
+  // 2026-11-26: retirada / serviço no local cancelado (aviso ao responsável e a quem ia junto).
+  'RETIRADA_CANCELADA',
   // Fase 12 — devoluções e compras
   'REVISAO_DEVOLUCAO',
   'SALDO_COMPRA_ENCERRADO',
@@ -180,6 +183,29 @@ export const NOTIFICATION_KINDS = [
   // Simplificação Fase 7: expediente sem saída e pedidos com aprovação do gestor.
   'EXPEDIENTE_ABERTO',
   'PEDIDO_DECIDIDO',
+  // Reformulação, Fase 4: alertas internos (nunca saem do sistema).
+  'PRAZO_EM_RISCO',
+  'PECA_PRONTA_SEM_ENTREGA',
+  'MATERIAL_FALTANTE',
+  // Melhorias da segunda rodada (2026-11-17): respostas do cliente pelos links públicos.
+  'ORCAMENTO_APROVADO',
+  'RETIRADA_ESCOLHIDA_CLIENTE',
+  // 2026-11-18: prazo de entrega a uma semana e contas a pagar vencendo/vencidas.
+  'PRAZO_PROXIMO',
+  'CONTA_A_VENCER',
+  'CONTA_VENCIDA',
+  // 2026-11-24: oficina sem tablet — serviço começado sem movimento há dias.
+  'SERVICO_PARADO',
+  // 2026-11-25: agentes do escritório trabalhando sozinhos (pedidos de aprovação e resumo do dia).
+  'AGENTES_PEDEM',
+  'AGENTES_RESUMO',
+  'AGENTES_SEMANA',
+  'MATERIAL_ACABANDO',
+  'AGENTES_IMPOSTO',
+  'AGENTES_CONTADOR',
+  // Etapa 3 da lista de 53 (2026-11-27): nota baixa do cliente e chuva no dia de entrega.
+  'AVALIACAO_BAIXA',
+  'CHUVA_AMANHA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -232,12 +258,30 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   ENTREGA_ATRIBUIDA: 'Entrega ou retirada atribuída',
   ENTREGA_CONCLUIDA: 'Entrega concluída',
   OCORRENCIA_LOGISTICA: 'Ocorrência logística',
+  RETIRADA_CANCELADA: 'Retirada cancelada',
   REVISAO_DEVOLUCAO: 'Devolução: revisar reservas ou valores',
   SALDO_COMPRA_ENCERRADO: 'Saldo de compra encerrado',
   VALOR_SOLICITADO: 'Pedido de alteração de valor',
   VALOR_DECIDIDO: 'Pedido de alteração de valor decidido',
   EXPEDIENTE_ABERTO: 'Expediente sem saída registrada',
   PEDIDO_DECIDIDO: 'Seu pedido foi decidido pelo gestor',
+  PRAZO_EM_RISCO: 'Prazo em risco',
+  PECA_PRONTA_SEM_ENTREGA: 'Peça pronta sem entrega',
+  MATERIAL_FALTANTE: 'Material faltando para a produção',
+  ORCAMENTO_APROVADO: 'Orçamento aprovado pelo cliente',
+  RETIRADA_ESCOLHIDA_CLIENTE: 'Cliente escolheu o dia da retirada',
+  PRAZO_PROXIMO: 'Prazo de entrega chegando',
+  CONTA_A_VENCER: 'Conta a pagar vencendo',
+  CONTA_VENCIDA: 'Conta a pagar em atraso',
+  SERVICO_PARADO: 'Serviço parado',
+  AGENTES_PEDEM: 'Os agentes pedem sua aprovação',
+  AGENTES_RESUMO: 'Resumo do escritório',
+  AGENTES_SEMANA: 'Relatório da semana',
+  MATERIAL_ACABANDO: 'Material acabando',
+  AGENTES_IMPOSTO: 'Imposto do mês',
+  AGENTES_CONTADOR: 'Pacote do contador',
+  AVALIACAO_BAIXA: 'Cliente deu nota baixa',
+  CHUVA_AMANHA: 'Chuva no dia de entrega',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;
@@ -254,11 +298,9 @@ export const TASK_ROLE_LABEL: Record<TaskRole, string> = {
 
 export const RELEASE_BLOCKERS = [
   'OS_INATIVA',
-  'PECA_NAO_RECEBIDA',
   'NAO_PUBLICADA',
   'SEM_RESPONSAVEL',
   'DEPENDENCIAS',
-  'MATERIAIS',
   'BLOQUEIO',
   'OCORRENCIA',
 ] as const;
@@ -273,14 +315,10 @@ export const onlyReassignableBlockers = (blockers: readonly string[]) =>
   blockers.every((b) => (REASSIGNABLE_WAITING_BLOCKERS as readonly string[]).includes(b));
 /**
  * Rodada 3 (F10-09/F10-21l): o que é BLOQUEIO DE PRODUÇÃO (exceção para o gestor): bloqueada pelo
- * gestor, sem material ou por ocorrência. Esperar a etapa anterior, a publicação, o responsável
- * ou a chegada da peça é a sequência normal do plano (cada uma tem a sua tela).
+ * gestor ou por ocorrência. Esperar a etapa anterior, a publicação ou o responsável é a
+ * sequência normal do plano (cada uma tem a sua tela). Material e chegada da peça nunca bloqueiam.
  */
-export const PRODUCTION_STOP_BLOCKERS: readonly ReleaseBlocker[] = [
-  'BLOQUEIO',
-  'MATERIAIS',
-  'OCORRENCIA',
-];
+export const PRODUCTION_STOP_BLOCKERS: readonly ReleaseBlocker[] = ['BLOQUEIO', 'OCORRENCIA'];
 export const isProductionStopped = (blockers: readonly string[]) =>
   blockers.some((b) => (PRODUCTION_STOP_BLOCKERS as readonly string[]).includes(b));
 
@@ -299,24 +337,18 @@ export const PLAN_MODE_LABEL: Record<PlanMode, string> = {
 
 export const RELEASE_BLOCKER_LABEL: Record<ReleaseBlocker, string> = {
   OS_INATIVA: 'A OS não está ativa',
-  PECA_NAO_RECEBIDA: 'Peça ainda não recebida na oficina',
   NAO_PUBLICADA: 'Programação ainda não publicada',
   SEM_RESPONSAVEL: 'Sem responsável designado',
   DEPENDENCIAS: 'Aguardando etapas anteriores',
-  MATERIAIS: 'Materiais não disponíveis/reservados',
   BLOQUEIO: 'Bloqueada pelo gestor',
   OCORRENCIA: 'Ocorrência aberta impede a tarefa',
 };
 
 export interface ReleaseInput {
   osActive: boolean;
-  pieceReceived: boolean;
   published: boolean;
   assigned: boolean;
   dependenciesDone: boolean;
-  /** Só conta quando a tarefa exige materiais. */
-  materialsReady: boolean;
-  requiresMaterials: boolean;
   manuallyBlocked: boolean;
   /** Fase 9: ocorrência aberta que impede a tarefa. */
   openIssue?: boolean;
@@ -342,11 +374,9 @@ export function evaluateRelease(i: ReleaseInput): {
 } {
   const blockers: ReleaseBlocker[] = [];
   if (!i.osActive) blockers.push('OS_INATIVA');
-  if (!i.pieceReceived) blockers.push('PECA_NAO_RECEBIDA');
   if (!i.published) blockers.push('NAO_PUBLICADA');
   if (!i.assigned) blockers.push('SEM_RESPONSAVEL');
   if (!i.dependenciesDone) blockers.push('DEPENDENCIAS');
-  if (i.requiresMaterials && !i.materialsReady) blockers.push('MATERIAIS');
   if (i.manuallyBlocked) blockers.push('BLOQUEIO');
   if (i.openIssue) blockers.push('OCORRENCIA');
   if (blockers.length) return { status: 'BLOQUEADA', blockers };

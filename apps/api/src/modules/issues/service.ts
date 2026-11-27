@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   ISSUE_IMPACT_LABEL,
@@ -36,7 +37,6 @@ import {
   taskEvent,
 } from '../production/common';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
-import { activeHeadOf, onReadinessChanged, readinessOf } from '../purchasing/common';
 import {
   OPEN_STATUSES,
   impactOf,
@@ -47,6 +47,7 @@ import {
   notifyIssueManagers,
   type IssueRow,
 } from './common';
+import { requireCompanyId } from '../../core/tenant';
 
 const WAITING = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA'];
 const DONE = ['CONCLUIDA', 'CANCELADA', 'RASCUNHO'];
@@ -163,7 +164,7 @@ export async function proposeBlock(tx: Tx, actor: ActorContext, issue: IssueRow)
     impact.deadlineRisk || impact.people.length > 0 || isImportantPriority(task.priority);
   if (!relevant) return null;
   const cfg = await attendanceConfig(tx);
-  const settings = await tx.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await tx.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const nextDay = nextWorkingDay(
     cfg.today,
     settings?.workingDays ?? [1, 2, 3, 4, 5],
@@ -194,7 +195,7 @@ export async function proposeBlock(tx: Tx, actor: ActorContext, issue: IssueRow)
   if (reschedule.length) {
     alternatives.push({
       id: 'ADIAR',
-      title: `Reprogramar ${reschedule.length} tarefa(s) para ${br(nextDay)} às ${cfg.workdayStart}`,
+      title: `Reprogramar ${plural(reschedule.length, 'tarefa', 'tarefas')} para ${br(nextDay)} às ${cfg.workdayStart}`,
       actions: reschedule.map((r) => ({
         type: 'RESCHEDULE' as const,
         taskId: r.id,
@@ -220,7 +221,7 @@ export async function proposeBlock(tx: Tx, actor: ActorContext, issue: IssueRow)
         0,
         500,
       ),
-    problem: `${impact.task.code} está impedida${impact.dependents.length ? ` e ${impact.dependents.length} tarefa(s) dependem dela` : ''}${impact.deadlineRisk ? ' — prazo em risco' : ''}.`,
+    problem: `${impact.task.code} está impedida${impact.dependents.length ? ` e ${plural(impact.dependents.length, 'tarefa', 'tarefas')} dependem dela` : ''}${impact.deadlineRisk ? ' — prazo em risco' : ''}.`,
     affectedTaskIds: [issue.taskId, ...impact.dependents.map((d) => d.id)],
     alternatives,
     proposedAlternativeId: recommended.id,
@@ -243,7 +244,7 @@ onTaskBlocked(async (tx, actor, blocked) => {
   });
   if (pending) return;
   const cfg = await attendanceConfig(tx);
-  const settings = await tx.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await tx.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const nextDay = nextWorkingDay(
     cfg.today,
     settings?.workingDays ?? [1, 2, 3, 4, 5],
@@ -275,7 +276,7 @@ onTaskBlocked(async (tx, actor, blocked) => {
           toTime: cfg.workdayStart,
         })),
         impacts: [
-          `${impact.task.code} e ${waitingDeps.length} dependente(s) vão para ${br(nextDay)}.`,
+          `${impact.task.code} e ${plural(waitingDeps.length, 'dependente', 'dependentes')} vão para ${br(nextDay)}.`,
         ],
         critical: true,
         recommended: true,
@@ -327,39 +328,17 @@ export async function openIssue(
   const kind = input.kind as IssueKind;
   const impact: IssueImpact =
     kind === 'OUTRO' ? (input.canContinue ? 'DIFICULDADE' : 'IMPEDIDO') : input.impact!;
-  // Material: da OS (necessidade aprovada), do estoque ou descrito.
+  // Material: descrito por quem relata.
   let material: {
-    requirementId: string | null;
-    stockItemId: string | null;
     description: string;
     quantity: number;
     unit: string;
   } | null = null;
   if (kind === 'MATERIAL' && input.material) {
     const m = input.material;
-    let description = m.description ?? '';
-    let requirementId = m.requirementId ?? null;
-    if (m.requirementId) {
-      const req = await tx.materialRequirement.findUnique({ where: { id: m.requirementId } });
-      if (!req || req.serviceOrderId !== task.serviceOrderId)
-        throw Errors.business('O material escolhido não pertence a esta OS.');
-      // Etapa 2: tela antiga pode citar a necessidade já substituída — vale a atual da cadeia.
-      const head = await activeHeadOf(tx, req.id);
-      if (!head)
-        throw Errors.conflict(
-          'Este material foi cancelado na OS. Atualize a tela e descreva o problema novamente.',
-        );
-      requirementId = head.id;
-      description = description || head.description;
-    }
-    if (m.stockItemId) {
-      const item = await tx.stockItem.findUnique({ where: { id: m.stockItemId } });
-      if (!item?.active) throw Errors.business('Material de estoque inexistente ou inativo.');
-      description = description || item.description;
-    }
+    const description = m.description ?? '';
+    // Compras e estoque formal saíram do sistema: o material da ocorrência é só descrito.
     material = {
-      requirementId,
-      stockItemId: m.stockItemId ?? null,
       description: description.slice(0, 200),
       quantity: q3(m.quantity),
       unit: m.unit,
@@ -376,16 +355,10 @@ export async function openIssue(
       taskId: task.id,
       kind,
       status: { in: OPEN_STATUSES },
-      ...(material?.requirementId ? { materialRequirementId: material.requirementId } : {}),
       ...(kind !== 'MATERIAL' ? { reporterUserId: userId } : {}),
     },
   });
-  if (
-    dup &&
-    (kind !== 'MATERIAL' ||
-      material?.requirementId ||
-      dup.materialDescription === material?.description)
-  )
+  if (dup && (kind !== 'MATERIAL' || dup.materialDescription === material?.description))
     throw Errors.conflict(
       `Já existe uma ocorrência aberta para esta tarefa (${issueCode(dup.number)}).`,
       { issueId: dup.id },
@@ -401,8 +374,6 @@ export async function openIssue(
       serviceOrderId: task.serviceOrderId,
       reporterUserId: userId,
       reporterDeviceId: deviceId,
-      materialRequirementId: material?.requirementId ?? null,
-      stockItemId: material?.stockItemId ?? null,
       materialDescription: material?.description ?? null,
       materialQuantity: material ? new Prisma.Decimal(material.quantity) : null,
       materialUnit: (material?.unit as never) ?? null,
@@ -818,33 +789,6 @@ export async function recordAction(tx: Tx, actor: ActorContext, id: string, note
 
 // ─────────────────────────── Verificação e encerramento ───────────────────────────
 
-/** A causa material foi eliminada? (necessidade da OS coberta ou reserva ativa no estoque). */
-async function materialStillMissing(tx: Tx, issue: IssueRow): Promise<string | null> {
-  if (issue.kind !== 'MATERIAL') return null;
-  if (issue.materialRequirementId) {
-    // Etapa 2: segue a cadeia até a necessidade ATIVA; cancelada → a causa deixou de existir.
-    const head = await activeHeadOf(tx, issue.materialRequirementId);
-    const r = head ? await readinessOf(tx, issue.serviceOrderId) : null;
-    const line = r?.lines.find((l) => l.requirementId === head!.id);
-    if (line && q3(line.covered) < q3(line.need))
-      return `${line.description}: ${line.covered} de ${line.need} disponível/reservado para a OS.`;
-  }
-  if (issue.stockItemId) {
-    const reserved = await tx.stockReservation.aggregate({
-      where: {
-        stockItemId: issue.stockItemId,
-        serviceOrderId: issue.serviceOrderId,
-        status: 'ATIVA',
-      },
-      _sum: { quantity: true },
-    });
-    const qty = Number(reserved._sum.quantity ?? 0);
-    if (qty < Number(issue.materialQuantity ?? 0))
-      return `${issue.materialDescription}: ${qty} reservado(s) para a OS, faltam ${Number(issue.materialQuantity) - qty}.`;
-  }
-  return null;
-}
-
 export async function verifyIssue(
   tx: Tx,
   actor: ActorContext,
@@ -886,9 +830,6 @@ export async function verifyIssue(
       ]);
     return u;
   }
-  const missing = await materialStillMissing(tx, issue);
-  if (missing)
-    throw Errors.business(`O material ainda não está disponível e reservado: ${missing}`);
   const u = await tx.productionIssue.update({
     where: { id: issue.id },
     data: {
@@ -1142,34 +1083,3 @@ export async function processIssueRisks(prisma: PrismaClient, now = clock()) {
   await prisma.$transaction((tx) => revalidateBlockProposals(tx, SYSTEM));
   return alerted;
 }
-
-/**
- * Material ficou disponível/reservado para a OS: ocorrências de falta desse material (sem
- * ação em andamento) vão para verificação do gestor — não se encerram sozinhas.
- */
-onReadinessChanged(async (tx, actor, serviceOrderId) => {
-  const open = await tx.productionIssue.findMany({
-    where: {
-      serviceOrderId,
-      kind: 'MATERIAL',
-      status: { in: ['ABERTA', 'ATRIBUIDA'] },
-      OR: [{ materialRequirementId: { not: null } }, { stockItemId: { not: null } }],
-    },
-  });
-  for (const i of open) {
-    const locked = await lockIssue(tx, i.id);
-    if (!['ABERTA', 'ATRIBUIDA'].includes(locked.status)) continue;
-    if (await materialStillMissing(tx, locked)) continue;
-    if (locked.actionTaskId) {
-      const t = await tx.productionTask.findUnique({ where: { id: locked.actionTaskId } });
-      if (t && !DONE.includes(t.status)) continue;
-    }
-    await toVerification(
-      tx,
-      actor,
-      locked,
-      `Material disponível e reservado para a OS (${locked.materialDescription}).`,
-      'MATERIAL_DISPONIVEL',
-    );
-  }
-});

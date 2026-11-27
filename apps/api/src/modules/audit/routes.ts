@@ -1,4 +1,4 @@
-import type { AuditLogDto } from '@cenario/shared';
+import { HIGHLIGHTED_AUDIT_ACTIONS, type AuditLogDto } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -11,7 +11,9 @@ const querySchema = z.object({
     .optional(),
   entityType: z.string().max(60).optional(),
   /** Fase 10: histórico de UMA entidade (ex.: a OS, o pedido, a entrega). */
-  entityId: z.string().uuid().optional(),
+  entityId: z.guid().optional(),
+  /** Reformulação Fase 3: só as exceções destacadas (ex.: autoaprovação do gestor). */
+  highlighted: z.enum(['1']).optional(),
 });
 
 export async function auditRoutes(app: FastifyInstance) {
@@ -27,6 +29,7 @@ export async function auditRoutes(app: FastifyInstance) {
         where: {
           ...(q.entityType ? { entityType: q.entityType } : {}),
           ...(q.entityId ? { entityId: q.entityId } : {}),
+          ...(q.highlighted ? { action: { in: [...HIGHLIGHTED_AUDIT_ACTIONS] } } : {}),
           // Fase 10: valores e motivos financeiros só para quem vê o financeiro (uma função com
           // auditoria e sem financeiro não lê o que o Financeiro esconde dela).
           ...(request.auth!.permissions.has('financeiro.ver')
