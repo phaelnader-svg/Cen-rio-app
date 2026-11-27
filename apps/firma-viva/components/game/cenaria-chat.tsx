@@ -3,13 +3,35 @@
  * "Falar com a Firma": caixa principal de conversa com o jogo, em qualquer ambiente e modo.
  * Envia a frase ao servidor (que interpreta, valida e resolve) e entrega o EFEITO ao mapa.
  * Consultas abrem na hora; prévias e confirmações aparecem como cartões aqui mesmo.
+ *
+ * Item 37 (lista de 53): falar com o Gerente por voz, com o mesmo microfone de segurar do app do
+ * dono. Segurou e soltou, envia; um toque rápido deixa ouvindo até tocar de novo. O áudio vai ao
+ * Cenário (voz do Google) e volta só o texto; sem a voz no servidor, usa a voz do navegador.
  */
+
+/** Reconhecimento de voz do navegador (Chrome/Edge/Safari), plano B sem a voz no servidor. */
+interface Recognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+const recognitionCtor = (): (new () => Recognition) | null => {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as Record<string, unknown>;
+  return ((w.SpeechRecognition ?? w.webkitSpeechRecognition) as new () => Recognition) ?? null;
+};
 import type { CommandEffect, CommandResultDto } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ChevronDown, ChevronUp, MessageCircle, Send } from 'lucide-react';
+import { ChevronDown, ChevronUp, MessageCircle, Mic, Send } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, newIdempotencyKey } from '@/lib/api';
+import { type Recording, canRecord, startRecording } from '@/lib/voice-recorder';
 
 type Entry =
   | { who: 'eu'; text: string }
@@ -38,6 +60,22 @@ export function CenariaChat({
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<Entry[]>([]);
   const end = useRef<HTMLDivElement>(null);
+  // ── Voz (item 37) ──
+  const serverVoice = useQuery({
+    queryKey: ['game-voice'],
+    queryFn: () => api<{ available: boolean }>('/api/v1/office/voice'),
+    staleTime: 600_000,
+    retry: false,
+  });
+  const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [holdMode, setHoldMode] = useState<'hold' | 'tap' | null>(null);
+  const [voiceTip, setVoiceTip] = useState<string | null>(null);
+  const recording = useRef<Recording | null>(null);
+  const rec = useRef<Recognition | null>(null);
+  const pressedAt = useRef(0);
+  const stopTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const voiceAvailable = (serverVoice.data?.available && canRecord()) || Boolean(recognitionCtor());
   useEffect(() => {
     void end.current?.scrollIntoView({ block: 'end' });
   }, [log.length, card]);
@@ -67,6 +105,106 @@ export function CenariaChat({
     } finally {
       setBusy(false);
     }
+  };
+
+  const stopServer = async () => {
+    const r = recording.current;
+    recording.current = null;
+    clearTimeout(stopTimer.current);
+    setListening(false);
+    setHoldMode(null);
+    if (!r) return;
+    setTranscribing(true);
+    try {
+      const audio = await r.stop();
+      if (!audio) return;
+      const { text: heard } = await api<{ text: string }>('/api/v1/office/voice', {
+        method: 'POST',
+        body: { audio },
+        idempotencyKey: newIdempotencyKey(),
+      });
+      if (heard.trim()) void send(heard);
+      else setVoiceTip('Não deu para ouvir. Segure o microfone, fale e solte.');
+    } catch (e) {
+      setVoiceTip(e instanceof ApiError ? e.message : 'Não deu para entender o áudio agora.');
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
+  const startTalking = async () => {
+    setVoiceTip(null);
+    setOpen(true);
+    if (serverVoice.data?.available && canRecord()) {
+      try {
+        setListening(true);
+        recording.current = await startRecording();
+        // Até 55 s por vez (o Google transcreve até 60 s de uma vez).
+        stopTimer.current = setTimeout(() => void stopServer(), 55_000);
+      } catch {
+        recording.current = null;
+        setListening(false);
+        setHoldMode(null);
+        setVoiceTip('O microfone está bloqueado. Libere o microfone para este site no navegador.');
+      }
+      return;
+    }
+    const Ctor = recognitionCtor();
+    if (!Ctor) {
+      setVoiceTip('Este navegador não ouve a voz. Escreva a pergunta.');
+      return;
+    }
+    const r = new Ctor();
+    r.lang = 'pt-BR';
+    r.interimResults = true;
+    r.continuous = true;
+    let heard = '';
+    r.onresult = (e) => {
+      heard = Array.from(e.results)
+        .map((x) => x[0]?.transcript ?? '')
+        .join(' ');
+      setText(heard);
+    };
+    r.onerror = (e) => {
+      if (e?.error === 'not-allowed')
+        setVoiceTip('O microfone está bloqueado. Libere o microfone para este site no navegador.');
+    };
+    r.onend = () => {
+      setListening(false);
+      setHoldMode(null);
+      rec.current = null;
+      if (heard.trim()) void send(heard);
+    };
+    rec.current = r;
+    setListening(true);
+    try {
+      r.start();
+    } catch {
+      setListening(false);
+    }
+  };
+  const stopTalking = () => {
+    if (recording.current) void stopServer();
+    else rec.current?.stop();
+  };
+  const onMicDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    if (busy || transcribing) return;
+    if (listening) {
+      stopTalking();
+      return;
+    }
+    pressedAt.current = Date.now();
+    setHoldMode('hold');
+    void startTalking();
+  };
+  // Segurou (mais de meio segundo) e soltou: envia. Só tocou: continua ouvindo até tocar de novo.
+  const onMicUp = () => {
+    if (!pressedAt.current) return;
+    const held = Date.now() - pressedAt.current >= 500;
+    pressedAt.current = 0;
+    if (held) stopTalking();
+    else setHoldMode('tap');
   };
 
   return (
@@ -167,6 +305,29 @@ export function CenariaChat({
           ))}
         </div>
       ) : null}
+      {listening || transcribing || voiceTip ? (
+        <p
+          role="status"
+          data-testid="gerente-voice-status"
+          className={clsx(
+            'mx-2 mt-1.5 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium',
+            voiceTip && !listening && !transcribing
+              ? 'bg-brand-50 text-brand-800'
+              : 'bg-danger-50 text-danger-600',
+          )}
+        >
+          {listening && !transcribing ? (
+            <span className="size-2 animate-pulse rounded-full bg-danger-600" aria-hidden />
+          ) : null}
+          {transcribing
+            ? 'Entendendo o que você falou…'
+            : listening
+              ? holdMode === 'tap'
+                ? 'Ouvindo… toque no microfone para enviar'
+                : 'Ouvindo… solte para enviar'
+              : voiceTip}
+        </p>
+      ) : null}
       <form
         className="flex gap-1.5 p-2"
         onSubmit={(e) => {
@@ -176,21 +337,63 @@ export function CenariaChat({
       >
         <input
           className={clsx('flex-1 rounded-xl border border-line-strong bg-white px-3 py-2 text-sm')}
-          placeholder="Ex.: Cadê o sofá da Ana?"
+          placeholder={
+            transcribing
+              ? 'Entendendo…'
+              : voiceAvailable
+                ? 'Pergunte ou segure o microfone'
+                : 'Ex.: Cadê o sofá da Ana?'
+          }
           value={text}
           onChange={(e) => setText(e.target.value)}
           onFocus={() => setOpen(true)}
           aria-label="Falar com o Gerente"
           data-testid="cenaria-input"
         />
-        <button
-          type="submit"
-          className="rounded-xl bg-brand-600 px-3 text-white disabled:opacity-50"
-          disabled={busy || !text.trim()}
-          aria-label="Enviar"
-        >
-          <Send className="size-4" />
-        </button>
+        {voiceAvailable && (!text.trim() || listening) ? (
+          <button
+            type="button"
+            onPointerDown={onMicDown}
+            onPointerUp={onMicUp}
+            onPointerCancel={onMicUp}
+            onPointerLeave={(e) => {
+              if (e.buttons) onMicUp();
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              if (listening) stopTalking();
+              else {
+                setHoldMode('tap');
+                void startTalking();
+              }
+            }}
+            disabled={transcribing || busy}
+            aria-label={listening ? 'Parar e enviar' : 'Segure para falar com o Gerente'}
+            aria-pressed={listening}
+            title="Segure para falar"
+            data-testid="gerente-mic"
+            style={{ WebkitTouchCallout: 'none', touchAction: 'none' }}
+            className={clsx(
+              'grid shrink-0 place-items-center rounded-xl px-3 transition select-none',
+              listening
+                ? 'animate-pulse bg-danger-600 text-white'
+                : 'bg-brand-600 text-white disabled:opacity-50',
+            )}
+          >
+            <Mic className="size-4" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="rounded-xl bg-brand-600 px-3 text-white disabled:opacity-50"
+            disabled={busy || !text.trim()}
+            aria-label="Enviar"
+          >
+            <Send className="size-4" />
+          </button>
+        )}
       </form>
     </section>
   );

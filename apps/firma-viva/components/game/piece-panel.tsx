@@ -22,7 +22,14 @@ import { ExternalLink, MapPin } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
-import { type GamePerson, useOsMaterials, usePhotos, useServiceOrder } from './game-api';
+import {
+  type GamePerson,
+  type PiecePhoto,
+  useOsMaterials,
+  usePhotos,
+  usePiecePhotos,
+  useServiceOrder,
+} from './game-api';
 import {
   GBtn,
   KV,
@@ -91,8 +98,13 @@ export function PiecePanel({
 }) {
   const so = useServiceOrder(piece.serviceOrderId);
   const materials = useOsMaterials(piece.serviceOrderId);
-  const photosOs = usePhotos('SERVICE_ORDER', piece.serviceOrderId);
-  const photosItem = usePhotos('SERVICE_ORDER_ITEM', piece.id);
+  // Item 36 (lista de 53): todas as fotos da peça, inclusive as que o tablet tirou. Cenário
+  // anterior à etapa 5 (sem a rota): as fotos da OS e da peça, como antes.
+  const piecePhotos = usePiecePhotos(piece.consulta ? null : piece.id);
+  const legacy = piecePhotos.isError || piece.consulta;
+  const photosOs = usePhotos('SERVICE_ORDER', legacy ? piece.serviceOrderId : null);
+  const photosItem = usePhotos('SERVICE_ORDER_ITEM', legacy ? piece.id : null);
+  const [zoom, setZoom] = useState<number | null>(null);
   const qc = useQueryClient();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -199,9 +211,20 @@ export function PiecePanel({
       }),
     );
 
-  const allPhotos = [...(photosOs.data ?? []), ...(photosItem.data ?? [])].filter((p) =>
-    p.mimeType.startsWith('image/'),
-  );
+  const allPhotos: PiecePhoto[] = legacy
+    ? [...(photosOs.data ?? []), ...(photosItem.data ?? [])]
+        .filter((p) => p.mimeType.startsWith('image/'))
+        .map((p) => ({
+          id: p.id,
+          url: p.url,
+          thumbUrl: p.thumbUrl ?? p.url,
+          caption: p.caption,
+          source: p.entityType === 'SERVICE_ORDER' ? 'Na OS' : 'Da peça',
+          createdBy: p.createdBy,
+          createdAt: p.createdAt,
+        }))
+    : (piecePhotos.data ?? []);
+  const photosLoading = legacy ? photosOs.isPending : piecePhotos.isPending;
   const lines = materials.data?.materials ?? [];
   /** Marca comprado / na oficina pela rota oficial da lista da OS (quem gerencia OS). */
   const markLine = async (
@@ -439,32 +462,45 @@ export function PiecePanel({
       </div>
       {tab === 'SERVICO' ? (
         <>
-          <Section title="Fotos">
+          <Section title={allPhotos.length ? `Fotos (${allPhotos.length})` : 'Fotos'}>
             {allPhotos.length ? (
-              <div className="grid grid-cols-3 gap-1.5">
-                {allPhotos.slice(0, 9).map((p) => (
-                  <a
+              <div className="grid grid-cols-3 gap-1.5" data-testid="piece-photos">
+                {allPhotos.slice(0, 12).map((p, i) => (
+                  <button
                     key={p.id}
-                    href={p.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block aspect-square overflow-hidden rounded-lg border border-line bg-subtle"
+                    type="button"
+                    onClick={() => setZoom(i)}
+                    className="group relative block aspect-square overflow-hidden rounded-lg border border-line bg-subtle"
+                    aria-label={`Ver foto: ${p.source}`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={p.url}
-                      alt={p.caption ?? 'Foto da OS'}
-                      className="size-full object-cover"
+                      src={p.thumbUrl}
+                      alt={p.caption ?? p.source}
+                      className="size-full object-cover transition group-hover:scale-105"
                     />
-                  </a>
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[10px] font-medium text-white">
+                      {p.source}
+                    </span>
+                  </button>
                 ))}
               </div>
             ) : (
               <p className="text-xs text-ink-muted">
-                {photosOs.isPending ? 'Carregando…' : 'Nenhuma foto cadastrada nesta OS.'}
+                {photosLoading
+                  ? 'Carregando…'
+                  : 'Nenhuma foto desta peça ainda. As fotos tiradas no tablet aparecem aqui.'}
               </p>
             )}
           </Section>
+          {zoom !== null && allPhotos[zoom] ? (
+            <PhotoViewer
+              photos={allPhotos}
+              index={zoom}
+              onIndex={setZoom}
+              onClose={() => setZoom(null)}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -816,5 +852,80 @@ function History({ taskIds }: { taskIds: string[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Foto grande dentro do jogo (sem abrir outra guia), com as setas para passar. */
+function PhotoViewer({
+  photos,
+  index,
+  onIndex,
+  onClose,
+}: {
+  photos: PiecePhoto[];
+  index: number;
+  onIndex: (i: number) => void;
+  onClose: () => void;
+}) {
+  const p = photos[index]!;
+  const when = new Date(p.createdAt).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  });
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-black/80 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-label="Foto da peça"
+      data-testid="photo-viewer"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={p.url}
+        alt={p.caption ?? p.source}
+        className="max-h-[78vh] max-w-full rounded-xl object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <div
+        className="mt-3 flex items-center gap-3 text-sm text-white"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold disabled:opacity-30"
+          disabled={index === 0}
+          onClick={() => onIndex(index - 1)}
+          aria-label="Foto anterior"
+        >
+          ‹
+        </button>
+        <span className="text-center">
+          <strong>{p.source}</strong> · {when}
+          {p.createdBy ? ` · ${p.createdBy}` : ''}
+          {p.caption ? <span className="block text-white/80">{p.caption}</span> : null}
+          <span className="block text-xs text-white/60">
+            {index + 1} de {photos.length}
+          </span>
+        </span>
+        <button
+          type="button"
+          className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold disabled:opacity-30"
+          disabled={index === photos.length - 1}
+          onClick={() => onIndex(index + 1)}
+          aria-label="Próxima foto"
+        >
+          ›
+        </button>
+        <button
+          type="button"
+          className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold"
+          onClick={onClose}
+        >
+          Fechar
+        </button>
+      </div>
+    </div>
   );
 }

@@ -157,3 +157,52 @@ export const useAvatarLook = () =>
     queryFn: () => api<{ look: AvatarLook | null }>('/api/v1/game/avatar'),
     staleTime: 300_000,
   });
+
+/** Item 36 (lista de 53): fotos reais da peça (OS, peça e as que o tablet tirou). */
+export interface PiecePhoto {
+  id: string;
+  url: string;
+  thumbUrl: string;
+  caption: string | null;
+  /** De onde veio: "Na OS", "Da peça", "Tablet: Costura", "Ocorrência", "Conferência". */
+  source: string;
+  createdBy: string | null;
+  createdAt: string;
+}
+export const usePiecePhotos = (itemId: string | null) =>
+  useQuery({
+    queryKey: ['game-piece-photos', itemId],
+    queryFn: () => api<PiecePhoto[]>(`/api/v1/game/pieces/${itemId}/photos`),
+    enabled: Boolean(itemId),
+    retry: false,
+    staleTime: 30_000,
+  });
+
+/** Itens 38 e 39 (lista de 53): quadro da semana na parede e clientes esperando na recepção. */
+export interface WallNumber {
+  week: number;
+  last: number;
+}
+export interface GameWall {
+  from: string;
+  to: string;
+  deliveries: WallNumber;
+  late: WallNumber;
+  revenueCents: WallNumber | null;
+  waiting: {
+    serviceOrderId: string;
+    osCode: string;
+    customerName: string;
+    items: { id: string; code: string; description: string }[];
+    days: number;
+  }[];
+}
+export const useWall = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['game-wall'],
+    queryFn: () => api<GameWall>('/api/v1/game/wall'),
+    enabled,
+    retry: false,
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });

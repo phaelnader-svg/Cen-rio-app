@@ -110,10 +110,12 @@ import {
   GoalShare,
   GoodMorning,
   LogisticsPanel,
+  WeekBoardPanel,
   ShareDialog,
   type ShareCard,
   SimulatorPanel,
   logisticsView,
+  wallView,
   markMorningSeen,
   morningItems,
   morningSeenToday,
@@ -133,6 +135,7 @@ import {
   usePeople,
   useSnapshot,
   useSpaces,
+  useWall,
 } from './game-api';
 import { FichaPanel, FinancePanel } from './office-finance';
 import { type Drill, GoalsPanel, nextGoalOf, useCash } from './office-goals';
@@ -171,6 +174,7 @@ type Side =
   | { t: 'missions' }
   | { t: 'avatar' }
   | { t: 'logistics' }
+  | { t: 'board' }
   | { t: 'simulator' }
   | null;
 
@@ -774,6 +778,12 @@ export function GameWorld() {
     engine.current?.setLogistics(logisticsView(logistics.data));
   }, [logistics.data, layout]);
 
+  // Itens 38 e 39 (lista de 53): quadro da semana na parede e clientes esperando na recepção.
+  const wall = useWall(canSeeProduction && cenarioStatus === 'CONECTADA');
+  useEffect(() => {
+    engine.current?.setWall(wallView(wall.data));
+  }, [wall.data, layout]);
+
   // Imagem para compartilhar (meta batida ou a semana da oficina).
   const [share, setShare] = useState<ShareCard | null>(null);
   const [goalShare, setGoalShare] = useState<NonNullable<typeof cash.data>['goals'][number] | null>(
@@ -977,6 +987,18 @@ export function GameWorld() {
       case 'visitor':
         setSide({ t: 'logistics' });
         break;
+      case 'board':
+        setSide({ t: 'board' });
+        break;
+      case 'waiting': {
+        const w = wall.data?.waiting.find((x) => x.serviceOrderId === t.id);
+        const first = w?.items.find((i) => snapshot.data?.pieces.some((x) => x.id === i.id));
+        if (first) {
+          setSide({ t: 'piece', id: first.id });
+          setHighlight(first.id);
+        } else setSide({ t: 'board' });
+        break;
+      }
       case 'player':
         openAvatar();
         break;
@@ -2959,6 +2981,16 @@ export function GameWorld() {
             data={logistics.data}
             loading={logistics.isLoading}
             onClose={() => setSide(null)}
+          />
+        ) : side?.t === 'board' ? (
+          <WeekBoardPanel
+            data={wall.data}
+            loading={wall.isLoading}
+            onClose={() => setSide(null)}
+            onPiece={(id) => {
+              setSide({ t: 'piece', id });
+              setHighlight(id);
+            }}
           />
         ) : side?.t === 'simulator' ? (
           <SimulatorPanel

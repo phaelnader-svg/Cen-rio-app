@@ -13,6 +13,7 @@ import type { GamePieceDto, GameSnapshotDto } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
+  CalendarDays,
   CheckCircle2,
   Download,
   FlaskConical,
@@ -28,7 +29,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { cenarioUrl } from '@/lib/links';
-import type { LogisticsView } from './engine';
+import type { LogisticsView, WallView } from './engine';
+import type { GameWall } from './game-api';
 import { drawIcon } from './icons';
 import {
   type AvatarLook,
@@ -401,6 +403,154 @@ export function LogisticsPanel({
           Abrir o roteiro no Cenário
         </a>
       </div>
+    </Panel>
+  );
+}
+
+// ───────────────────── Quadro da semana e clientes esperando (itens 38 e 39) ─────────────────────
+
+/** O que o motor desenha: números do quadro e um cliente por OS com peça pronta parada. */
+export function wallView(w: GameWall | undefined): WallView | null {
+  if (!w) return null;
+  return {
+    board: { deliveries: w.deliveries, late: w.late, revenueCents: w.revenueCents },
+    waiting: w.waiting.map((x) => ({
+      id: x.serviceOrderId,
+      name: shortName(x.customerName),
+      days: x.days,
+    })),
+  };
+}
+
+const brl0 = (c: number) =>
+  (c / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    maximumFractionDigits: 0,
+  });
+const brDay = (d: string) => d.split('-').reverse().slice(0, 2).join('/');
+
+export function WeekBoardPanel({
+  data,
+  loading,
+  onClose,
+  onPiece,
+}: {
+  data: GameWall | undefined;
+  loading: boolean;
+  onClose: () => void;
+  onPiece: (itemId: string) => void;
+}) {
+  const rows = data
+    ? [
+        { label: 'Peças entregues', ...data.deliveries, money: false, lowerIsBetter: false },
+        {
+          label: 'Prazos que passaram sem entregar',
+          ...data.late,
+          money: false,
+          lowerIsBetter: true,
+        },
+        ...(data.revenueCents
+          ? [
+              {
+                label: 'Faturamento (o que entrou no caixa)',
+                ...data.revenueCents,
+                money: true,
+                lowerIsBetter: false,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  return (
+    <Panel
+      title="A semana da oficina"
+      subtitle={
+        data
+          ? `De segunda (${brDay(data.from)}) até hoje, contra o mesmo pedaço da semana passada`
+          : undefined
+      }
+      icon={<CalendarDays className="size-5" />}
+      onClose={onClose}
+      testId="week-board-panel"
+    >
+      {loading ? <p className="text-xs text-ink-muted">Carregando…</p> : null}
+      {!loading && !data ? (
+        <p className="text-xs text-ink-soft">
+          Os números da semana aparecem com o Cenário Gestão conectado.
+        </p>
+      ) : null}
+      <ul className="space-y-1.5">
+        {rows.map((r) => {
+          const diff = r.week - r.last;
+          const better = r.lowerIsBetter ? diff < 0 : diff > 0;
+          const fmt = (n: number) => (r.money ? brl0(n) : String(n));
+          return (
+            <li key={r.label} className="rounded-xl border border-line bg-white p-2.5">
+              <div className="text-xs text-ink-soft">{r.label}</div>
+              <div className="flex items-baseline justify-between gap-2">
+                <b className="text-2xl tabular-nums">{fmt(r.week)}</b>
+                <span
+                  className={clsx(
+                    'text-xs font-semibold',
+                    diff === 0 ? 'text-ink-muted' : better ? 'text-ok-600' : 'text-danger-600',
+                  )}
+                >
+                  {diff === 0
+                    ? 'igual à semana passada'
+                    : `${diff > 0 ? '▲' : '▼'} ${fmt(Math.abs(diff))} (antes ${fmt(r.last)})`}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {data ? (
+        <Section
+          title={
+            data.waiting.length
+              ? `Clientes esperando (${data.waiting.length})`
+              : 'Clientes esperando'
+          }
+        >
+          {data.waiting.length ? (
+            <ul className="space-y-1.5" data-testid="waiting-list">
+              {data.waiting.map((w) => (
+                <li
+                  key={w.serviceOrderId}
+                  className="rounded-xl border border-warn-600/30 bg-warn-50 p-2 text-xs"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="truncate">{cleanName(w.customerName)}</b>
+                    <span className="shrink-0 font-semibold text-warn-600">
+                      pronta há {w.days} {w.days === 1 ? 'dia' : 'dias'}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-ink-soft">
+                    {w.osCode} · {w.items.map((i) => i.description).join(', ')}
+                  </div>
+                  <div className="mt-1.5 flex gap-2">
+                    <GBtn onClick={() => onPiece(w.items[0]!.id)}>Ver a peça</GBtn>
+                    <a
+                      className="self-center font-semibold text-brand-700 underline"
+                      href={cenarioUrl(`/painel/os/${w.serviceOrderId}`)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Marcar a entrega no Cenário
+                    </a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-ink-soft">
+              Nenhuma peça pronta parada. Peça pronta há 2 dias ou mais sem entrega aparece aqui e
+              como cliente esperando na recepção.
+            </p>
+          )}
+        </Section>
+      ) : null}
     </Panel>
   );
 }

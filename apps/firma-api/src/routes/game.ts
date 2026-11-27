@@ -647,6 +647,10 @@ export async function gameRoutes(app: FastifyInstance) {
     return reply.status(r.status).send(r.body);
   }
 
+  // Fotos da peça e dos funcionários (itens 35 e 36 da lista de 53): o arquivo vem do Cenário
+  // com a autorização da organização, pelo mesmo endereço que a rota de fotos devolve.
+  app.get('/api/files/*', { config: { rule: { org: 'MEMBRO' } } }, forward);
+
   for (const prefix of ['/api/v1/*', '/api/sync/*']) {
     app.route({
       method: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],

@@ -39,6 +39,9 @@ import {
   label,
   mat,
   noticeBoard,
+  drawWeekBoard,
+  weekBoard,
+  type WeekBoardData,
   pegboard,
   pendantLamp,
   plant,
@@ -69,7 +72,11 @@ export type PickKind =
   | 'mestre'
   | 'player'
   | 'van'
-  | 'visitor';
+  | 'visitor'
+  /** Item 38: quadro da semana na parede da oficina. */
+  | 'board'
+  /** Item 39: cliente esperando na recepção (id = OS). */
+  | 'waiting';
 
 export interface PickTarget {
   kind: PickKind;
@@ -91,6 +98,12 @@ export interface LogisticsView {
   }[];
   /** Cliente que veio buscar a peça na oficina (aparece na entrada por um tempo). */
   visitor: { id: string; name: string } | null;
+}
+
+/** Itens 38 e 39 (lista de 53): quadro da semana e clientes esperando a peça pronta. */
+export interface WallView {
+  board: WeekBoardData | null;
+  waiting: { id: string; name: string; days: number }[];
 }
 
 interface YardWall {
@@ -161,6 +174,8 @@ export interface PersonVisual {
   dim?: boolean;
   /** Funções (cargo): uniforme/avental. */
   roles?: string[];
+  /** Item 35 (lista de 53): foto de Funcionários (crachá e etiqueta do nome). */
+  photoUrl?: string | null;
   /** Etapa em execução (anima o trabalho e escolhe a ferramenta). */
   activity?: string | null;
   /** Balão sobre a cabeça ("⏸ falta tecido", "✓ terminei", "⚠ atrasado"). */
@@ -487,6 +502,9 @@ export class GameEngine {
   private prevTrips = new Map<string, string>();
   private visitor: THREE.Group | null = null;
   private logistics: LogisticsView | null = null;
+  private wallView: WallView | null = null;
+  private weekBoardObj: THREE.Object3D | null = null;
+  private waitingGroups: THREE.Group[] = [];
   private mestre: THREE.Group | null = null;
   private walkGrid: ReturnType<typeof buildGrid> | null = null;
   private keys = new Set<string>();
@@ -1569,6 +1587,7 @@ export class GameEngine {
       this.register(holder, { kind: 'decor', id: dcor.id });
       if (opts.selectedId === dcor.id) this.selectionBox(f);
     }
+    this.weekBoardObj = null;
     if (!build) this.addAmbience(layout, opts.rewards ?? []);
     // Paredes já na altura certa: sem isso, toda reconstrução as fazia subir e descer de novo.
     this.updateWalls(0, true);
@@ -1594,6 +1613,7 @@ export class GameEngine {
     }
 
     this.buildDock(layout, build);
+    this.applyWaiting();
 
     this.walkGrid = buildGrid(layout, { inflateCm: 22, cell: 25 });
     if (!this.player || spaceChanged) this.spawnPlayer();
@@ -1697,7 +1717,20 @@ export class GameEngine {
       }
       if (!pegDone && place(110, pegboard(1.0), 0.3)) pegDone = true;
       if (!shelfDone && place(160, wallFabricShelf(1.5), 0.7)) shelfDone = true;
-      if (!boardDone && place(100, noticeBoard(0.9), office ? 0.3 : 0.55)) boardDone = true;
+      if (!boardDone) {
+        if (office) {
+          if (place(100, noticeBoard(0.9), 0.3)) boardDone = true;
+        } else {
+          // Item 38: na oficina, o quadro de avisos virou o quadro da semana (clicável).
+          const b = weekBoard(1.3);
+          if (place(150, b, 0.55)) {
+            boardDone = true;
+            this.weekBoardObj = b;
+            this.register(b, { kind: 'board', id: 'semana' });
+            drawWeekBoard(b, this.wallView?.board ?? null);
+          }
+        }
+      }
       if (!clockDone) {
         const c = wallClock();
         if (place(50, c, 0.85)) {
@@ -2129,6 +2162,58 @@ export class GameEngine {
     };
     this.prevTrips.clear();
     this.applyLogistics(true);
+  }
+
+  /** Itens 38 e 39: números do quadro da semana e clientes esperando na recepção. */
+  setWall(v: WallView | null) {
+    this.wallView = v;
+    if (this.weekBoardObj) drawWeekBoard(this.weekBoardObj, v?.board ?? null);
+    this.applyWaiting();
+  }
+
+  /**
+   * Item 39: peça pronta e parada há dias vira cliente esperando na recepção (perto do portão
+   * de expedição, por onde a peça sai), com o nome e há quantos dias está pronta.
+   */
+  private applyWaiting() {
+    for (const g of this.waitingGroups) {
+      this.peopleGroup.remove(g);
+      this.pickables = this.pickables.filter((p) => p !== g);
+    }
+    this.waitingGroups = [];
+    const yard = this.yard;
+    const list = this.wallView?.waiting ?? [];
+    if (!yard || !this.layout || this.layout.kind === 'ESCRITORIO' || !list.length) return;
+    const sp = yard.spots.EXPED;
+    const along = yard.walls[sp.wall]!.along;
+    list.slice(0, 4).forEach((w, i) => {
+      const side = i % 2 === 0 ? 1 : -1;
+      const off = (110 + Math.floor(i / 2) * 70) * side;
+      const p = this.freeNear(
+        {
+          x: sp.entryCm.x + along.x * off - sp.out.x * 40,
+          y: sp.entryCm.y + along.z * off - sp.out.z * 40,
+        },
+        80,
+      );
+      const g = avatar('#7a5c3a', 'CLIENTE', `espera-${w.id}`, { name: w.name });
+      g.position.set(p.x * CM, 0, p.y * CM);
+      g.rotation.y = Math.atan2(-sp.out.x, -sp.out.z);
+      const t = label(
+        `Esperando: ${w.name} · pronta há ${w.days} ${w.days === 1 ? 'dia' : 'dias'}`,
+        {
+          size: 18,
+          bg: 'rgba(180,83,9,0.95)',
+          icon: '⏳',
+        },
+      );
+      t.position.set(0, 1.55, 0);
+      g.add(t);
+      this.tag(t, 7, `waiting:${w.id}`);
+      this.peopleGroup.add(g);
+      this.register(g, { kind: 'waiting', id: w.id });
+      this.waitingGroups.push(g);
+    });
   }
 
   /** Retiradas e entregas de hoje: o furgão sai, volta e para no portão certo. */
@@ -2594,7 +2679,7 @@ export class GameEngine {
     const seen = new Set<string>();
     for (const p of list) {
       seen.add(p.id);
-      const key = `${p.kind}|${p.name}|${p.color}|${p.status ?? ''}|${p.dim ? 1 : 0}|${p.activity ?? ''}|${(p.roles ?? []).join(',')}`;
+      const key = `${p.kind}|${p.name}|${p.color}|${p.status ?? ''}|${p.dim ? 1 : 0}|${p.activity ?? ''}|${(p.roles ?? []).join(',')}|${p.photoUrl ?? ''}`;
       let e = this.people.get(p.id);
       const to = new THREE.Vector3(p.x * CM, 0, p.y * CM);
       if (!e || e.key !== key) {
@@ -2602,6 +2687,7 @@ export class GameEngine {
         const g = avatar(p.color, p.kind === 'agent' ? 'AGENTE' : 'PESSOA', p.id, {
           name: p.name,
           roles: p.roles,
+          photoUrl: p.photoUrl ?? null,
         });
         const tool = g.getObjectByName('toolR');
         if (tool && p.activity) tool.add(toolModel(p.activity));
@@ -2609,6 +2695,8 @@ export class GameEngine {
           size: 18,
           bg: p.kind === 'agent' ? 'rgba(91,33,182,0.92)' : 'rgba(29,37,35,0.85)',
           icon: p.kind === 'agent' ? '🤖' : undefined,
+          photo: p.photoUrl ?? null,
+          photoColor: p.color,
         });
         tag.position.set(0, 1.5, 0);
         g.add(tag);

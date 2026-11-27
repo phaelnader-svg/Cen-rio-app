@@ -736,6 +736,8 @@ export interface AvatarOptions {
   name?: string;
   /** Funções do funcionário (cargo): define avental/uniforme. */
   roles?: string[];
+  /** Item 35 (lista de 53): foto de Funcionários no crachá (no lugar da inicial). */
+  photoUrl?: string | null;
 }
 
 /**
@@ -818,8 +820,8 @@ export function avatar(
       ),
     ); // bolso
     // Crachá com a inicial, na cor do funcionário.
-    const badge = initialBadge(opts.name ?? '', color);
-    badge.position.set(0.09, 0.74, 0.118);
+    const badge = initialBadge(opts.name ?? '', color, opts.photoUrl ?? null);
+    badge.position.set(0.09, 0.73, 0.118);
     torso.add(badge);
   }
   for (const [side, sx] of [
@@ -908,24 +910,68 @@ export function avatar(
   return g;
 }
 
-/** Crachá pequeno com a inicial do nome (textura em canvas). */
-function initialBadge(name: string, color: string) {
+/** Fotos já carregadas (crachá e etiqueta de nome), por endereço. */
+const photoCache = new Map<string, Promise<HTMLImageElement | null>>();
+export function loadPhoto(url: string): Promise<HTMLImageElement | null> {
+  let p = photoCache.get(url);
+  if (!p) {
+    p = new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+    photoCache.set(url, p);
+  }
+  return p;
+}
+
+/** Desenha a foto cobrindo o retângulo (corta as sobras, como object-fit: cover). */
+function drawCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const sw = w / s;
+  const sh = h / s;
+  ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, x, y, w, h);
+}
+
+/**
+ * Crachá com a inicial do nome (textura em canvas). Item 35: com a foto de Funcionários, a foto
+ * entra no lugar da inicial assim que carrega (a faixa de cima continua na cor da pessoa).
+ */
+function initialBadge(name: string, color: string, photoUrl: string | null) {
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  c.width = 64;
+  c.height = 80;
   const ctx = c.getContext('2d')!;
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillRect(0, 0, 64, 80);
   ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 64, 18);
+  ctx.fillRect(0, 0, 64, 16);
   ctx.fillStyle = '#1d2523';
   ctx.font = '800 38px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText((name.replace(/^\[[^\]]*\]\s*/, '')[0] ?? '•').toUpperCase(), 32, 42);
+  ctx.fillText((name.replace(/^\[[^\]]*\]\s*/, '')[0] ?? '•').toUpperCase(), 32, 48);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  if (photoUrl)
+    void loadPhoto(photoUrl).then((img) => {
+      if (!img) return;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 16, 64, 64);
+      drawCover(ctx, img, 4, 20, 56, 56);
+      tex.needsUpdate = true;
+    });
   const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.075, 0.075),
+    new THREE.PlaneGeometry(photoUrl ? 0.088 : 0.075, photoUrl ? 0.11 : 0.094),
     new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }),
   );
   return m;
@@ -1005,6 +1051,10 @@ export function label(
     icon?: string;
     iconColor?: string;
     border?: string;
+    /** Item 35: foto redonda no começo da etiqueta (nome da pessoa). */
+    photo?: string | null;
+    /** Cor do círculo enquanto a foto carrega. */
+    photoColor?: string;
   } = {},
 ) {
   const size = opts.size ?? 28;
@@ -1015,9 +1065,10 @@ export function label(
   const parsed = splitIcon(text);
   const icon = iconOf(opts.icon) ?? parsed.icon;
   const full = parsed.text;
+  const pw = opts.photo ? size * 1.45 : 0;
   const iw = icon ? size * 1.05 : 0;
   const tw = Math.ceil(ctx.measureText(full).width);
-  c.width = tw + size + iw;
+  c.width = tw + size + iw + pw;
   c.height = Math.ceil(size * 1.6);
   const r = c.height / 2;
   ctx.fillStyle = opts.bg ?? 'rgba(29,37,35,0.82)';
@@ -1030,13 +1081,32 @@ export function label(
     ctx.stroke();
   }
   const fg = opts.fg ?? '#ffffff';
+  const pr = c.height / 2 - 4;
+  if (opts.photo) {
+    ctx.fillStyle = opts.photoColor ?? '#5b6b7a';
+    ctx.beginPath();
+    ctx.arc(r, r, pr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const x0 = opts.photo ? pw - size * 0.15 : size / 2;
   if (icon)
-    drawIcon(ctx, icon, size / 2, (c.height - size * 0.85) / 2, size * 0.85, opts.iconColor ?? fg);
+    drawIcon(ctx, icon, x0, (c.height - size * 0.85) / 2, size * 0.85, opts.iconColor ?? fg);
   ctx.font = `600 ${size}px Inter, system-ui, sans-serif`;
   ctx.fillStyle = fg;
   ctx.textBaseline = 'middle';
-  ctx.fillText(full, size / 2 + iw, c.height / 2 + 1);
+  ctx.fillText(full, x0 + iw, c.height / 2 + 1);
   const tex = new THREE.CanvasTexture(c);
+  if (opts.photo)
+    void loadPhoto(opts.photo).then((img) => {
+      if (!img) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(r, r, pr, 0, Math.PI * 2);
+      ctx.clip();
+      drawCover(ctx, img, r - pr, r - pr, pr * 2, pr * 2);
+      ctx.restore();
+      tex.needsUpdate = true;
+    });
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   const sprite = new THREE.Sprite(
@@ -1267,6 +1337,116 @@ export function noticeBoard(w: number) {
     i++;
   }
   return g;
+}
+
+/** Números do quadro da semana (item 38): esta semana × o mesmo pedaço da semana passada. */
+export interface WeekBoardData {
+  deliveries: { week: number; last: number };
+  late: { week: number; last: number };
+  revenueCents: { week: number; last: number } | null;
+}
+
+/**
+ * Item 38 (lista de 53): quadro na parede da oficina com três números da semana comparados com a
+ * semana passada. A face é uma textura em canvas, redesenhada quando os números mudam
+ * (`drawWeekBoard`). Sem números (Cenário fora do ar), mostra só o título.
+ */
+export function weekBoard(w: number) {
+  const g = new THREE.Group();
+  const h = w * 0.62;
+  g.add(box(w + 0.06, h + 0.06, 0.03, mat('#5c3d22'), 0, 1.45, 0));
+  const c = document.createElement('canvas');
+  c.width = 640;
+  c.height = Math.round(640 * (h / w));
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 }),
+  );
+  face.name = 'boardFace';
+  face.position.set(0, 1.45, 0.017);
+  g.add(face);
+  g.userData.canvas = c;
+  g.userData.texture = tex;
+  drawWeekBoard(g, null);
+  return g;
+}
+
+export function drawWeekBoard(board: THREE.Object3D, d: WeekBoardData | null) {
+  const c = board.userData.canvas as HTMLCanvasElement | undefined;
+  const tex = board.userData.texture as THREE.CanvasTexture | undefined;
+  if (!c || !tex) return;
+  const ctx = c.getContext('2d')!;
+  const W = c.width;
+  const H = c.height;
+  ctx.fillStyle = '#23302c';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#f4efe2';
+  ctx.font = '700 34px Inter, system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('A semana da oficina', 28, 42);
+  ctx.font = '500 20px Inter, system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(244,239,226,0.65)';
+  ctx.textAlign = 'right';
+  ctx.fillText('× semana passada', W - 28, 44);
+  ctx.textAlign = 'left';
+  if (!d) {
+    tex.needsUpdate = true;
+    return;
+  }
+  const rows: {
+    label: string;
+    week: number;
+    last: number;
+    money?: boolean;
+    lowerIsBetter?: boolean;
+  }[] = [
+    { label: 'Entregas', ...d.deliveries },
+    { label: 'Atrasos', ...d.late, lowerIsBetter: true },
+    ...(d.revenueCents ? [{ label: 'Faturamento', ...d.revenueCents, money: true }] : []),
+  ];
+  const fmt = (n: number, money?: boolean) =>
+    money
+      ? (n / 100).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+          maximumFractionDigits: 0,
+        })
+      : String(n);
+  const top = 92;
+  const rowH = (H - top - 16) / rows.length;
+  rows.forEach((r, i) => {
+    const y = top + rowH * i + rowH / 2;
+    if (i > 0) {
+      ctx.fillStyle = 'rgba(244,239,226,0.15)';
+      ctx.fillRect(28, top + rowH * i, W - 56, 2);
+    }
+    ctx.fillStyle = 'rgba(244,239,226,0.8)';
+    ctx.font = '600 26px Inter, system-ui, sans-serif';
+    ctx.fillText(r.label, 28, y);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 46px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    const big = fmt(r.week, r.money);
+    ctx.fillText(big, W - 200, y);
+    // Comparação: seta e o número da semana passada; verde quando melhorou.
+    const diff = r.week - r.last;
+    const better = r.lowerIsBetter ? diff < 0 : diff > 0;
+    ctx.font = '700 24px Inter, system-ui, sans-serif';
+    ctx.fillStyle = diff === 0 ? 'rgba(244,239,226,0.7)' : better ? '#7fd39a' : '#f08a7a';
+    ctx.fillText(
+      diff === 0 ? '= igual' : `${diff > 0 ? '▲' : '▼'} ${fmt(Math.abs(diff), r.money)}`,
+      W - 28,
+      y - 14,
+    );
+    ctx.font = '500 19px Inter, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(244,239,226,0.6)';
+    ctx.fillText(`antes ${fmt(r.last, r.money)}`, W - 28, y + 18);
+    ctx.textAlign = 'left';
+  });
+  tex.needsUpdate = true;
 }
 
 /** Relógio de parede com ponteiros (o motor gira hourHand/minHand pela hora real). */

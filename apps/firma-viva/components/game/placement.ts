@@ -269,6 +269,8 @@ export function peopleOnMap(
         kind: 'employee',
         name: e.name,
         color: e.color,
+        // Item 35: foto de Funcionários (Cenário com a etapa 5; antes disso, sem foto).
+        photoUrl: (e as { photoUrl?: string | null }).photoUrl ?? null,
         roles: e.roles,
         x,
         y,

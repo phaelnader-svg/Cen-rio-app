@@ -81,6 +81,17 @@ export function EmployeePanel({
       onClose={onClose}
       className="h-full"
     >
+      {(e as { photoUrl?: string | null }).photoUrl ? (
+        // Item 35 (lista de 53): a foto de Funcionários, a mesma do crachá no mapa.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={(e as { photoUrl?: string | null }).photoUrl!}
+          alt={`Foto de ${e.name}`}
+          className="mx-auto mb-2 size-20 rounded-full border-4 object-cover"
+          style={{ borderColor: e.color }}
+          data-testid="employee-photo"
+        />
+      ) : null}
       <Section title="Agora (conforme os registros)">
         <KV
           k="Presença hoje (registro de chegada)"
