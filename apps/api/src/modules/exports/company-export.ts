@@ -1,4 +1,4 @@
-import { Prisma, tenancyOf } from '@cenario/db';
+import { Prisma, tenancyOf, type PrismaClient } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { requireCompanyId } from '../../core/tenant';
@@ -31,6 +31,62 @@ function csvCell(v: unknown): string {
   return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/**
+ * Todos os dados da empresa num .zip (uma planilha por tabela). Chamar dentro da empresa (trava
+ * do banco ligada): só saem as linhas dela. Usado pela própria empresa e pelo painel da
+ * plataforma ao encerrar uma empresa (item 51).
+ */
+export async function buildCompanyZip(prisma: PrismaClient, companyId: number) {
+  const tables = Prisma.dmmf.datamodel.models
+    .filter((m) => {
+      const t = tenancyOf(m.name);
+      return t && (t.class === 'empresa' || t.class === 'acesso' || t.class === 'empresa-raiz');
+    })
+    .map((m) => m.dbName ?? m.name)
+    .filter((t) => !SKIP_TABLES.has(t))
+    .sort();
+  const files: { name: string; data: Buffer }[] = [];
+  let rowsTotal = 0;
+  await prisma.$transaction(async (tx) => {
+    for (const table of tables) {
+      const rows = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT * FROM "${table}"${table === 'company_settings' ? ' WHERE id = $1' : ''}`,
+        ...(table === 'company_settings' ? [companyId] : []),
+      );
+      if (!rows.length) continue;
+      const cols = Object.keys(rows[0]!).filter(
+        (c) =>
+          !SECRET_COLUMN.test(c) &&
+          c !== 'screenshot' &&
+          c !== 'logo_data_url' &&
+          !(table === 'payment_proofs' && c === 'data'),
+      );
+      const lines = [cols.join(';'), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(';'))];
+      files.push({
+        name: `${table}.csv`,
+        data: Buffer.from(`\uFEFF${lines.join('\r\n')}\r\n`, 'utf8'),
+      });
+      rowsTotal += rows.length;
+    }
+  });
+  const tablesCount = files.length;
+  files.unshift({
+    name: 'LEIA-ME.txt',
+    data: Buffer.from(
+      [
+        'Dados da sua empresa no Cenário Gestão',
+        `Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`,
+        '',
+        'Cada arquivo .csv é uma planilha (abre no Excel, Google Planilhas ou LibreOffice).',
+        'As colunas são separadas por ponto e vírgula. Datas estão no padrão internacional (UTC).',
+        'Senhas, códigos de acesso e fotos não fazem parte deste arquivo.',
+      ].join('\r\n'),
+      'utf8',
+    ),
+  });
+  return { zip: buildZip(files), tables: tablesCount, rows: rowsTotal };
+}
+
 export async function companyExportRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -39,58 +95,15 @@ export async function companyExportRoutes(app: FastifyInstance) {
     { config: { access: { session: 'WEB', permissions: ['empresa.configurar'] } } },
     async (request, reply) => {
       const companyId = requireCompanyId();
-      const tables = Prisma.dmmf.datamodel.models
-        .filter((m) => {
-          const t = tenancyOf(m.name);
-          return t && (t.class === 'empresa' || t.class === 'acesso' || t.class === 'empresa-raiz');
-        })
-        .map((m) => m.dbName ?? m.name)
-        .filter((t) => !SKIP_TABLES.has(t))
-        .sort();
-      const files: { name: string; data: Buffer }[] = [];
-      let rowsTotal = 0;
-      await prisma.$transaction(async (tx) => {
-        for (const table of tables) {
-          const rows = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
-            `SELECT * FROM "${table}"${table === 'company_settings' ? ' WHERE id = $1' : ''}`,
-            ...(table === 'company_settings' ? [companyId] : []),
-          );
-          if (!rows.length) continue;
-          const cols = Object.keys(rows[0]!).filter(
-            (c) => !SECRET_COLUMN.test(c) && c !== 'screenshot' && c !== 'logo_data_url',
-          );
-          const lines = [
-            cols.join(';'),
-            ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(';')),
-          ];
-          files.push({
-            name: `${table}.csv`,
-            data: Buffer.from(`\uFEFF${lines.join('\r\n')}\r\n`, 'utf8'),
-          });
-          rowsTotal += rows.length;
-        }
-        await audit(tx, actorFrom(request), {
+      const { zip, tables, rows } = await buildCompanyZip(prisma, companyId);
+      await prisma.$transaction((tx) =>
+        audit(tx, actorFrom(request), {
           action: 'company.exported',
           entityType: 'company',
           entityId: String(companyId),
-          summary: `Exportação completa dos dados da empresa (${files.length} tabelas, ${rowsTotal} linhas).`,
-        });
-      });
-      files.unshift({
-        name: 'LEIA-ME.txt',
-        data: Buffer.from(
-          [
-            'Dados da sua empresa no Cenário Gestão',
-            `Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`,
-            '',
-            'Cada arquivo .csv é uma planilha (abre no Excel, Google Planilhas ou LibreOffice).',
-            'As colunas são separadas por ponto e vírgula. Datas estão no padrão internacional (UTC).',
-            'Senhas, códigos de acesso e fotos não fazem parte deste arquivo.',
-          ].join('\r\n'),
-          'utf8',
-        ),
-      });
-      const zip = buildZip(files);
+          summary: `Exportação completa dos dados da empresa (${tables} tabelas, ${rows} linhas).`,
+        }),
+      );
       const day = new Date().toISOString().slice(0, 10);
       return reply
         .header('content-type', 'application/zip')

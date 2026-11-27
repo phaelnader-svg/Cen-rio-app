@@ -2,6 +2,7 @@
 
 import { ArrowRight, X } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
+import { openDemo } from './demo';
 
 const KEY = 'cenario-tarja-fechada-v1';
 
@@ -54,11 +55,11 @@ export function TopBar({ href, origem }: { href: string | null; origem?: string 
             target="_blank"
             rel="noopener noreferrer"
             {...(origem ? { 'data-origem': origem } : {})}
+            onClick={openDemo}
             className="inline-flex items-center gap-1 font-semibold whitespace-nowrap underline underline-offset-4 hover:no-underline"
             data-testid="site-tarja-link"
           >
             Agende uma demonstração <ArrowRight className="size-3.5" aria-hidden />
-            <span className="sr-only"> (abre o WhatsApp em outra aba)</span>
           </a>
         </p>
         <button

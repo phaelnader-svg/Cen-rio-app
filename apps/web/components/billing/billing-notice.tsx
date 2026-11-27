@@ -1,6 +1,12 @@
 'use client';
 
-import type { ManualPaymentDto, MeDto, SubscriptionDto } from '@cenario/shared';
+import type {
+  CompanyPaymentProofDto,
+  ManualPaymentDto,
+  MeDto,
+  SubscriptionDto,
+} from '@cenario/shared';
+import { PixQr, ProofSender } from './pix-proof';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Copy, CreditCard, Lock, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -105,7 +111,12 @@ export function BillingLocked({ canManage }: { canManage: boolean }) {
       </p>
       {canManage && s?.manual && (
         <div className="mt-6">
-          <ManualPaymentCard manual={s.manual} cycle={s.cycle} planLabel={s.planLabel} />
+          <ManualPaymentCard
+            manual={s.manual}
+            cycle={s.cycle}
+            planLabel={s.planLabel}
+            proofs={s.proofs}
+          />
         </div>
       )}
       {canManage && !s?.manual && (
@@ -120,15 +131,21 @@ export function BillingLocked({ canManage }: { canManage: boolean }) {
   );
 }
 
-/** Pagamento por PIX para o Cenário Gestão (cobrança feita pelo dono da plataforma). */
+/**
+ * Pagamento por PIX para o Cenário Gestão (cobrança feita pelo dono da plataforma). Item 40: o QR
+ * Code e o "copia e cola" já vêm com o valor certo. Item 41: o comprovante vai por aqui mesmo.
+ */
 export function ManualPaymentCard({
   manual,
   cycle,
   planLabel,
+  proofs,
 }: {
   manual: ManualPaymentDto;
   cycle: string;
   planLabel: string;
+  /** Comprovantes já mandados (sem a lista, o envio do comprovante não aparece). */
+  proofs?: CompanyPaymentProofDto[];
 }) {
   const toast = useToast();
   return (
@@ -140,9 +157,35 @@ export function ManualPaymentCard({
           {cycle === 'ANUAL' ? ' por ano' : ' por mês'}
         </span>
       </p>
+      {manual.pixCode && (
+        <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <PixQr code={manual.pixCode} />
+          <div className="w-full min-w-0 space-y-2">
+            <p className="text-[15px] text-ink-soft">
+              Abra o app do banco, escolha <strong>PIX</strong> e aponte a câmera para o código. O
+              valor já vem preenchido.
+            </p>
+            <Button
+              variant="secondary"
+              className="w-full"
+              icon={<Copy className="size-4" aria-hidden />}
+              onClick={() => {
+                void navigator.clipboard.writeText(manual.pixCode!);
+                toast('ok', 'Código PIX copiado. Cole no app do banco, em "PIX copia e cola".');
+              }}
+              data-testid="pix-copia-cola"
+            >
+              Copiar código PIX
+            </Button>
+            <p className="text-sm text-ink-muted">
+              Pelo celular, copie o código e cole no app do banco em &ldquo;PIX copia e cola&rdquo;.
+            </p>
+          </div>
+        </div>
+      )}
       {manual.pixKey && (
         <>
-          <p className="mt-4 text-sm text-ink-muted">Chave PIX</p>
+          <p className="mt-4 text-sm text-ink-muted">Ou pela chave PIX</p>
           <div className="mt-1 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-lg bg-subtle px-3 py-2.5 text-[15px]">
               {manual.pixKey}
@@ -167,19 +210,21 @@ export function ManualPaymentCard({
         </>
       )}
       {manual.message && <p className="mt-4 text-[15px] text-ink-soft">{manual.message}</p>}
-      {manual.whatsappUrl && (
+      {proofs && (
         <div className="mt-5 border-t border-line pt-5">
-          <a
-            href={manual.whatsappUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-xl bg-ok-600 px-6 py-3 text-center text-[17px] font-semibold text-white shadow-sm transition hover:opacity-90"
-          >
-            <MessageCircle className="size-5 shrink-0" aria-hidden />
-            Mandar o comprovante
-          </a>
-          <p className="mt-2 text-center text-sm text-ink-muted">Abre uma conversa no WhatsApp</p>
+          <ProofSender amountCents={manual.amountCents} proofs={proofs} />
         </div>
+      )}
+      {manual.whatsappUrl && (
+        <a
+          href={manual.whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 flex items-center justify-center gap-2 text-sm font-semibold text-ok-600 hover:underline"
+        >
+          <MessageCircle className="size-4 shrink-0" aria-hidden />
+          Dúvida sobre o pagamento? Falar no WhatsApp
+        </a>
       )}
     </div>
   );

@@ -140,6 +140,9 @@ describe('Matriz de acesso: todas as rotas', () => {
         'GET /api/public/convite/:token',
         'POST /api/public/convite/:token',
         'POST /api/public/convite/:token/foto',
+        // Demonstração marcada pelo site (2026-11-27): campo-isca, limite por IP (5 por hora) e
+        // geral (60 por hora); só grava o pedido na plataforma, nada de empresa nenhuma.
+        'POST /api/public/demonstracao',
         'GET /api/plataforma/estado',
         'POST /api/plataforma/entrar',
         // "Esqueci a senha" do painel (sempre 204, limite por IP e por e-mail) e a senha nova pelo

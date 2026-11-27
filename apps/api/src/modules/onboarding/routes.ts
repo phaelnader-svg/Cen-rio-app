@@ -1,3 +1,4 @@
+import { pushPlatformAdmins } from '../push/push';
 import {
   EVENT_TYPES,
   SETUP_CARD_FEES_BPS,
@@ -639,7 +640,15 @@ export async function onboardingRoutes(app: FastifyInstance) {
 /** E-mail para quem cuida do painel da plataforma (sem e-mail configurado, nada sai). */
 export async function notifyPlatformAdmins(
   system: PrismaClient,
-  m: { subject: string; title: string; paragraphs: string[]; url: string; kind: string },
+  m: {
+    subject: string;
+    title: string;
+    paragraphs: string[];
+    url: string;
+    kind: string;
+    /** Item 43: também no celular (padrão: a primeira frase); `false` = só o e-mail. */
+    push?: string | false;
+  },
 ) {
   const admins = await system.platformAdmin.findMany({
     where: { active: true },
@@ -659,4 +668,18 @@ export async function notifyPlatformAdmins(
         await enqueueEmail(tx, { to: a.email, subject: m.subject, kind: m.kind, ...body });
     }),
   );
+  if (m.push !== false) {
+    let path = '/plataforma';
+    try {
+      path = new URL(m.url).pathname;
+    } catch {
+      /* fica o Início do painel */
+    }
+    await pushPlatformAdmins(system, m.url, {
+      title: m.title,
+      body: m.push ?? m.paragraphs[0] ?? '',
+      url: path,
+      tag: m.kind,
+    }).catch(() => 0);
+  }
 }

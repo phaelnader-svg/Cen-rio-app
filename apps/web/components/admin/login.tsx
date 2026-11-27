@@ -1,5 +1,6 @@
 'use client';
 
+import { currentOrigin } from '@/lib/origem';
 import { PASSWORD_RULE_HINT, adminLoginSchema, signupSchema } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Eye, EyeOff, LogIn, UserPlus } from 'lucide-react';
@@ -103,7 +104,12 @@ export function AdminLogin() {
       // A conta nova é uma empresa nova, e já entra direto como gestor dela.
       const me = await api('/api/auth/signup', {
         method: 'POST',
-        body: { ...parsed.data, captcha, ...(website ? { website } : {}) },
+        body: {
+          ...parsed.data,
+          captcha,
+          ...(website ? { website } : {}),
+          ...(currentOrigin() ? { origem: currentOrigin()! } : {}),
+        },
       });
       qc.setQueryData(['me'], me);
       router.replace('/painel');

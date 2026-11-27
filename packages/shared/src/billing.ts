@@ -150,6 +150,8 @@ export interface SubscriptionDto {
   annualDiscountPct: number;
   /** Cobrança feita pelo dono da plataforma (PIX e WhatsApp). Null = sem dados para pagar. */
   manual: ManualPaymentDto | null;
+  /** Item 41: comprovantes mandados pela tela (os mais recentes). */
+  proofs: import('./painel').CompanyPaymentProofDto[];
   plans: {
     key: PlanKey;
     label: string;

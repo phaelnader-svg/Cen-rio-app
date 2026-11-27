@@ -16,7 +16,11 @@ import {
   type PlatformSettingsDto,
   formatWhatsapp,
   whatsappDigits,
+  fillTemplate,
+  type PlatformPaymentInput,
+  type SignupSource,
 } from '@cenario/shared';
+import type { Tx } from '@cenario/db';
 import { createCompanyContent, isUniqueViolation } from '@cenario/db';
 import { randomBytes } from 'node:crypto';
 import { hashSecret } from '../../lib/crypto';
@@ -30,9 +34,12 @@ import { COMPANY_BILLING_SELECT, blocksAt, cycleOf, planOf, statusOf } from '../
 import { now as clockNow } from '../../core/clock';
 import {
   companyPriceCents,
+  messageTemplate,
   platformConfig,
   refreshPlatformConfig,
 } from '../../core/platform-config';
+import { pushKeys } from '../push/push';
+import { enqueueEmail, simpleEmail } from '../../core/mailer';
 import { platformLog } from './admin-auth';
 
 const PLATFORM = { platform: true } as const;
@@ -77,6 +84,12 @@ const COMPANY_SELECT = {
   platformNote: true,
   setupDoneAt: true,
   gettingStartedHiddenAt: true,
+  billingPriceUntil: true,
+  signupSource: true,
+  signupSourceDetail: true,
+  closedAt: true,
+  closeReason: true,
+  purgeAfter: true,
 } as const;
 
 /**
@@ -85,6 +98,99 @@ const COMPANY_SELECT = {
  * paga. Atravessa empresas: usa o banco do sistema e mostra só o resumo de cada empresa (nenhum
  * cliente, pedido ou valor delas).
  */
+/**
+ * "Recebi o pagamento" dentro de uma transação: usado pelo botão da Cobrança e pelo Confirmar do
+ * comprovante mandado pela tela (item 41).
+ */
+export async function recordPaymentTx(
+  tx: Tx,
+  request: FastifyRequest,
+  id: number,
+  input: PlatformPaymentInput,
+) {
+  const c = await tx.companySettings.findUnique({ where: { id }, select: COMPANY_SELECT });
+  if (!c) throw Errors.notFound('Empresa');
+  const cycle = cycleOf(c);
+  const plan = planOf(c);
+  const received = endOfDay(input.receivedOn);
+  const trialEnd = c.trialEndsAt && !c.paidUntil ? c.trialEndsAt : null;
+  let base = c.paidUntil ?? trialEnd ?? received;
+  // Muito atrasado (mais de um ciclo): recomeça do dia em que pagou.
+  if (addCycle(base, cycle).getTime() < received.getTime()) base = received;
+  let periodEnd = base;
+  for (let i = 0; i < input.cycles; i++) periodEnd = addCycle(periodEnd, cycle);
+  periodEnd = endOfDay(daySP(periodEnd));
+  await tx.$executeRaw`SELECT set_config('app.company_id', ${String(id)}, true)`;
+  const inv = await tx.subscriptionInvoice.create({
+    data: {
+      companyId: id,
+      provider: 'MANUAL',
+      plan,
+      cycle,
+      amountCents: input.amountCents,
+      dueDate: new Date(`${daySP(base)}T12:00:00.000Z`),
+      status: 'PAGA',
+      paidAt: received,
+      periodEnd,
+    },
+  });
+  await tx.companySettings.update({
+    where: { id },
+    data: {
+      paidUntil: periodEnd,
+      dueNoticeFor: null,
+      // Empresa encerrada continua fechada mesmo pagando (reabre só pelo painel).
+      ...(input.unblock && !c.closedAt ? { blockedAt: null, blockedReason: null } : {}),
+      // Pagou: os e-mails da mensalidade recomeçam no próximo vencimento.
+      feeEmails: [],
+      feeEmailsFor: null,
+    },
+  });
+  // Aviso para quem administra a empresa: pagamento confirmado e até quando está liberado.
+  const owners = await tx.user.findMany({
+    where: {
+      companyId: id,
+      active: true,
+      email: { not: null },
+      supportAgent: false,
+      roles: { some: { role: { key: GESTOR_ROLE_KEY } } },
+    },
+    select: { email: true },
+  });
+  const paidMail = simpleEmail({
+    title: 'Pagamento confirmado',
+    paragraphs: [
+      `Recebemos ${fmtBRL(input.amountCents)} da ${c.tradeName}. Obrigado!`,
+      `O sistema está liberado até ${fmtDay(periodEnd)}.`,
+    ],
+  });
+  for (const to of new Set(
+    [c.email, ...owners.map((o) => o.email)].filter((e): e is string => !!e),
+  ))
+    await enqueueEmail(tx, {
+      to,
+      subject: `Pagamento confirmado: liberado até ${fmtDay(periodEnd)}`,
+      kind: 'assinatura-paga',
+      ...paidMail,
+    });
+  await tx.auditLog.create({
+    data: {
+      companyId: id,
+      action: 'billing.paid',
+      entityType: 'company',
+      entityId: String(id),
+      summary: `Pagamento de ${fmtBRL(input.amountCents)} recebido pelo Cenário Gestão: liberado até ${fmtDay(periodEnd)}.`,
+    },
+  });
+  await tx.$executeRaw`SELECT set_config('app.company_id', ${String(PLATFORM_RECORD_ID)}, true)`;
+  await platformLog(tx, request, {
+    action: 'platform.payment',
+    companyId: id,
+    summary: `Recebi ${fmtBRL(input.amountCents)} de ${c.tradeName} em ${fmtDay(received)}: pago até ${fmtDay(periodEnd)}${input.note ? ` (${input.note})` : ''}.`,
+  });
+  return { invoiceId: inv.id, paidUntil: periodEnd.toISOString(), tradeName: c.tradeName };
+}
+
 export async function platformRoutes(app: FastifyInstance) {
   const { system, env, mailer } = app.ctx;
 
@@ -147,6 +253,12 @@ export async function platformRoutes(app: FastifyInstance) {
       select: { companyId: true, preferredAt: true },
     });
     const help = new Map(helps.map((h) => [h.companyId, h.preferredAt]));
+    const proofs = await system.paymentProof.groupBy({
+      by: ['companyId'],
+      where: { companyId: { in: ids }, status: 'PENDENTE' },
+      _count: { _all: true },
+    });
+    const proof = new Map(proofs.map((p) => [p.companyId, p._count._all]));
     const ord = new Map(orders.map((o) => [o.companyId, o]));
     const usr = new Map(users.map((u) => [u.companyId, u]));
     const pay = new Map(paid.map((p) => [p.companyId, p]));
@@ -164,11 +276,15 @@ export async function platformRoutes(app: FastifyInstance) {
           ? c.trialEndsAt
           : (c.paidUntil ?? c.trialEndsAt);
       const daysToDue = dueAt ? daysBetween(now, dueAt) : null;
-      const priceCents = companyPriceCents({
-        plan,
-        cycle,
-        billingPriceCents: c.billingPriceCents,
-      });
+      const priceCents = companyPriceCents(
+        {
+          plan,
+          cycle,
+          billingPriceCents: c.billingPriceCents,
+          billingPriceUntil: c.billingPriceUntil,
+        },
+        now,
+      );
       let tone: PlatformDueTone;
       if (status === 'CORTESIA') tone = 'courtesy';
       else if (c.blockedAt || status === 'VENCIDA')
@@ -179,16 +295,26 @@ export async function platformRoutes(app: FastifyInstance) {
       const o = owner.get(c.id);
       const phone = c.phone || o?.employee?.phone || null;
       const firstName = (o?.displayName ?? '').split(' ')[0];
-      const chargeText =
-        status === 'TESTE'
-          ? `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. O teste grátis da ${c.tradeName} vai até ${dueAt ? fmtDay(dueAt) : ''}. Para continuar, o valor é ${fmtBRL(priceCents)} ${cycle === 'ANUAL' ? 'por ano' : 'por mês'}${cfg.pixKey ? `, pelo PIX ${cfg.pixKey}` : ''}.`
-          : `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. A mensalidade da ${c.tradeName} (${fmtBRL(priceCents)}) ${daysToDue !== null && daysToDue < 0 ? 'venceu' : 'vence'} em ${dueAt ? fmtDay(dueAt) : ''}.${cfg.pixKey ? ` A chave PIX é ${cfg.pixKey}.` : ''} Qualquer dúvida, é só chamar.`;
-      // Primeiro contato com quem criou a conta (sem falar de cobrança).
+      // Item 47: os textos vêm do painel (Como eu recebo → Mensagens prontas) ou do padrão.
       const steps = started.get(c.id) ?? null;
       const next = steps?.find((x) => !x.done) ?? null;
-      const contactText = next
-        ? `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. Vi que a ${c.tradeName} ainda não fez o passo "${next.label}". Quer que eu te ajude agora? É rapidinho.`
-        : `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. Vi que a ${c.tradeName} criou uma conta no sistema. Posso ajudar a começar?`;
+      const fill = {
+        nome: firstName,
+        empresa: c.tradeName,
+        valor: `${fmtBRL(priceCents)} ${cycle === 'ANUAL' ? 'por ano' : 'por mês'}`,
+        vencimento: dueAt ? fmtDay(dueAt) : '',
+        passo: next?.label ?? '',
+        pix: cfg.pixKey ?? '',
+      };
+      const chargeText = fillTemplate(
+        messageTemplate(status === 'TESTE' ? 'cobrancaTeste' : 'cobranca', cfg),
+        fill,
+      );
+      // Primeiro contato com quem criou a conta (sem falar de cobrança).
+      const contactText = fillTemplate(
+        messageTemplate(next ? 'contatoPasso' : 'contato', cfg),
+        fill,
+      );
       const digits = whatsappDigits(phone);
       const u = usr.get(c.id);
       const p = pay.get(c.id);
@@ -236,6 +362,13 @@ export async function platformRoutes(app: FastifyInstance) {
         tone,
         priceCents,
         billingPriceCents: c.billingPriceCents,
+        billingPriceUntil: c.billingPriceUntil?.toISOString() ?? null,
+        signupSource: (c.signupSource as SignupSource | null) ?? null,
+        signupSourceDetail: c.signupSourceDetail,
+        closedAt: c.closedAt?.toISOString() ?? null,
+        closeReason: c.closeReason,
+        purgeAfter: c.purgeAfter?.toISOString() ?? null,
+        pendingProofs: proof.get(c.id) ?? 0,
         paidTotalCents: p?._sum.amountCents ?? 0,
         lastPaymentAt: p?._max.paidAt?.toISOString() ?? null,
         contactWhatsappUrl:
@@ -360,6 +493,13 @@ export async function platformRoutes(app: FastifyInstance) {
         ? { trialEndsAt: input.trialEndsAt ? endOfDay(input.trialEndsAt) : null }
         : {}),
       ...(input.note !== undefined ? { platformNote: input.note } : {}),
+      ...(input.billingPriceUntil !== undefined
+        ? { billingPriceUntil: input.billingPriceUntil ? endOfDay(input.billingPriceUntil) : null }
+        : {}),
+      ...(input.signupSource !== undefined ? { signupSource: input.signupSource } : {}),
+      ...(input.signupSourceDetail !== undefined
+        ? { signupSourceDetail: input.signupSourceDetail }
+        : {}),
     };
     const changes: string[] = [];
     if (data.tradeName && data.tradeName !== before.tradeName)
@@ -388,6 +528,14 @@ export async function platformRoutes(app: FastifyInstance) {
     if (data.document !== undefined && data.document !== before.document) changes.push('CPF/CNPJ');
     if (data.platformNote !== undefined && data.platformNote !== before.platformNote)
       changes.push('anotação');
+    if (input.billingPriceUntil !== undefined)
+      changes.push(
+        input.billingPriceUntil
+          ? `valor combinado até ${fmtDay(endOfDay(input.billingPriceUntil))}`
+          : 'valor combinado sem prazo',
+      );
+    if (data.signupSource !== undefined && data.signupSource !== before.signupSource)
+      changes.push(`origem ${data.signupSource ?? 'não informada'}`);
     const conn = input.serverConnections;
     if (conn !== undefined && conn !== before.serverConnections)
       changes.push(conn ? 'conexões do servidor liberadas' : 'conexões do servidor retiradas');
@@ -489,58 +637,7 @@ export async function platformRoutes(app: FastifyInstance) {
     async (request) => {
       const id = companyId(request);
       const input = platformPaymentSchema.parse(request.body ?? {});
-      const result = await system.$transaction(async (tx) => {
-        const c = await tx.companySettings.findUnique({ where: { id }, select: COMPANY_SELECT });
-        if (!c) throw Errors.notFound('Empresa');
-        const cycle = cycleOf(c);
-        const plan = planOf(c);
-        const received = endOfDay(input.receivedOn);
-        const trialEnd = c.trialEndsAt && !c.paidUntil ? c.trialEndsAt : null;
-        let base = c.paidUntil ?? trialEnd ?? received;
-        // Muito atrasado (mais de um ciclo): recomeça do dia em que pagou.
-        if (addCycle(base, cycle).getTime() < received.getTime()) base = received;
-        let periodEnd = base;
-        for (let i = 0; i < input.cycles; i++) periodEnd = addCycle(periodEnd, cycle);
-        periodEnd = endOfDay(daySP(periodEnd));
-        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(id)}, true)`;
-        const inv = await tx.subscriptionInvoice.create({
-          data: {
-            companyId: id,
-            provider: 'MANUAL',
-            plan,
-            cycle,
-            amountCents: input.amountCents,
-            dueDate: new Date(`${daySP(base)}T12:00:00.000Z`),
-            status: 'PAGA',
-            paidAt: received,
-            periodEnd,
-          },
-        });
-        await tx.companySettings.update({
-          where: { id },
-          data: {
-            paidUntil: periodEnd,
-            dueNoticeFor: null,
-            ...(input.unblock ? { blockedAt: null, blockedReason: null } : {}),
-          },
-        });
-        await tx.auditLog.create({
-          data: {
-            companyId: id,
-            action: 'billing.paid',
-            entityType: 'company',
-            entityId: String(id),
-            summary: `Pagamento de ${fmtBRL(input.amountCents)} recebido pelo Cenário Gestão: liberado até ${fmtDay(periodEnd)}.`,
-          },
-        });
-        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(PLATFORM_RECORD_ID)}, true)`;
-        await platformLog(tx, request, {
-          action: 'platform.payment',
-          companyId: id,
-          summary: `Recebi ${fmtBRL(input.amountCents)} de ${c.tradeName} em ${fmtDay(received)}: pago até ${fmtDay(periodEnd)}${input.note ? ` (${input.note})` : ''}.`,
-        });
-        return { invoiceId: inv.id, paidUntil: periodEnd.toISOString() };
-      });
+      const result = await system.$transaction((tx) => recordPaymentTx(tx, request, id, input));
       const [row] = await companyRows({ id });
       return { ...result, company: row };
     },
@@ -637,7 +734,23 @@ export async function platformRoutes(app: FastifyInstance) {
       byMonth: [],
       autoBlock: cfg.autoBlock,
       pixConfigured: !!cfg.pixKey,
+      pendingProofs: rows.reduce((n, c) => n + c.pendingProofs, 0),
+      demosPending: await system.contactRequest.count({
+        where: { companyId: PLATFORM_RECORD_ID, kind: 'DEMONSTRACAO', status: 'PENDENTE' },
+      }),
+      bySource: [],
     };
+    const bySource = new Map<SignupSource | null, { companies: number; paying: number }>();
+    for (const c of rows) {
+      const k = c.signupSource;
+      const v = bySource.get(k) ?? { companies: 0, paying: 0 };
+      v.companies++;
+      if ((c.status === 'ATIVA' || c.status === 'ATRASADA') && !c.canceledAt) v.paying++;
+      bySource.set(k, v);
+    }
+    dto.bySource = [...bySource]
+      .map(([source, v]) => ({ source, ...v }))
+      .sort((a, b) => b.companies - a.companies);
     for (const c of rows) {
       if (daySP(new Date(c.createdAt)).slice(0, 7) === month) dto.newThisMonth++;
       if (c.blockedAt) dto.blocked++;
@@ -717,6 +830,10 @@ export async function platformRoutes(app: FastifyInstance) {
       pixBank: cfg.pixBank,
       whatsapp: cfg.whatsapp,
       paymentMessage: cfg.paymentMessage,
+      pixCity: cfg.pixCity,
+      messageTemplates: cfg.messageTemplates,
+      pushDevices: await system.platformPushSubscription.count(),
+      pushPublicKey: (await pushKeys(system)).publicKey,
       wouldBlockNow: all
         .filter((c) => statusOf(c, env, now) === 'VENCIDA')
         .map((c) => ({ id: c.id, tradeName: c.tradeName })),
@@ -744,6 +861,17 @@ export async function platformRoutes(app: FastifyInstance) {
       ...(input.pixBank !== undefined ? { pixBank: input.pixBank } : {}),
       ...(input.whatsapp !== undefined ? { whatsapp: input.whatsapp } : {}),
       ...(input.paymentMessage !== undefined ? { paymentMessage: input.paymentMessage } : {}),
+      ...(input.pixCity !== undefined ? { pixCity: input.pixCity } : {}),
+      ...(input.messageTemplates !== undefined
+        ? {
+            messageTemplates: Object.fromEntries(
+              Object.entries({
+                ...platformConfig().messageTemplates,
+                ...input.messageTemplates,
+              }).filter((e): e is [string, string] => typeof e[1] === 'string' && !!e[1]),
+            ),
+          }
+        : {}),
     };
     const parts: string[] = [];
     if (data.priceGestaoCents !== undefined && data.priceGestaoCents !== before?.priceGestaoCents)
@@ -769,8 +897,10 @@ export async function platformRoutes(app: FastifyInstance) {
       ['pixBank', 'banco'],
       ['whatsapp', 'WhatsApp'],
       ['paymentMessage', 'mensagem'],
+      ['pixCity', 'cidade do PIX'],
     ] as const)
       if (data[k] !== undefined && data[k] !== (before?.[k] ?? null)) parts.push(label);
+    if (input.messageTemplates !== undefined) parts.push('mensagens prontas');
     await system.$transaction(async (tx) => {
       await tx.platformSettings.upsert({
         where: { id: 1 },

@@ -647,6 +647,7 @@ export async function improvementRoutes(app: FastifyInstance) {
         select: {
           ...COMPANY_BILLING_SELECT,
           billingPriceCents: true,
+          billingPriceUntil: true,
           tradeName: true,
           createdAt: true,
           canceledAt: true,
@@ -705,6 +706,7 @@ export async function improvementRoutes(app: FastifyInstance) {
               plan: planOf(c),
               cycle: cycleOf(c),
               billingPriceCents: c.billingPriceCents,
+              billingPriceUntil: c.billingPriceUntil,
             });
             dto.mrrCents += cycleOf(c) === 'ANUAL' ? Math.round(cents / 12) : cents;
           }

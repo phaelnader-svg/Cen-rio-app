@@ -65,3 +65,4 @@ export * from './legal';
 export * from './office-tasks';
 export * from './platform';
 export * from './onboarding';
+export * from './painel';

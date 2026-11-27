@@ -22,10 +22,12 @@ import { buildMe, employeeEventPayload } from '../presenters';
 import { captchaFailed } from '../../core/captcha';
 import { platformConfig } from '../../core/platform-config';
 import { sendConfirmationEmail } from '../account/emails';
-import { LEGAL_VERSION, signupExtrasSchema } from '@cenario/shared';
+import { maybeSendNewDeviceEmail, sendPasswordChangedEmail } from '../../core/security-emails';
+import { LEGAL_VERSION, signupExtrasSchema, signupSourceFrom } from '@cenario/shared';
 
 export async function authRoutes(app: FastifyInstance) {
   const { prisma, system, env, hashToken, cookies } = app.ctx;
+  const webUrl = () => env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!;
   const throttle = new AuthThrottle(prisma);
 
   /** Login do painel administrativo (e-mail + senha). */
@@ -94,6 +96,18 @@ export async function authRoutes(app: FastifyInstance) {
   ) {
     const actor = { ...actorFrom(request), userId: user.id };
     const { session, token } = await prisma.$transaction(async (tx) => {
+      // Segurança (26/11/2026): entrada num aparelho novo vira e-mail para a pessoa.
+      const person = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { email: true, supportAgent: true },
+      });
+      if (person && !person.supportAgent)
+        await maybeSendNewDeviceEmail(
+          tx,
+          { id: user.id, email: person.email, displayName: user.displayName },
+          request.headers['user-agent'],
+          webUrl(),
+        );
       const created = await createSession(tx, env, hashToken, {
         kind: 'WEB',
         userId: user.id,
@@ -186,6 +200,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/signup', { config: { access: { public: true } } }, async (request, reply) => {
     const input = signupSchema.parse(request.body);
     const extras = signupExtrasSchema.parse(request.body ?? {});
+    const origem = signupSourceFrom(extras.origem);
     const ipKey = clientIpKey(request, 'signup-ip');
     await throttle.assertAllowed([ipKey, 'signup:global']);
     // Anti-robô (melhoria 5): campo-isca invisível (só robô preenche) e o Turnstile, quando
@@ -221,6 +236,9 @@ export async function authRoutes(app: FastifyInstance) {
             plan: 'gestao',
             trialEndsAt: new Date(Date.now() + platformConfig().trialDays * 86_400_000),
             onboardingEmails: ['boas-vindas'],
+            // Item 45: de onde veio (o site guarda da primeira visita).
+            signupSource: origem.source,
+            signupSourceDetail: origem.detail,
           },
         });
         // Daqui em diante a transação é da empresa nova, com a trava do banco ligada: tudo o que
@@ -370,7 +388,9 @@ export async function authRoutes(app: FastifyInstance) {
           entityId: auth.userId,
           summary: `${auth.displayName} alterou a própria senha.`,
         });
+        await sendPasswordChangedEmail(tx, user, webUrl());
       });
+      app.ctx.mailer.kick();
       return reply.status(204).send();
     },
   );

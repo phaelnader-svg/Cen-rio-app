@@ -36,6 +36,7 @@ export async function sendDueNotices(system: PrismaClient, webUrl: string): Prom
       ...COMPANY_BILLING_SELECT,
       tradeName: true,
       billingPriceCents: true,
+      billingPriceUntil: true,
       dueNoticeFor: true,
     },
   });
@@ -51,6 +52,7 @@ export async function sendDueNotices(system: PrismaClient, webUrl: string): Prom
       plan: planOf(c),
       cycle: cycleOf(c),
       billingPriceCents: c.billingPriceCents,
+      billingPriceUntil: c.billingPriceUntil,
     });
     const quando = days === 0 ? 'hoje' : days === 1 ? 'amanhã' : `em ${days} dias`;
     const subject =

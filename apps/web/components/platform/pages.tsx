@@ -2,7 +2,11 @@
 
 import {
   PASSWORD_RULE_HINT,
+  SIGNUP_SOURCES,
+  SIGNUP_SOURCE_LABEL,
+  pixBrCode,
   type PlanKey,
+  type SignupSource,
   type PlatformAuditDto,
   type PlatformCompanyDto,
   type PlatformDashboardDto,
@@ -17,9 +21,11 @@ import {
   CircleCheck,
   Copy,
   HandCoins,
+  History,
   MessageCircle,
   Pencil,
   Plus,
+  PowerOff,
   Undo2,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -50,6 +56,19 @@ import {
   SupportSessionButton,
 } from '@/components/improvements/platform-extras';
 import { PrivacyRequestsInbox } from '@/components/improvements/privacy-extras';
+import { PixQr } from '@/components/billing/pix-proof';
+import {
+  CloseCompanyDialog,
+  ClosedCompanyBar,
+  DemosCard,
+  FeedbackGroupsCard,
+  MessageTemplatesForm,
+  ProofsInbox,
+  PushCard,
+  ScreenUsageCard,
+  SourcesCard,
+  TimelineDialog,
+} from '@/components/platform/painel-extras';
 
 const PLAN_LABEL: Record<PlanKey, string> = {
   gestao: 'Cenário Gestão',
@@ -164,6 +183,36 @@ export function PlatformDashboard() {
           </Link>
         </Alert>
       )}
+      {d.pendingProofs > 0 && (
+        <Alert
+          tone="warn"
+          className="mb-4"
+          title="Comprovante para conferir"
+          data-testid="inicio-comprovantes"
+        >
+          {d.pendingProofs === 1
+            ? 'Uma empresa mandou o comprovante do PIX.'
+            : `${d.pendingProofs} empresas mandaram o comprovante do PIX.`}{' '}
+          <Link href="/plataforma/cobranca" className="font-semibold underline">
+            Conferir em Cobrança
+          </Link>
+        </Alert>
+      )}
+      {d.demosPending > 0 && (
+        <Alert
+          tone="info"
+          className="mb-4"
+          title="Demonstração marcada"
+          data-testid="inicio-demonstracoes"
+        >
+          {d.demosPending === 1
+            ? 'Tem uma demonstração marcada pelo site.'
+            : `Tem ${d.demosPending} demonstrações marcadas pelo site.`}{' '}
+          <Link href="/plataforma/avisos" className="font-semibold underline">
+            Ver em Avisos e pedidos
+          </Link>
+        </Alert>
+      )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
           label="Receita por mês"
@@ -261,6 +310,7 @@ export function PlatformDashboard() {
             Abrir a Cobrança
           </Link>
         </Card>
+        <SourcesCard d={d} />
       </div>
     </>
   );
@@ -274,6 +324,8 @@ export function PlatformCompanies() {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<PlatformCompanyDto | null>(null);
   const [creating, setCreating] = useState(false);
+  const [timeline, setTimeline] = useState<PlatformCompanyDto | null>(null);
+  const [closing, setClosing] = useState<PlatformCompanyDto | null>(null);
   const toggle = useMutation({
     mutationFn: (c: PlatformCompanyDto) =>
       api(`/api/v1/platform/companies/${c.id}/${c.blockedAt ? 'unblock' : 'block'}`, {
@@ -347,9 +399,19 @@ export function PlatformCompanies() {
                   <p className="font-semibold text-ink">{c.tradeName}</p>
                   {c.serverConnections && <Badge tone="brand">Conexões do servidor</Badge>}
                   {c.isDemo && <Badge tone="bronze">Demonstração</Badge>}
-                  <DueBadge c={c} />
-                  {c.canceledAt && (
+                  {!c.closedAt && <DueBadge c={c} />}
+                  {c.canceledAt && !c.closedAt && (
                     <Badge tone="danger">Cancelou em {formatDay(c.canceledAt)}</Badge>
+                  )}
+                  {c.closedAt && <Badge tone="danger">Encerrada</Badge>}
+                  {c.pendingProofs > 0 && <Badge tone="warn">Comprovante para conferir</Badge>}
+                  {c.signupSource && (
+                    <span data-testid="empresa-origem">
+                      <Badge tone="neutral">
+                        Veio de: {SIGNUP_SOURCE_LABEL[c.signupSource]}
+                        {c.signupSourceDetail ? ` (${c.signupSourceDetail})` : ''}
+                      </Badge>
+                    </span>
                   )}
                 </div>
                 {/* Contato de quem criou a conta (26/11/2026): nome, WhatsApp e e-mail. */}
@@ -376,8 +438,12 @@ export function PlatformCompanies() {
                 <p className="text-sm text-ink-muted">
                   {c.planLabel} ·{' '}
                   {c.courtesy ? 'não paga' : `${formatCents(c.priceCents)}${perCycle(c)}`}
-                  {c.billingPriceCents ? ' (valor combinado)' : ''} · {c.users}{' '}
-                  {c.users === 1 ? 'usuário' : 'usuários'} · {c.orders}{' '}
+                  {c.billingPriceCents
+                    ? c.billingPriceUntil
+                      ? ` (valor combinado até ${formatDay(c.billingPriceUntil)})`
+                      : ' (valor combinado)'
+                    : ''}{' '}
+                  · {c.users} {c.users === 1 ? 'usuário' : 'usuários'} · {c.orders}{' '}
                   {c.orders === 1 ? 'pedido' : 'pedidos'}
                 </p>
                 <p className="text-sm text-ink-muted">
@@ -430,6 +496,7 @@ export function PlatformCompanies() {
                   </div>
                 )}
                 {c.note && <p className="mt-1 text-sm text-ink-soft">Anotação: {c.note}</p>}
+                {c.closedAt && <ClosedCompanyBar company={c} />}
               </div>
               <div className="flex flex-wrap gap-2 sm:justify-end">
                 {c.contactWhatsappUrl && (
@@ -452,12 +519,21 @@ export function PlatformCompanies() {
                 >
                   Editar
                 </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={<History className="size-4" aria-hidden />}
+                  onClick={() => setTimeline(c)}
+                  data-testid="empresa-linha-do-tempo"
+                >
+                  Linha do tempo
+                </Button>
                 <SupportSessionButton
                   companyId={c.id}
                   tradeName={c.tradeName}
                   until={c.supportAccessUntil}
                 />
-                {
+                {!c.closedAt && (
                   <Button
                     size="sm"
                     variant={c.blockedAt ? 'secondary' : 'outline-danger'}
@@ -473,7 +549,18 @@ export function PlatformCompanies() {
                   >
                     {c.blockedAt ? 'Liberar' : 'Bloquear'}
                   </Button>
-                }
+                )}
+                {!c.closedAt && !c.isDemo && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<PowerOff className="size-4" aria-hidden />}
+                    onClick={() => setClosing(c)}
+                    data-testid="empresa-encerrar"
+                  >
+                    Encerrar
+                  </Button>
+                )}
               </div>
             </div>
           </Card>
@@ -481,6 +568,8 @@ export function PlatformCompanies() {
       </div>
       {editing && <EditCompanyDialog company={editing} onClose={() => setEditing(null)} />}
       {creating && <CreateCompanyDialog onClose={() => setCreating(false)} />}
+      {timeline && <TimelineDialog company={timeline} onClose={() => setTimeline(null)} />}
+      {closing && <CloseCompanyDialog company={closing} onClose={() => setClosing(null)} />}
     </>
   );
 }
@@ -507,6 +596,9 @@ function EditCompanyDialog({
     trialEndsAt: ymdOf(company.trialEndsAt),
     note: company.note ?? '',
     serverConnections: company.serverConnections,
+    billingPriceUntil: ymdOf(company.billingPriceUntil),
+    signupSource: (company.signupSource ?? '') as SignupSource | '',
+    signupSourceDetail: company.signupSourceDetail ?? '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
@@ -518,6 +610,8 @@ function EditCompanyDialog({
           ...f,
           paidUntil: f.paidUntil || null,
           trialEndsAt: f.trialEndsAt || null,
+          billingPriceUntil: f.billingPriceCents ? f.billingPriceUntil || null : null,
+          signupSource: f.signupSource || null,
         },
       }),
     onSuccess: () => {
@@ -603,6 +697,15 @@ function EditCompanyDialog({
           cents={f.billingPriceCents}
           onCents={(v) => set('billingPriceCents', v)}
         />
+        {f.billingPriceCents ? (
+          <DateField
+            label="Valor combinado vale até"
+            cols={12}
+            value={f.billingPriceUntil}
+            hint="Preço de lançamento: depois deste dia, passa a valer o preço da tabela. Vazio = sem prazo."
+            onChange={(e) => set('billingPriceUntil', e.target.value)}
+          />
+        ) : null}
         <DateField
           label="Pago até"
           cols={4}
@@ -631,6 +734,26 @@ function EditCompanyDialog({
             description="Esta empresa passa a usar as contas ligadas no servidor (WhatsApp e outras). Só uma empresa por vez: marcar aqui tira da outra."
           />
         </div>
+        <SelectField
+          label="De onde veio"
+          cols={5}
+          value={f.signupSource}
+          onChange={(e) => set('signupSource', e.target.value as SignupSource | '')}
+        >
+          <option value="">Não sei</option>
+          {SIGNUP_SOURCES.map((k) => (
+            <option key={k} value={k}>
+              {SIGNUP_SOURCE_LABEL[k]}
+            </option>
+          ))}
+        </SelectField>
+        <TextField
+          label="Detalhe"
+          cols={7}
+          value={f.signupSourceDetail}
+          placeholder="Ex.: indicação do João, artigo do blog"
+          onChange={(e) => set('signupSourceDetail', e.target.value)}
+        />
         <TextAreaField
           label="Anotação (só você vê)"
           cols={12}
@@ -854,6 +977,7 @@ export function PlatformBilling() {
         title="Cobrança"
         description="Quem vence primeiro aparece primeiro. Quando o PIX cair, clique em Recebi o pagamento."
       />
+      <ProofsInbox />
       {list.isPending && <Spinner />}
       {list.isError && <Alert tone="danger">{errorMessage(list.error)}</Alert>}
       {list.isSuccess && rows.length === 0 && (
@@ -1266,6 +1390,7 @@ function ReceiveForm({ s }: { s: PlatformSettingsDto }) {
     pixKey: s.pixKey ?? '',
     pixName: s.pixName ?? '',
     pixBank: s.pixBank ?? '',
+    pixCity: s.pixCity ?? '',
     whatsapp: s.whatsapp ?? '',
     paymentMessage: s.paymentMessage ?? '',
   });
@@ -1300,6 +1425,14 @@ function ReceiveForm({ s }: { s: PlatformSettingsDto }) {
               onChange={(e) => set('pixBank', e.target.value)}
             />
             <TextField
+              label="Cidade do PIX"
+              cols={12}
+              value={f.pixCity}
+              placeholder="Ex.: São José dos Campos"
+              hint="Vai dentro do QR Code. O banco do cliente mostra junto com o nome."
+              onChange={(e) => set('pixCity', e.target.value)}
+            />
+            <TextField
               label="Seu WhatsApp"
               cols={12}
               value={f.whatsapp}
@@ -1331,9 +1464,24 @@ function ReceiveForm({ s }: { s: PlatformSettingsDto }) {
             message={f.paymentMessage || null}
             amountCents={s.priceGestaoCents}
             whatsappUrl={f.whatsapp ? '#' : null}
+            pixCode={
+              f.pixKey
+                ? pixBrCode({
+                    key: f.pixKey,
+                    name: f.pixName || 'Cenario Gestao',
+                    city: f.pixCity || 'Sao Paulo',
+                    amountCents: s.priceGestaoCents,
+                    txid: 'CENARIO0',
+                  })
+                : null
+            }
             preview
           />
         </div>
+      </div>
+      <div className="mt-6 space-y-6">
+        <PushCard s={s} />
+        <MessageTemplatesForm s={s} />
       </div>
     </>
   );
@@ -1347,6 +1495,7 @@ export function PixCard({
   message,
   amountCents,
   whatsappUrl,
+  pixCode,
   preview,
 }: {
   pixKey: string | null;
@@ -1355,6 +1504,7 @@ export function PixCard({
   message: string | null;
   amountCents: number;
   whatsappUrl: string | null;
+  pixCode?: string | null;
   preview?: boolean;
 }) {
   const toast = useToast();
@@ -1362,6 +1512,14 @@ export function PixCard({
     <Card className="p-5 text-left">
       <p className="text-sm text-ink-muted">Valor</p>
       <p className="text-2xl font-semibold tabular-nums">{formatCents(amountCents)}</p>
+      {pixCode && (
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <PixQr code={pixCode} />
+          <p className="text-center text-sm text-ink-muted">
+            Aponte a câmera do banco: o valor já vem preenchido.
+          </p>
+        </div>
+      )}
       {pixKey && (
         <>
           <p className="mt-4 text-sm text-ink-muted">Chave PIX</p>
@@ -1410,10 +1568,13 @@ export function PlatformNotices() {
     <>
       <PageHeader
         title="Avisos e pedidos"
-        description="Avisos para todas as empresas, o que elas mandam para você e os pedidos sobre dados pessoais."
+        description="Demonstrações marcadas, avisos para todas as empresas, o que elas pedem, as telas que usam e os pedidos sobre dados pessoais."
       />
+      <DemosCard />
       <NoticesCard />
+      <FeedbackGroupsCard />
       <FeedbackInbox />
+      <ScreenUsageCard />
       <PrivacyRequestsInbox />
       <DemoCompanyCard />
     </>

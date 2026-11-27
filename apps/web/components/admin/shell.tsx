@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { Gamepad2, KeyRound, LifeBuoy, Lock, LogOut, Menu, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { screenKeyFor } from '@cenario/shared';
 import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { ConnectionIndicator } from '@/components/connection-indicator';
@@ -47,6 +48,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   useThemeScope();
 
   useEffect(() => setDrawer(false), [pathname]);
+  // Item 49 (2026-11-27): conta a tela aberta (só o nome da tela, por dia) para o dono da
+  // plataforma saber o que ninguém usa. Falha não atrapalha nada.
+  const signedIn = me.isSuccess;
+  useEffect(() => {
+    if (!signedIn) return;
+    const screen = screenKeyFor(pathname);
+    if (screen)
+      void api('/api/v1/usage/screen', { method: 'POST', body: { screen } }).catch(() => undefined);
+  }, [pathname, signedIn]);
 
   const unauthenticated = me.error instanceof ApiError && me.error.status === 401;
   useEffect(() => {

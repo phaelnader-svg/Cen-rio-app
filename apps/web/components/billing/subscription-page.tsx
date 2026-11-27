@@ -115,9 +115,14 @@ export function SubscriptionPage() {
 
       {/* Cobrança feita pelo Cenário Gestão (sem pagamento online): PIX e WhatsApp. */}
       {s.status !== 'CORTESIA' && !s.canPayOnline && s.manual && canManage && (
-        <div className="mb-6 max-w-md">
+        <div className="mb-6 max-w-xl">
           <h2 className="mb-2 text-lg font-semibold">Como pagar</h2>
-          <ManualPaymentCard manual={s.manual} cycle={s.cycle} planLabel={s.planLabel} />
+          <ManualPaymentCard
+            manual={s.manual}
+            cycle={s.cycle}
+            planLabel={s.planLabel}
+            proofs={s.proofs}
+          />
           <p className="mt-2 text-sm text-ink-muted">
             Para mudar de plano ou passar para o anual, é só falar pelo WhatsApp.
           </p>

@@ -208,6 +208,7 @@ model User {
   employeeInvites       EmployeeInvite[]       @relation("EmployeeInviteCreatedBy")
   seenTips              UserSeenTip[]          @relation("UserSeenTipUser")
   contactRequests       ContactRequest[]       @relation("ContactRequestCreatedBy")
+  paymentProofs         PaymentProof[]         @relation("PaymentProofCreatedBy")
   privacyRequests       PrivacyRequest[]       @relation("PrivacyRequestUser")
   quotesDeleted         Quote[]                @relation("QuoteDeletedBy")
 
@@ -582,6 +583,26 @@ model CompanySettings {
   /// Aviso de empresa nova já mandado ao dono da plataforma.
   platformNewNoticeAt    DateTime? @map("platform_new_notice_at") @db.Timestamptz(3)
 
+  // 2026-11-27: painel da plataforma, etapa 2 (itens 45, 48 e 51) e e-mails da mensalidade.
+  /// De onde veio a empresa: SITE, BLOG, INDICACAO, ANUNCIO, DEMONSTRACAO, OUTRO (vazio = não se sabe).
+  signupSource       String?   @map("signup_source") @db.VarChar(20)
+  /// Detalhe da origem (artigo do blog, quem indicou, campanha do anúncio).
+  signupSourceDetail String?   @map("signup_source_detail") @db.VarChar(160)
+  /// O valor combinado vale até esta data; depois volta sozinho ao preço da tabela.
+  billingPriceUntil  DateTime? @map("billing_price_until") @db.Timestamptz(3)
+  /// Empresa encerrada pelo painel: ninguém entra e os dados ficam guardados até `purge_after`.
+  closedAt           DateTime? @map("closed_at") @db.Timestamptz(3)
+  closeReason        String?   @map("close_reason") @db.VarChar(300)
+  /// A partir desta data o dono da plataforma pode apagar de vez (90 dias depois de encerrar).
+  purgeAfter         DateTime? @map("purge_after") @db.Timestamptz(3)
+  /// E-mails da mensalidade já mandados (antes, no-dia, bloqueio) para o vencimento `fee_emails_for`.
+  feeEmails          String[]  @default([]) @map("fee_emails")
+  feeEmailsFor       DateTime? @map("fee_emails_for") @db.Timestamptz(3)
+  /// Segunda-feira da semana cujo resumo já foi mandado ao dono da empresa.
+  weeklyEmailFor     DateTime? @map("weekly_email_for") @db.Date
+  /// Vencimento já avisado ao dono da plataforma como atrasado.
+  lateNoticeFor      DateTime? @map("late_notice_for") @db.Timestamptz(3)
+
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
   /// Evolução Fase 3: responsável padrão das etapas de preparação/desmontagem (vazio = único
@@ -683,6 +704,8 @@ model CompanySettings {
   empresaPlanningAction              PlanningAction[]              @relation("EmpresaDePlanningAction")
   empresaRescheduleProposal          RescheduleProposal[]          @relation("EmpresaDeRescheduleProposal")
   empresaContactRequest              ContactRequest[]              @relation("EmpresaDeContactRequest")
+  empresaPaymentProof                PaymentProof[]                @relation("EmpresaDePaymentProof")
+  empresaScreenView                  ScreenView[]                  @relation("EmpresaDeScreenView")
   empresaHelpRequestEvent            HelpRequestEvent[]            @relation("EmpresaDeHelpRequestEvent")
   empresaProductionIssue             ProductionIssue[]             @relation("EmpresaDeProductionIssue")
   empresaProductionIssueEvent        ProductionIssueEvent[]        @relation("EmpresaDeProductionIssueEvent")
@@ -5883,6 +5906,7 @@ model PlatformAdmin {
   sessions PlatformAdminSession[]
   actions  PlatformAuditLog[]
   resets   PlatformAdminReset[]
+  pushes   PlatformPushSubscription[]
 
   @@map("platform_admins")
 }
@@ -5956,6 +5980,10 @@ model PlatformSettings {
   paymentMessage    String?  @map("payment_message") @db.VarChar(500)
   /// Dias antes do vencimento em que o dono da plataforma é avisado.
   noticeDays        Int      @default(3) @map("notice_days")
+  /// Cidade do PIX (vai dentro do QR Code, cortada em 15 letras).
+  pixCity           String?  @map("pix_city") @db.VarChar(40)
+  /// Item 47: textos dos botões de WhatsApp editados pelo dono da plataforma (vazio = o padrão).
+  messageTemplates  Json     @default("{}") @map("message_templates")
   updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("platform_settings")
@@ -5996,23 +6024,84 @@ model UserSeenTip {
 
 /// 2026-11-26 (item 6): "Quero ajuda para começar" e, depois, as demonstrações do site (item 44).
 model ContactRequest {
-  id          String          @id @default(uuid()) @db.Uuid
-  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
-  company     CompanySettings @relation("EmpresaDeContactRequest", fields: [companyId], references: [id])
+  id           String          @id @default(uuid()) @db.Uuid
+  companyId    Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company      CompanySettings @relation("EmpresaDeContactRequest", fields: [companyId], references: [id])
   /// AJUDA_COMECAR | DEMONSTRACAO
-  kind        String          @db.VarChar(20)
-  name        String          @db.VarChar(120)
-  phone       String?         @db.VarChar(30)
-  preferredAt DateTime        @map("preferred_at") @db.Timestamptz(3)
-  note        String?         @db.VarChar(500)
+  kind         String          @db.VarChar(20)
+  name         String          @db.VarChar(120)
+  phone        String?         @db.VarChar(30)
+  preferredAt  DateTime        @map("preferred_at") @db.Timestamptz(3)
+  note         String?         @db.VarChar(500)
+  /// Demonstração do site (item 44): nome da tapeçaria e cidade.
+  businessName String?         @map("business_name") @db.VarChar(120)
+  city         String?         @map("city") @db.VarChar(80)
   /// PENDENTE | FEITO | CANCELADO
-  status      String          @default("PENDENTE") @db.VarChar(10)
-  doneAt      DateTime?       @map("done_at") @db.Timestamptz(3)
-  createdById String?         @map("created_by_id") @db.Uuid
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  status       String          @default("PENDENTE") @db.VarChar(10)
+  doneAt       DateTime?       @map("done_at") @db.Timestamptz(3)
+  createdById  String?         @map("created_by_id") @db.Uuid
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
   createdBy User? @relation("ContactRequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([status, preferredAt])
   @@map("contact_requests")
+}
+
+/// 2026-11-27 (item 41): comprovante do PIX mandado pela tela Assinatura; o dono da plataforma
+/// confirma com 1 clique (vira o pagamento) ou recusa dizendo o motivo.
+model PaymentProof {
+  id           String          @id @default(uuid()) @db.Uuid
+  companyId    Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company      CompanySettings @relation("EmpresaDePaymentProof", fields: [companyId], references: [id])
+  amountCents  Int             @map("amount_cents")
+  paidOn       DateTime        @map("paid_on") @db.Date
+  /// image/jpeg, image/png ou application/pdf.
+  mime         String          @db.VarChar(40)
+  /// O arquivo em base64 (foto reduzida no aparelho ou PDF pequeno).
+  data         String
+  note         String?         @db.VarChar(300)
+  /// PENDENTE | CONFIRMADO | RECUSADO
+  status       String          @default("PENDENTE") @db.VarChar(10)
+  reviewedAt   DateTime?       @map("reviewed_at") @db.Timestamptz(3)
+  rejectReason String?         @map("reject_reason") @db.VarChar(300)
+  invoiceId    String?         @map("invoice_id") @db.Uuid
+  createdById  String?         @map("created_by_id") @db.Uuid
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  createdBy User? @relation("PaymentProofCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([companyId, createdAt])
+  @@map("payment_proofs")
+}
+
+/// 2026-11-27 (item 49): quantas vezes cada tela foi aberta por dia, por empresa (só a contagem).
+model ScreenView {
+  companyId Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company   CompanySettings @relation("EmpresaDeScreenView", fields: [companyId], references: [id])
+  screen    String          @db.VarChar(60)
+  day       DateTime        @db.Date
+  views     Int             @default(1)
+
+  @@id([companyId, screen, day])
+  @@index([day])
+  @@map("screen_views")
+}
+
+/// 2026-11-27 (item 43): celulares do dono da plataforma que recebem os avisos do painel.
+model PlatformPushSubscription {
+  id         String    @id @default(uuid()) @db.Uuid
+  adminId    String    @map("admin_id") @db.Uuid
+  endpoint   String    @unique @db.VarChar(1000)
+  p256dh     String    @db.VarChar(200)
+  auth       String    @db.VarChar(100)
+  userAgent  String?   @map("user_agent") @db.VarChar(300)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(3)
+
+  admin PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([adminId])
+  @@map("platform_push_subscriptions")
 }

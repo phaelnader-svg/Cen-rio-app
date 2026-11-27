@@ -272,6 +272,8 @@ export const TENANCY: Record<string, TenancyEntry> = {
   },
   UserSeenTip: E,
   ContactRequest: E,
+  PaymentProof: E,
+  ScreenView: E,
   AgentAction: E,
   IntegrationConnection: {
     class: 'empresa',
@@ -329,6 +331,10 @@ export const TENANCY: Record<string, TenancyEntry> = {
   },
   PlatformAdminSession: { class: 'sistema', note: 'Sessão do painel da plataforma.' },
   PlatformAdminReset: { class: 'sistema', note: '"Esqueci a senha" do painel da plataforma.' },
+  PlatformPushSubscription: {
+    class: 'sistema',
+    note: 'Celulares do dono da plataforma que recebem os avisos do painel.',
+  },
   PlatformAuditLog: {
     class: 'sistema',
     note: 'O que o dono da plataforma fez no painel (resumo, sem dados de clientes).',

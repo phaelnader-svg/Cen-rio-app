@@ -80,9 +80,18 @@ function keyBytes(base64url: string) {
 }
 
 /** Qual app: o da equipe (/tablet) ou o do dono (/dono). Cada um tem o seu service worker. */
-export type InstalledApp = 'equipe' | 'dono';
-const SCOPE: Record<InstalledApp, string> = { equipe: '/tablet', dono: '/dono' };
-const PUSH_API: Record<InstalledApp, string> = { equipe: '/api/tablet/push', dono: '/api/v1/push' };
+export type InstalledApp = 'equipe' | 'dono' | 'plataforma';
+const SCOPE: Record<InstalledApp, string> = {
+  equipe: '/tablet',
+  dono: '/dono',
+  plataforma: '/plataforma',
+};
+const PUSH_API: Record<InstalledApp, string> = {
+  equipe: '/api/tablet/push',
+  dono: '/api/v1/push',
+  // Item 43 (2026-11-27): avisos do painel da plataforma no celular do dono da plataforma.
+  plataforma: '/api/v1/platform/push',
+};
 
 async function registration(which: InstalledApp) {
   const existing = await navigator.serviceWorker.getRegistration(SCOPE[which]);

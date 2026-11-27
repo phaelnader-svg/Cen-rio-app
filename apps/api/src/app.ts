@@ -103,6 +103,8 @@ import { reworkRoutes } from './modules/reworks/routes';
 import { serviceOrderSheetRoutes } from './modules/service-orders/sheet';
 import { companyRoutes } from './modules/company/routes';
 import { platformRoutes } from './modules/platform/routes';
+import { painelRoutes } from './modules/platform/painel';
+import { sendBillingEmails, sendWeeklySummaries } from './modules/platform/billing-emails';
 import { billingRoutesPlatform } from './modules/billing/routes';
 import { accountRoutes } from './modules/account/routes';
 import { privacyRoutes } from './modules/privacy/routes';
@@ -262,6 +264,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(companyRoutes);
   await app.register(onboardingRoutes);
   await app.register(platformRoutes);
+  await app.register(painelRoutes);
   await app.register(platformAuthRoutes);
   await app.register(billingRoutesPlatform);
   await app.register(accountRoutes);
@@ -469,12 +472,20 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         );
         officeTimer.unref();
         // Painel da plataforma: aviso por e-mail ao dono da plataforma antes de cada vencimento.
-        const dueRound = () =>
+        const dueRound = () => {
           void sendDueNotices(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)
             .then((n) => n > 0 && ctx.mailer.kick())
             .catch((err: unknown) =>
               app.log.warn({ err }, 'Falha ao avisar os vencimentos da plataforma'),
             );
+          // 2026-11-27: e-mails da mensalidade, atrasada para o dono da plataforma e resumo da semana.
+          void sendBillingEmails(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)
+            .then((n) => n > 0 && ctx.mailer.kick())
+            .catch((err: unknown) => app.log.warn({ err }, 'Falha nos e-mails da mensalidade'));
+          void sendWeeklySummaries(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)
+            .then((n) => n > 0 && ctx.mailer.kick())
+            .catch((err: unknown) => app.log.warn({ err }, 'Falha no resumo da semana'));
+        };
         // 2026-11-26: e-mails do teste grátis para as empresas e aviso de empresa nova.
         const onboardingRound = () =>
           void sendOnboardingEmails(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)

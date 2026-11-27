@@ -62,4 +62,6 @@ export const signupExtrasSchema = z.object({
   captcha,
   /** Campo-isca: escondido na tela; só robô preenche. */
   website: z.string().max(200).optional(),
+  /** Item 45 (2026-11-27): de onde veio (o site guarda da primeira visita). */
+  origem: z.string().trim().max(300).optional(),
 });

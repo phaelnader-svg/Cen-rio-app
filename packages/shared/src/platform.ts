@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { BILLING_CYCLES, PLAN_KEYS, type BillingCycle, type PlanKey } from './billing';
 import type { SubscriptionStatus } from './billing';
 import { EMAIL_MAX, passwordPolicySchema } from './schemas/auth';
+import {
+  SIGNUP_SOURCES,
+  messageTemplatesSchema,
+  type MessageTemplateKey,
+  type SignupSource,
+} from './painel';
 
 /**
  * Painel da plataforma (/plataforma, 2026-11-25): o painel do dono do Cenário Gestão como
@@ -63,6 +69,8 @@ export const platformSettingsSchema = z.object({
     .nullable()
     .optional(),
   paymentMessage: optText(500),
+  pixCity: optText(40),
+  messageTemplates: messageTemplatesSchema.optional(),
 });
 export type PlatformSettingsInput = z.infer<typeof platformSettingsSchema>;
 
@@ -79,6 +87,12 @@ export interface PlatformSettingsDto {
   pixBank: string | null;
   whatsapp: string | null;
   paymentMessage: string | null;
+  pixCity: string | null;
+  /** Item 47: textos editados (só os que mudaram; o resto usa o padrão). */
+  messageTemplates: Partial<Record<MessageTemplateKey, string>>;
+  /** Item 43: avisos no celular ligados em algum aparelho do painel. */
+  pushDevices: number;
+  pushPublicKey: string;
   /** Empresas que ficariam bloqueadas na hora se o bloqueio automático fosse ligado agora. */
   wouldBlockNow: { id: number; tradeName: string }[];
   emailEnabled: boolean;
@@ -110,6 +124,11 @@ export const platformCompanyEditSchema = z.object({
   paidUntil: day,
   trialEndsAt: day,
   note: optText(500),
+  /** Item 48: o valor combinado vale até este dia (vazio = sem prazo). */
+  billingPriceUntil: day,
+  /** Item 45: de onde veio a empresa. */
+  signupSource: z.enum(SIGNUP_SOURCES).nullable().optional(),
+  signupSourceDetail: optText(160),
 });
 export type PlatformCompanyEditInput = z.infer<typeof platformCompanyEditSchema>;
 
@@ -196,6 +215,17 @@ export interface PlatformCompanyDto {
   priceCents: number;
   /** Valor combinado (null = tabela). */
   billingPriceCents: number | null;
+  /** Item 48: até quando vale o valor combinado (depois volta ao preço da tabela). */
+  billingPriceUntil: string | null;
+  /** Item 45: de onde veio. */
+  signupSource: SignupSource | null;
+  signupSourceDetail: string | null;
+  /** Item 51: encerrada pelo painel (e quando pode ser apagada de vez). */
+  closedAt: string | null;
+  closeReason: string | null;
+  purgeAfter: string | null;
+  /** Item 41: comprovantes esperando você conferir. */
+  pendingProofs: number;
   /** Quanto ela já pagou no total. */
   paidTotalCents: number;
   lastPaymentAt: string | null;
@@ -235,6 +265,12 @@ export interface PlatformDashboardDto {
   byMonth: { month: string; cents: number }[];
   autoBlock: boolean;
   pixConfigured: boolean;
+  /** Item 41: comprovantes esperando conferir. */
+  pendingProofs: number;
+  /** Item 44: demonstrações marcadas e ainda não feitas. */
+  demosPending: number;
+  /** Item 45: empresas por origem (sem as de demonstração). */
+  bySource: { source: SignupSource | null; companies: number; paying: number }[];
 }
 
 export interface PlatformMeDto {
@@ -261,6 +297,8 @@ export interface ManualPaymentDto {
   message: string | null;
   /** O valor desta empresa por ciclo. */
   amountCents: number;
+  /** Item 40: "PIX copia e cola" com o valor certo (vira o QR Code). Nulo sem chave. */
+  pixCode: string | null;
 }
 
 /** "Esqueci a senha" do painel da plataforma. */

@@ -142,3 +142,47 @@ export function pushConsumer(
     },
   };
 }
+
+/**
+ * Item 43: aviso no celular do dono da plataforma (Web Push), para cada aparelho em que ele ligou
+ * os avisos do painel. Falha de envio não trava nada (o e-mail e o painel continuam valendo).
+ */
+export async function pushPlatformAdmins(
+  system: PrismaClient,
+  publicWebUrl: string,
+  m: { title: string; body: string; url: string; tag: string },
+  log?: { warn: (o: unknown, msg: string) => void },
+): Promise<number> {
+  const subs = await system.platformPushSubscription.findMany({
+    where: { admin: { active: true } },
+  });
+  if (subs.length === 0) return 0;
+  const keys = await pushKeys(system);
+  let sent = 0;
+  for (const s of subs) {
+    try {
+      await pushSender.send(
+        { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+        m,
+        keys,
+        pushSubject(publicWebUrl),
+      );
+      sent++;
+      await system.platformPushSubscription.update({
+        where: { id: s.id },
+        data: { lastUsedAt: new Date() },
+      });
+    } catch (err) {
+      const status =
+        typeof err === 'object' && err && 'statusCode' in err
+          ? Number((err as { statusCode: unknown }).statusCode)
+          : 0;
+      if (status === 404 || status === 410)
+        await system.platformPushSubscription
+          .delete({ where: { id: s.id } })
+          .catch(() => undefined);
+      else log?.warn({ err }, 'Aviso no celular do painel não foi enviado');
+    }
+  }
+  return sent;
+}

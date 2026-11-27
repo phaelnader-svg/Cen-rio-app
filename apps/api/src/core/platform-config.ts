@@ -1,5 +1,13 @@
-import { PLANS, type BillingCycle, type PlanKey } from '@cenario/shared';
+import {
+  DEFAULT_MESSAGE_TEMPLATES,
+  MESSAGE_TEMPLATE_KEYS,
+  PLANS,
+  type BillingCycle,
+  type MessageTemplateKey,
+  type PlanKey,
+} from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
+import { now as clockNow } from './clock';
 
 /**
  * Painel da plataforma (2026-11-25): preços, teste grátis, bloqueio e como o dono da plataforma
@@ -20,6 +28,9 @@ export interface PlatformConfig {
   pixBank: string | null;
   whatsapp: string | null;
   paymentMessage: string | null;
+  pixCity: string | null;
+  /** Item 47: textos editados no painel (só os que mudaram). */
+  messageTemplates: Partial<Record<MessageTemplateKey, string>>;
   /** A tapeçaria liberada pelo painel para usar as conexões do servidor (ou nenhuma). */
   serverConnectionsCompanyId: number | null;
 }
@@ -36,6 +47,8 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   pixBank: null,
   whatsapp: null,
   paymentMessage: null,
+  pixCity: null,
+  messageTemplates: {},
   serverConnectionsCompanyId: null,
 };
 
@@ -63,7 +76,24 @@ export function configFromRow(
     pixBank: r.pixBank,
     whatsapp: r.whatsapp,
     paymentMessage: r.paymentMessage,
+    pixCity: r.pixCity,
+    messageTemplates: templatesFrom(r.messageTemplates),
   };
+}
+
+function templatesFrom(v: unknown): Partial<Record<MessageTemplateKey, string>> {
+  const out: Partial<Record<MessageTemplateKey, string>> = {};
+  if (v && typeof v === 'object')
+    for (const k of MESSAGE_TEMPLATE_KEYS) {
+      const t = (v as Record<string, unknown>)[k];
+      if (typeof t === 'string' && t.trim()) out[k] = t;
+    }
+  return out;
+}
+
+/** Item 47: o texto da mensagem pronta (o editado no painel ou o padrão). */
+export function messageTemplate(key: MessageTemplateKey, cfg = current): string {
+  return cfg.messageTemplates[key] ?? DEFAULT_MESSAGE_TEMPLATES[key];
 }
 
 /** A configuração em memória (a última lida do banco; os valores de fábrica até a 1ª leitura). */
@@ -113,13 +143,23 @@ export function listPriceCents(plan: PlanKey, cycle: BillingCycle, cfg = current
   return Math.round((monthly * 12 * (10_000 - cfg.annualDiscountBps)) / 10_000);
 }
 
-/** O que a empresa paga por ciclo: o valor combinado com ela ou o preço da tabela. */
-export function companyPriceCents(c: {
-  plan: PlanKey;
-  cycle: BillingCycle;
-  billingPriceCents: number | null;
-}): number {
-  return c.billingPriceCents ?? listPriceCents(c.plan, c.cycle);
+/**
+ * O que a empresa paga por ciclo: o valor combinado com ela ou o preço da tabela. Item 48: valor
+ * combinado com prazo (preço de lançamento) volta sozinho à tabela depois do último dia.
+ */
+export function companyPriceCents(
+  c: {
+    plan: PlanKey;
+    cycle: BillingCycle;
+    billingPriceCents: number | null;
+    billingPriceUntil?: Date | null;
+  },
+  at: Date = clockNow(),
+): number {
+  const deal =
+    c.billingPriceCents !== null &&
+    (!c.billingPriceUntil || c.billingPriceUntil.getTime() >= at.getTime());
+  return deal ? c.billingPriceCents! : listPriceCents(c.plan, c.cycle);
 }
 
 /** Link do WhatsApp do dono da plataforma (wa.me), com a mensagem pronta. */

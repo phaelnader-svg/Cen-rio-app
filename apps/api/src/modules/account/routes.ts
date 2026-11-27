@@ -1,3 +1,4 @@
+import { sendPasswordChangedEmail } from '../../core/security-emails';
 import {
   PLANS,
   PLAN_KEYS,
@@ -23,6 +24,7 @@ import { sendConfirmationEmail, sendPasswordResetEmail } from './emails';
  */
 export async function accountRoutes(app: FastifyInstance) {
   const { prisma, system, env, hashToken, mailer } = app.ctx;
+  const webUrl = () => env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!;
   const throttle = new AuthThrottle(system);
 
   /** Chave pública do anti-robô (Turnstile); vazia = desligado. */
@@ -147,8 +149,10 @@ export async function accountRoutes(app: FastifyInstance) {
             entityId: row.userId,
             summary: `${row.user.displayName} criou uma senha nova pelo link do e-mail.`,
           });
+          await sendPasswordChangedEmail(tx, row.user, webUrl());
         }),
       );
+      mailer.kick();
       return reply.status(204).send();
     },
   );

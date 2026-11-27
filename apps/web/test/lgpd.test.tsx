@@ -77,7 +77,7 @@ describe('acessibilidade', () => {
     const html = renderToStaticMarkup(<Landing preview={false} legal="live" />);
     expect(html).toContain('href="#conteudo"');
     expect(html).toContain('<main id="conteudo"');
-    expect(html).toContain('abre o WhatsApp em outra aba');
+    expect(html).toContain('Agendar demonstração');
   });
 
   it('toda imagem da landing tem texto alternativo (ou é decorativa e escondida)', () => {

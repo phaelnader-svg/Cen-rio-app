@@ -6,6 +6,8 @@ import {
   addCycle,
   isPlanKey,
   subscribeSchema,
+  fillTemplate,
+  pixBrCode,
   type BillingCycle,
   type InvoiceStatus,
   type PlanKey,
@@ -29,6 +31,7 @@ import { now as clockNow } from '../../core/clock';
 import {
   companyPriceCents,
   listPriceCents,
+  messageTemplate,
   platformConfig,
   whatsappLink,
 } from '../../core/platform-config';
@@ -89,7 +92,24 @@ export async function billingRoutesPlatform(app: FastifyInstance) {
   async function subscriptionDto(db: PrismaClient): Promise<SubscriptionDto> {
     const c = await db.companySettings.findUniqueOrThrow({
       where: { id: requireCompanyId() },
-      select: { ...COMPANY_BILLING_SELECT, billingPriceCents: true, tradeName: true },
+      select: {
+        ...COMPANY_BILLING_SELECT,
+        billingPriceCents: true,
+        billingPriceUntil: true,
+        tradeName: true,
+      },
+    });
+    const proofs = await db.paymentProof.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        amountCents: true,
+        paidOn: true,
+        status: true,
+        rejectReason: true,
+        createdAt: true,
+      },
     });
     const invoices = await db.subscriptionInvoice.findMany({
       orderBy: { dueDate: 'desc' },
@@ -124,12 +144,24 @@ export async function billingRoutesPlatform(app: FastifyInstance) {
       plans: plansCatalog(),
       annualDiscountPct: platformConfig().annualDiscountBps / 100,
       manual: manualPayment(c, plan),
+      proofs: proofs.map((p) => ({
+        id: p.id,
+        amountCents: p.amountCents,
+        paidOn: p.paidOn.toISOString().slice(0, 10),
+        status: p.status as 'PENDENTE' | 'CONFIRMADO' | 'RECUSADO',
+        rejectReason: p.rejectReason,
+        createdAt: p.createdAt.toISOString(),
+      })),
     };
   }
 
   /** Cobrança feita pelo dono da plataforma: PIX e WhatsApp do painel /plataforma. */
   function manualPayment(
-    c: CompanyBillingRow & { billingPriceCents: number | null; tradeName: string },
+    c: CompanyBillingRow & {
+      billingPriceCents: number | null;
+      billingPriceUntil: Date | null;
+      tradeName: string;
+    },
     plan: PlanKey,
   ): SubscriptionDto['manual'] {
     const cfg = platformConfig();
@@ -138,16 +170,32 @@ export async function billingRoutesPlatform(app: FastifyInstance) {
       plan,
       cycle: cycleOf(c),
       billingPriceCents: c.billingPriceCents,
+      billingPriceUntil: c.billingPriceUntil,
     });
-    const name = c.tradeName && c.tradeName !== PROVISIONAL_TRADE_NAME ? ` da ${c.tradeName}` : '';
+    const name =
+      c.tradeName && c.tradeName !== PROVISIONAL_TRADE_NAME ? c.tradeName : 'minha empresa';
     return {
       pixKey: cfg.pixKey,
       pixName: cfg.pixName,
       pixBank: cfg.pixBank,
       message: cfg.paymentMessage,
       amountCents,
+      // Item 40: o "copia e cola" com o valor certo; vira o QR Code na tela.
+      pixCode: cfg.pixKey
+        ? pixBrCode({
+            key: cfg.pixKey,
+            name: cfg.pixName ?? 'Cenario Gestao',
+            city: cfg.pixCity ?? 'Sao Paulo',
+            amountCents,
+            txid: `CENARIO${c.id}`,
+          })
+        : null,
+      // Item 47: a mensagem do cliente para o dono da plataforma é editável no painel.
       whatsappUrl: whatsappLink(
-        `Olá! Sou${name} e quero continuar com o Cenário Gestão (${PLANS[plan].label}, ${fmtBRL(amountCents)} ${cycleOf(c) === 'ANUAL' ? 'por ano' : 'por mês'}). Segue o comprovante do PIX.`,
+        fillTemplate(messageTemplate('comprovante', cfg), {
+          empresa: name,
+          valor: `${PLANS[plan].label}, ${fmtBRL(amountCents)} ${cycleOf(c) === 'ANUAL' ? 'por ano' : 'por mês'}`,
+        }),
       ),
     };
   }

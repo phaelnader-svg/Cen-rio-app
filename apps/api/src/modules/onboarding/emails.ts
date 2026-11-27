@@ -46,6 +46,7 @@ export async function sendOnboardingEmails(system: PrismaClient, webUrl: string)
       phone: true,
       createdAt: true,
       billingPriceCents: true,
+      billingPriceUntil: true,
       onboardingEmails: true,
       platformNewNoticeAt: true,
     },
@@ -88,6 +89,7 @@ export async function sendOnboardingEmails(system: PrismaClient, webUrl: string)
       plan: planOf(c),
       cycle: cycleOf(c),
       billingPriceCents: c.billingPriceCents,
+      billingPriceUntil: c.billingPriceUntil,
     });
     const perCycle = cycleOf(c) === 'ANUAL' ? 'por ano' : 'por mês';
 

@@ -1703,6 +1703,11 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270913000000_painel_etapa2: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS do painel ' +
+    '(comprovantes e telas usadas). Nenhuma linha é alterada.',
+  '20270913000000_painel_etapa2: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" da tabela nova dos celulares do painel. Nenhuma linha é alterada.',
   '20270912000000_comeco_guiado_recentes: UPDATE "company_settings"':
     'Pedido do dono (2026-11-26): as empresas cadastradas pelo site a partir de 24/11 que ainda ' +
     'não responderam as perguntas voltam a ter o começo guiado e os e-mails do teste. Só mexe nas ' +
@@ -1820,6 +1825,7 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
 const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270913000000_painel_etapa2: UPDATE CASCADE': 3,
   '20270911000000_comeco_guiado: UPDATE CASCADE': 7,
   '20270903000000_lgpd_pedidos: UPDATE CASCADE': 2,
   '20270904000000_avisos_no_aparelho: UPDATE CASCADE': 2,

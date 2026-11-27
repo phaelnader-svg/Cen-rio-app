@@ -99,6 +99,6 @@ describe('Multi-empresa: mapa das tabelas', () => {
       // 2026-11-25 (painel da plataforma): + platform_admins, platform_admin_sessions,
       // platform_audit_logs e platform_settings (sistema).
       // 2026-11-26 (começo guiado): + employee_invites, user_seen_tips e contact_requests (empresa).
-    }).toEqual({ total: 188, empresa: 168, acesso: 8, sistema: 11, raiz: 1 });
+    }).toEqual({ total: 191, empresa: 170, acesso: 8, sistema: 12, raiz: 1 });
   });
 });
