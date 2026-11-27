@@ -38,7 +38,11 @@ export function UsageThermometer({ c }: { c: PlatformCompanyDto }) {
           {LEVEL[u.level].label} · {done} de 5
         </span>
         <span className="text-ink-muted">
-          Entrou em {u.activeDays} {u.activeDays === 1 ? 'dia' : 'dias'} diferentes
+          {u.activeDays === 0
+            ? 'Ainda não entrou'
+            : u.activeDays === 1
+              ? 'Entrou em 1 dia só'
+              : `Entrou em ${u.activeDays} dias diferentes`}
           {u.lastSeenAt ? ` · última vez ${shortDay(u.lastSeenAt)}` : ' · nunca voltou'}
         </span>
       </div>
