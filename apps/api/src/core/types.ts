@@ -86,6 +86,11 @@ export interface AppContext {
   prisma: PrismaClient;
   /** Banco do sistema: atravessa empresas. Só autenticação, fila de eventos e manutenção. */
   system: PrismaClient;
+  /**
+   * Conexão do dono das tabelas, sem a trava por empresa. Só para a cópia diária, a recuperação
+   * de uma empresa (item 52) e a exclusão das encerradas há 90 dias (company-copies.ts).
+   */
+  owner: PrismaClient;
   hashToken: (token: string) => string;
   hub: RealtimeHub;
   storage: FileStorage;

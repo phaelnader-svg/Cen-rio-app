@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
@@ -26,6 +29,7 @@ import {
 import { PINS, decideInspection, finish, post, prepareCompany, setClock } from './audit-helpers';
 import { coverLabor } from './labor-helpers';
 import { provarExclusaoDaEmpresa } from './excluir-empresa-helper';
+import { restoreCompanyCopy, takeCompanyCopy } from '../src/modules/platform/company-copies';
 
 /**
  * Fase 12 — fluxo completo de produção, ponta a ponta pela API real (sessões reais de painel,
@@ -445,5 +449,19 @@ describe('Fluxo completo de produção (32 passos)', () => {
     const log = await provarExclusaoDaEmpresa(1);
     expect(log).toMatch(/apagados de service_orders/);
     expect(log).toMatch(/apagados de production_task_events/);
+    // Item 52: a mesma empresa cheia de dados pode voltar inteira de uma cópia, sem nada solto.
+    const dir = mkdtempSync(join(tmpdir(), 'cenario-copia-'));
+    try {
+      const copy = await takeCompanyCopy(app.ctx.owner, dir, 1, 'diaria');
+      expect(copy.header.counts.production_task_events).toBeGreaterThan(0);
+      const r = await restoreCompanyCopy(app.ctx.owner, dir, 1, copy.id, async () => undefined);
+      expect(r.changes.every((c) => c.now === c.copy)).toBe(true);
+      const again = await takeCompanyCopy(app.ctx.owner, dir, 1, 'diaria');
+      for (const [t, n] of Object.entries(copy.header.counts))
+        if (!['sessions', 'idempotency_keys', 'domain_events', 'audit_logs'].includes(t))
+          expect(again.header.counts[t] ?? 0, t).toBe(n);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -113,6 +113,7 @@ import { serviceOrderSheetRoutes } from './modules/service-orders/sheet';
 import { companyRoutes } from './modules/company/routes';
 import { platformRoutes } from './modules/platform/routes';
 import { painelRoutes } from './modules/platform/painel';
+import { companyCopiesRoutes, companyCopiesRound } from './modules/platform/company-copies';
 import { sendBillingEmails, sendWeeklySummaries } from './modules/platform/billing-emails';
 import { billingRoutesPlatform } from './modules/billing/routes';
 import { accountRoutes } from './modules/account/routes';
@@ -200,6 +201,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     env,
     prisma,
     system,
+    owner: base,
     hashToken: createTokenHasher(env.TOKEN_HASH_SECRET),
     hub,
     storage: new LocalFileStorage(env.STORAGE_DIR),
@@ -274,6 +276,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(onboardingRoutes);
   await app.register(platformRoutes);
   await app.register(painelRoutes);
+  await app.register(companyCopiesRoutes);
   await app.register(platformAuthRoutes);
   await app.register(billingRoutesPlatform);
   await app.register(accountRoutes);
@@ -505,6 +508,17 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           void sendIdleNotices(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!).catch(
             (err: unknown) => app.log.warn({ err }, 'Falha no aviso de empresa parada'),
           );
+          // Etapa 6 (lista de 53): cópia diária de cada empresa (item 52) e limpeza das
+          // encerradas há 90 dias (aviso por e-mail 7 dias antes; planilhas no arquivo).
+          void companyCopiesRound({
+            owner: base,
+            system,
+            storageDir: env.STORAGE_DIR,
+            webUrl: env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!,
+            log: app.log,
+          })
+            .then((r) => (r.notices || r.purged) && ctx.mailer.kick())
+            .catch((err: unknown) => app.log.warn({ err }, 'Falha na cópia diária das empresas'));
           // Item 16 (lista de 53): aviso de chuva na véspera das entregas e retiradas.
           void forEachCompany(system, () => rainRound(prisma)).catch((err: unknown) =>
             app.log.warn({ err }, 'Falha ao olhar a previsão de chuva'),

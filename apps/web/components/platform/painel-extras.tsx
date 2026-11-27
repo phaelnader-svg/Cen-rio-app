@@ -351,7 +351,7 @@ export function CloseCompanyDialog({
       open
       onClose={onClose}
       title={`Encerrar ${company.tradeName}`}
-      description="Ninguém da empresa entra mais. Nada é apagado agora: os dados ficam guardados por 90 dias e dá para reabrir."
+      description="Ninguém da empresa entra mais. Nada é apagado agora: os dados ficam guardados por 90 dias e dá para reabrir. Depois disso, o sistema apaga sozinho e guarda as planilhas no arquivo."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -425,8 +425,8 @@ export function ClosedCompanyBar({ company }: { company: PlatformCompanyDto }) {
         Encerrada em {formatDay(company.closedAt)}
         {company.closeReason ? ` (${company.closeReason})` : ''}.{' '}
         {canPurge
-          ? 'Já passou dos 90 dias: pode ser apagada de vez.'
-          : `Dados guardados até ${formatDay(company.purgeAfter)}.`}
+          ? 'Passou dos 90 dias: o sistema apaga hoje e guarda as planilhas no arquivo.'
+          : `Dados guardados até ${formatDay(company.purgeAfter)}. Depois, o sistema apaga sozinho e guarda as planilhas no arquivo (aviso por e-mail 7 dias antes).`}
       </span>
       <a
         href={`/api/v1/platform/companies/${company.id}/export.zip`}

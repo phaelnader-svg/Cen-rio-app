@@ -57,6 +57,7 @@ import {
 } from '@/components/improvements/platform-extras';
 import { PrivacyRequestsInbox } from '@/components/improvements/privacy-extras';
 import { PixQr } from '@/components/billing/pix-proof';
+import { ArchivesCard, RecoverButton, RecoverCompanyDialog } from './company-copies';
 import { UsageThermometer } from './usage-thermometer';
 import {
   CloseCompanyDialog,
@@ -326,6 +327,7 @@ export function PlatformCompanies() {
   const [editing, setEditing] = useState<PlatformCompanyDto | null>(null);
   const [creating, setCreating] = useState(false);
   const [timeline, setTimeline] = useState<PlatformCompanyDto | null>(null);
+  const [recovering, setRecovering] = useState<PlatformCompanyDto | null>(null);
   const [closing, setClosing] = useState<PlatformCompanyDto | null>(null);
   const toggle = useMutation({
     mutationFn: (c: PlatformCompanyDto) =>
@@ -544,6 +546,7 @@ export function PlatformCompanies() {
                 >
                   Linha do tempo
                 </Button>
+                {!c.closedAt && <RecoverButton onClick={() => setRecovering(c)} />}
                 <SupportSessionButton
                   companyId={c.id}
                   tradeName={c.tradeName}
@@ -586,6 +589,10 @@ export function PlatformCompanies() {
       {creating && <CreateCompanyDialog onClose={() => setCreating(false)} />}
       {timeline && <TimelineDialog company={timeline} onClose={() => setTimeline(null)} />}
       {closing && <CloseCompanyDialog company={closing} onClose={() => setClosing(null)} />}
+      {recovering && (
+        <RecoverCompanyDialog company={recovering} onClose={() => setRecovering(null)} />
+      )}
+      <ArchivesCard />
     </>
   );
 }
