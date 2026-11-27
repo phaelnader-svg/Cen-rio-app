@@ -63,7 +63,7 @@ export const platformSettingsSchema = z.object({
     .trim()
     .transform((v) => v.replace(/\D/g, ''))
     .refine((v) => v === '' || (v.length >= 10 && v.length <= 13), {
-      message: 'WhatsApp com DDD, só números (ex.: 12 99652-0615).',
+      message: 'WhatsApp com DDD, só números (ex.: 12 98821-8472).',
     })
     .transform((v) => (v === '' ? null : v))
     .nullable()

@@ -40,7 +40,7 @@ const CTA_LABEL = 'Chamar no WhatsApp';
 /** Melhoria 145: "399,00" vira "399"; centavos diferentes de zero continuam. */
 const shortPrice = (v: string) => v.replace(/,00$/, '');
 
-/** 5512996520615 → (12) 99652-0615. */
+/** 5512988218472 → (12) 98821-8472. */
 export function formatPhone(n: string | null): string {
   const d = (n ?? '').replace(/^55/, '');
   return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d;
