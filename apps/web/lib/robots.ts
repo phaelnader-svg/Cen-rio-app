@@ -19,6 +19,7 @@ export const ROBOTS_ALLOW = [
   '/conheca',
   '/site/',
   '/blog',
+  '/calculadora',
   // O que os assistentes de IA leem: llms.txt, /.well-known (cartões do MCP, do A2A,
   // habilidades e catálogo de APIs), a ficha pública do produto e a descrição OpenAPI.
   '/llms.txt',

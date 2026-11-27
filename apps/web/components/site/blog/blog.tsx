@@ -18,7 +18,7 @@ import { Markdown } from './markdown';
 export const blogHref = (slug?: string) =>
   `/?utm_source=blog&utm_medium=artigo${slug ? `&utm_campaign=${slug}` : ''}`;
 
-function Shell({
+export function Shell({
   children,
   wa,
   origem,

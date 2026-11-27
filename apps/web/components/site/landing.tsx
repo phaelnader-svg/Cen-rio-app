@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import Link from 'next/link';
-import { ImageOff, LogIn, MessageCircle, UserPlus } from 'lucide-react';
+import { Calculator, ImageOff, LogIn, MessageCircle, UserPlus } from 'lucide-react';
 import { BrandMark } from '@/components/brand';
 import { jsonLd } from './agentes';
 import { artigosPublicados } from './blog/artigos';
@@ -17,6 +17,7 @@ import {
   type ButtonVariant,
 } from '@/components/ui/button-styles';
 import {
+  PHONE_SCREENS,
   SCREENS,
   SIGNUP_PATH,
   SITE,
@@ -188,6 +189,27 @@ function Screen({
   );
 }
 
+/** Item 27: tela do app do dono, no formato de um celular. */
+function Phone({ slot, className }: { slot: ScreenSlot; className?: string }) {
+  if (!slot.src) return null;
+  return (
+    <figure className={clsx('mx-auto w-full max-w-[260px]', className)}>
+      <div className="overflow-hidden rounded-[2rem] border-[6px] border-ink/90 bg-ink/90 shadow-lg">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={slot.src}
+          alt={slot.title}
+          width={slot.width}
+          height={slot.height}
+          loading="lazy"
+          className="block h-auto w-full rounded-[1.6rem]"
+        />
+      </div>
+      <figcaption className="mt-3 text-center text-sm text-ink-muted">{slot.title}.</figcaption>
+    </figure>
+  );
+}
+
 /** Largura e respiro comuns a todas as seções. */
 export const WRAP = 'mx-auto max-w-7xl px-4 sm:px-6 lg:px-8';
 
@@ -264,6 +286,39 @@ const WORKSHOP: string[] = [
   'Medidas, material e fotos do serviço na mesma tela.',
   'Iniciar, pausar e concluir com um toque.',
   'Avisar na hora que falta material para a tarefa.',
+];
+
+// Item 27: o app do dono e a IA (o que mais impressiona numa demonstração).
+const OWNER_APP: string[] = [
+  'Segure o microfone e pergunte: "tem retirada amanhã?", "quanto sobrou este mês?". A resposta vem com os dados da sua oficina.',
+  'Aprove orçamentos, veja a oficina e o dinheiro do dia, de onde estiver.',
+  'Agentes de IA que fazem tarefas de verdade: avisar o cliente que a peça ficou pronta, agendar a entrega, confirmar a retirada na véspera.',
+  'Você decide tarefa por tarefa: a IA só sugere, pede a sua aprovação ou faz sozinha.',
+];
+
+// Item 31: como é hoje e como fica, sem exagero.
+const BEFORE_AFTER: { hoje: string; cenario: string }[] = [
+  {
+    hoje: 'O orçamento sai na calculadora e vai por mensagem de texto.',
+    cenario:
+      'Material, mão de obra e taxa calculados. A proposta vai por link e o cliente aprova no celular.',
+  },
+  {
+    hoje: 'O prazo fica na cabeça de quem atendeu.',
+    cenario: 'O prazo sugerido sai da fila real da oficina, e o atraso aparece antes de acontecer.',
+  },
+  {
+    hoje: 'O tapeceiro pergunta o que fazer agora.',
+    cenario: 'Cada um abre o tablet e vê a próxima tarefa, na ordem da semana.',
+  },
+  {
+    hoje: 'A medida e a foto da peça ficam espalhadas no WhatsApp.',
+    cenario: 'Medidas, fotos e material ficam na OS, com o padrão da casa de cada etapa.',
+  },
+  {
+    hoje: 'No fim do mês, ninguém sabe ao certo quanto sobrou.',
+    cenario: 'Quanto entrou, quanto saiu e o que cada serviço deixou, no mesmo dia.',
+  },
 ];
 
 const OFFICE: string[] = [
@@ -378,7 +433,7 @@ export function Landing({
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-7 text-pretty text-ink-soft">
               Orçamentos, serviços, produção, prazos e entregas num sistema feito para a rotina de
-              uma tapeçaria.
+              uma tapeçaria. E um app no celular do dono, com IA que conversa e faz tarefas.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <SignupLink />
@@ -479,6 +534,66 @@ export function Landing({
               </p>
             </div>
           </div>
+        </section>
+
+        {/* Item 27: o app do dono e a IA, com as telas no formato do celular */}
+        <section className="border-t border-line bg-surface" data-testid="site-app-dono">
+          <div className={clsx(WRAP, 'py-16 sm:py-20')}>
+            <div className="grid items-start gap-10 lg:grid-cols-[5fr_7fr] lg:gap-14">
+              <div>
+                <SectionTitle>O dono acompanha tudo pelo celular</SectionTitle>
+                <p className="mt-4 text-[15px] leading-7 text-ink-soft sm:text-base">
+                  Um app só para o dono, que fica na tela do celular. Você conversa com o sistema
+                  como conversa com alguém da oficina.
+                </p>
+                <div className="mt-6">
+                  <Lines items={OWNER_APP} />
+                </div>
+                <p className="mt-4 text-sm leading-6 text-ink-muted">
+                  A conversa com o sistema e os agentes de IA vêm no plano Cenário Gestão + Firma
+                  Viva.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 sm:gap-6">
+                <Phone slot={PHONE_SCREENS.conversar} />
+                <Phone slot={PHONE_SCREENS.ia} className="mt-10" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Item 31: caderno e WhatsApp lado a lado com o Cenário */}
+        <section className={clsx(WRAP, 'py-16 sm:py-20')} data-testid="site-antes-depois">
+          <SectionTitle>Caderno e WhatsApp × Cenário</SectionTitle>
+          <div className="mt-8 overflow-hidden rounded-2xl border border-line">
+            <div className="grid grid-cols-2 border-b border-line bg-subtle/60 text-sm font-semibold">
+              <p className="px-4 py-3 text-ink-soft sm:px-6">Como é hoje</p>
+              <p className="border-l border-line px-4 py-3 text-brand-700 sm:px-6">Com o Cenário</p>
+            </div>
+            <dl className="divide-y divide-line">
+              {BEFORE_AFTER.map((row) => (
+                <div key={row.hoje} className="grid grid-cols-2">
+                  <dt className="px-4 py-4 text-[15px] leading-6 text-ink-soft sm:px-6">
+                    {row.hoje}
+                  </dt>
+                  <dd className="border-l border-line px-4 py-4 text-[15px] leading-6 text-ink sm:px-6">
+                    {row.cenario}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          <p className="mt-6 text-[15px] text-ink-soft">
+            Quer saber quanto cobrar por uma reforma?{' '}
+            <Link
+              href="/calculadora"
+              className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline"
+              data-testid="site-calculadora-link"
+            >
+              <Calculator className="size-4" aria-hidden />
+              Faça a conta na calculadora
+            </Link>
+          </p>
         </section>
 
         {/* Mensalidade: os dois planos (melhoria 70), com o período de teste */}
@@ -640,6 +755,9 @@ export function Landing({
                 <span className="sr-only"> (abre em outra aba)</span>
               </a>
             )}
+            <Link href="/calculadora" className="text-ink-soft hover:text-ink hover:underline">
+              Calculadora de preço
+            </Link>
             <a href="/entrar" className="text-ink-soft hover:text-ink hover:underline">
               Entrar
             </a>

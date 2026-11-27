@@ -81,13 +81,16 @@ describe('assistentes de IA: só informação pública', () => {
     expect(txt).toContain('Sitemap: https://cenariogestao.com.br/sitemap.xml');
   });
 
-  it('sitemap só com páginas públicas (raiz e blog), sem rascunhos em produção', () => {
+  it('sitemap só com páginas públicas (raiz, calculadora e blog), sem rascunhos em produção', () => {
     vi.stubEnv('NODE_ENV', 'production');
     try {
       const urls = sitemap().map((u) => u.url);
       expect(urls[0]).toBe('https://cenariogestao.com.br/');
       for (const u of urls)
-        expect(u).toMatch(/^https:\/\/cenariogestao\.com\.br\/(blog(\/[a-z0-9-]+)?)?$/);
+        expect(u).toMatch(
+          /^https:\/\/cenariogestao\.com\.br\/(blog(\/[a-z0-9-]+)?|calculadora)?$/,
+        );
+      expect(urls).toContain('https://cenariogestao.com.br/calculadora');
       expect(urls.some((u) => u.includes('exemplo-'))).toBe(false);
     } finally {
       vi.unstubAllEnvs();

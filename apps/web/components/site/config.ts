@@ -44,7 +44,7 @@ export const SITE = {
   analyticsId: null as string | null,
 };
 
-/** As quatro telas do sistema, capturadas com dados de exemplo (clientes, equipe e valores fictícios). */
+/** As telas do sistema no computador e no tablet, capturadas com dados de exemplo (clientes, equipe e valores fictícios). */
 export const SCREENS = {
   inicio: {
     key: 'inicio',
@@ -76,10 +76,38 @@ export const SCREENS = {
   },
 } satisfies Record<string, ScreenSlot>;
 
+/**
+ * Item 27 da lista de 53: o app do dono no celular. Os prints (como os de cima) são refeitos a cada
+ * versão pelo spec tests/e2e/specs/zz-site-prints.spec.ts (item 30).
+ */
+export const PHONE_SCREENS = {
+  conversar: {
+    key: 'dono-conversar',
+    title: 'Conversar: pergunte em voz alta e o sistema responde com os dados da oficina',
+    src: '/site/dono-conversar.webp',
+    width: 390,
+    height: 844,
+  },
+  hoje: {
+    key: 'dono-hoje',
+    title: 'Hoje: o que espera você e o que vem por aí',
+    src: '/site/dono-hoje.webp',
+    width: 390,
+    height: 844,
+  },
+  ia: {
+    key: 'dono-ia',
+    title: 'O que a IA pode fazer: você decide tarefa por tarefa',
+    src: '/site/dono-ia.webp',
+    width: 390,
+    height: 844,
+  },
+} satisfies Record<string, ScreenSlot>;
+
 /** Itens que impedem a ativação em produção. */
 export function pendingItems(
   site: typeof SITE = SITE,
-  screens: Record<string, ScreenSlot> = SCREENS,
+  screens: Record<string, ScreenSlot> = { ...SCREENS, ...PHONE_SCREENS },
 ): string[] {
   const out: string[] = [];
   if (!site.monthlyPrice) out.push('Valor da mensalidade');
