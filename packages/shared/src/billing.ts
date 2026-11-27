@@ -168,3 +168,49 @@ export interface SignupPricingDto {
   annualDiscountPct: number;
   plans: { key: PlanKey; label: string; description: string; monthlyCents: number }[];
 }
+
+/** Item 34 (lista de 53): quem assina o plano de R$ 399 experimenta o Firma Viva por 7 dias. */
+export const GAME_TRIAL_DAYS = 7;
+
+/**
+ * Teste do Firma Viva: INCLUIDO (o plano já tem o jogo), DISPONIVEL (pode começar), ATIVO (em
+ * teste até `endsAt`) ou ENCERRADO (já usou os 7 dias; oferece o plano com o Firma Viva).
+ */
+export type GameTrialStatus = 'INCLUIDO' | 'DISPONIVEL' | 'ATIVO' | 'ENCERRADO';
+
+export interface GameTrialDto {
+  status: GameTrialStatus;
+  endsAt: string | null;
+  /** Dias que faltam (arredondado para cima), só no ATIVO. */
+  daysLeft: number;
+  /** Mensalidade do plano com o Firma Viva (para a oferta). */
+  upgradeMonthlyCents: number;
+  /** WhatsApp da plataforma com o pedido de mudar de plano pronto (cobrança manual). */
+  whatsappUrl?: string | null;
+}
+
+export function gameTrialOf(
+  c: { plan: string; gameTrialEndsAt: Date | null },
+  now: Date,
+): GameTrialDto {
+  const upgradeMonthlyCents = PLANS.gestao_jogo.monthlyCents;
+  const plan = isPlanKey(c.plan) ? c.plan : 'gestao';
+  if (PLANS[plan].includesGame)
+    return { status: 'INCLUIDO', endsAt: null, daysLeft: 0, upgradeMonthlyCents };
+  if (!c.gameTrialEndsAt)
+    return { status: 'DISPONIVEL', endsAt: null, daysLeft: 0, upgradeMonthlyCents };
+  const left = c.gameTrialEndsAt.getTime() - now.getTime();
+  return left > 0
+    ? {
+        status: 'ATIVO',
+        endsAt: c.gameTrialEndsAt.toISOString(),
+        daysLeft: Math.ceil(left / 86_400_000),
+        upgradeMonthlyCents,
+      }
+    : {
+        status: 'ENCERRADO',
+        endsAt: c.gameTrialEndsAt.toISOString(),
+        daysLeft: 0,
+        upgradeMonthlyCents,
+      };
+}

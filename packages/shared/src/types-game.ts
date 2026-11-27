@@ -97,6 +97,8 @@ export interface GameEmployeeDto {
   employeeId: string;
   name: string;
   color: string;
+  /** Item 35 (lista de 53): foto de Funcionários (miniatura), para o crachá no jogo. */
+  photoUrl?: string | null;
   roles: string[];
   stationIds: string[];
   currentTask: (GameTaskRef & { osCode: string; itemCode: string | null }) | null;

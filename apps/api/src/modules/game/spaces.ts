@@ -821,6 +821,8 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
       color: e.color,
       jobTitle: e.jobTitle,
       roles: e.user.roles.map((r) => r.role.name),
+      // Item 35 (lista de 53): a foto de Funcionários vai para o crachá no jogo.
+      photoUrl: e.photoFileId ? `/api/files/${e.photoFileId}/miniatura` : null,
     }));
   });
 

@@ -80,6 +80,8 @@ import { officeRoutes, runOfficeRound } from './modules/game/office';
 import { quoteAgentRoutes } from './modules/game/office-quote';
 import { ownerChatRoutes } from './modules/game/owner-chat';
 import { ownerVoiceRoutes } from './modules/game/owner-voice';
+import { firmaTrialRoutes } from './modules/game/firma-trial';
+import { gameWallRoutes } from './modules/game/wall';
 import { receiptRoutes } from './modules/game/office-receipt';
 import { gameCommandRoutes } from './modules/game/command';
 import { gameSupplierRoutes } from './modules/game/suppliers';
@@ -300,6 +302,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(quoteAgentRoutes);
   await app.register(ownerChatRoutes);
   await app.register(ownerVoiceRoutes);
+  await app.register(firmaTrialRoutes);
+  await app.register(gameWallRoutes);
   await app.register(gameCommandRoutes);
   await app.register(gameSupplierRoutes);
   await app.register(connectionRoutes);

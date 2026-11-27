@@ -57,7 +57,7 @@ const OPEN_TASK: TaskStatus[] = [
 ];
 
 /** Quando a peça ficou pronta para entrega (último evento de etapa), por peça. */
-async function readySince(db: Tx | PrismaClient, itemIds: string[]) {
+export async function readySince(db: Tx | PrismaClient, itemIds: string[]) {
   const events = itemIds.length
     ? await db.qualityEvent.findMany({
         where: { serviceOrderItemId: { in: itemIds }, kind: 'ETAPA' },

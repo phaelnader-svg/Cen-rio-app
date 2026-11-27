@@ -541,6 +541,8 @@ model CompanySettings {
   /// Cortesia: nunca vence (Cenário Estofados e empresas liberadas pelo dono).
   billingCourtesy     Boolean   @default(false) @map("billing_courtesy")
   trialEndsAt         DateTime? @map("trial_ends_at") @db.Timestamptz(3)
+  /// Item 34 (lista de 53): teste de 7 dias do Firma Viva no plano de R$ 399 (uma vez por empresa).
+  gameTrialEndsAt     DateTime? @map("game_trial_ends_at") @db.Timestamptz(3)
   paidUntil           DateTime? @map("paid_until") @db.Timestamptz(3)
   asaasCustomerId     String?   @map("asaas_customer_id") @db.VarChar(60)
   asaasSubscriptionId String?   @map("asaas_subscription_id") @db.VarChar(60)

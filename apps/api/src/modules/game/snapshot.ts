@@ -242,6 +242,7 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
           employeeId: e.id,
           name: e.displayName,
           color: e.color,
+          photoUrl: e.photoFileId ? `/api/files/${e.photoFileId}/miniatura` : null,
           roles: e.user.roles.map((r) => r.role.name),
           stationIds,
           currentTask: curRef,

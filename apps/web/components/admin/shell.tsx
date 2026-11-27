@@ -2,7 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Gamepad2, KeyRound, LifeBuoy, Lock, LogOut, Menu, Trash2, X } from 'lucide-react';
+import { KeyRound, LifeBuoy, Lock, LogOut, Menu, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { screenKeyFor } from '@cenario/shared';
@@ -24,7 +24,7 @@ import { useThemeScope } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
-import { AMBIENTE_INTERATIVO_PATH } from '@/lib/ambiente-interativo';
+import { FirmaHeaderButton } from '@/components/billing/firma-trial';
 import { useMe, useModules } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
 import { UPCOMING, currentPage, familyTabs, visibleNav, visiblePages } from './nav';
@@ -299,21 +299,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   canNewService={perms.has('orcamentos.gerenciar')}
                 />
               )}
-              {/* Complemento "Ambiente interativo" (só o dono, quem configura a empresa): Firma Viva em outra guia. */}
-              {modules.ambiente_interativo && perms.has('empresa.configurar') && (
-                <a
-                  href={AMBIENTE_INTERATIVO_PATH}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-testid="ambiente-interativo"
-                  aria-label="Abrir o Firma Viva (abre em nova guia)"
-                  // Melhoria 159: nome do produto e o verde da marca; curto para caber no celular.
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-brand-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 focus-visible:ring-4 focus-visible:ring-brand-100"
-                >
-                  <Gamepad2 className="size-4" aria-hidden />
-                  <span className="hidden sm:inline">Firma Viva</span>
-                </a>
-              )}
+              {/* Complemento "Ambiente interativo" (só o dono, quem configura a empresa): Firma Viva em
+                  outra guia; no plano de R$ 399, o teste de 7 dias (item 34 da lista de 53). */}
+              <FirmaHeaderButton
+                gameOn={modules.ambiente_interativo}
+                enabled={!locked && perms.has('empresa.configurar')}
+              />
               {/* No celular, Novidades e Tema ficam no menu lateral (o topo não cabe em 390 px). */}
               <div className="hidden items-center gap-2 sm:flex">
                 <WhatsNew />

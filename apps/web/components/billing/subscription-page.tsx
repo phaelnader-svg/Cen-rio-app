@@ -14,6 +14,7 @@ import { formatCents, formatDay } from '@/lib/billing';
 import { useMe } from '@/lib/hooks';
 import { CancelSubscriptionCard } from '@/components/improvements/company-extras';
 import { ManualPaymentCard } from './billing-notice';
+import { FirmaTrialCard } from './firma-trial';
 
 const STATUS_TONE = {
   CORTESIA: 'info',
@@ -112,6 +113,9 @@ export function SubscriptionPage() {
           </a>
         )}
       </Card>
+
+      {/* Item 34 (lista de 53): teste de 7 dias do Firma Viva e a oferta do plano com o jogo. */}
+      <FirmaTrialCard enabled={canManage && s.status !== 'CORTESIA'} />
 
       {/* Cobrança feita pelo Cenário Gestão (sem pagamento online): PIX e WhatsApp. */}
       {s.status !== 'CORTESIA' && !s.canPayOnline && s.manual && canManage && (

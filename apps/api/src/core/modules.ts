@@ -6,8 +6,8 @@ import {
   type ModuleState,
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
-import { PLANS } from '@cenario/shared';
-import { planOf } from './billing';
+import { gameTrialOf } from '@cenario/shared';
+import { now as clockNow } from './clock';
 import { currentCompanyId } from './tenant';
 import { AppError } from '../lib/errors';
 
@@ -24,12 +24,16 @@ export async function moduleState(db: Tx | PrismaClient): Promise<ModuleState> {
     db.moduleSetting.findMany({ select: { key: true, enabled: true } }),
     companyId === null
       ? null
-      : db.companySettings.findUnique({ where: { id: companyId }, select: { plan: true } }),
+      : db.companySettings.findUnique({
+          where: { id: companyId },
+          select: { plan: true, gameTrialEndsAt: true },
+        }),
   ]);
   const state = resolveModules(rows);
   // Cobrança (2026-11-17): o ambiente interativo (jogo) vem do plano contratado, não de um
-  // interruptor que o gestor liga sozinho.
-  state.ambiente_interativo = company ? PLANS[planOf(company)].includesGame : false;
+  // interruptor que o gestor liga sozinho. Item 34 (lista de 53): ou do teste de 7 dias.
+  const trial = company ? gameTrialOf(company, clockNow()).status : null;
+  state.ambiente_interativo = trial === 'INCLUIDO' || trial === 'ATIVO';
   return state;
 }
 
