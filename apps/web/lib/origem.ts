@@ -1,7 +1,7 @@
 /**
  * Item 45 (2026-11-27): de onde veio quem cria a conta. Na primeira visita o site guarda a origem
  * (link com ?origem=, ?indicacao=, utm_source, anúncio do Google/Facebook ou o blog) e o Criar conta
- * e a demonstração mandam junto. Sem acesso ao armazenamento do navegador, vale só nesta visita.
+ * manda junto. Sem acesso ao armazenamento do navegador, vale só nesta visita.
  */
 const KEY = 'cenario:origem';
 let memory: string | null = null;

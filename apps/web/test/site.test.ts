@@ -133,20 +133,21 @@ describe('isolamento e promessas', () => {
   it('a tarja do topo leva ao WhatsApp, fecha no X e não volta para quem fechou', () => {
     const bar = src('components/site/top-bar.tsx');
     expect(bar).toMatch(/localStorage\.setItem\(KEY, '1'\)/);
-    expect(bar).toMatch(/Agende uma demonstração/);
+    expect(bar).toMatch(/Chame no WhatsApp/);
+    expect(bar).not.toMatch(/openDemo|demonstração/);
     expect(bar).not.toMatch(/Fale com quem usa/);
     expect(bar).not.toMatch(/sticky|fixed/);
-    expect(src('components/site/landing.tsx')).toMatch(/<TopBar href=\{demo\}/);
+    expect(src('components/site/landing.tsx')).toMatch(/<TopBar href=\{wa\}/);
   });
 
-  it('o botão Agendar demonstração fica flutuando no canto de baixo, à direita (item 44: abre a janela de marcar)', () => {
+  it('o botão Chamar no WhatsApp fica flutuando no canto de baixo, à direita, e abre direto o WhatsApp (28/11)', () => {
     const landing = src('components/site/landing.tsx');
-    const demoSrc = src('components/site/demo.tsx');
-    expect(demoSrc).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Agendar demonstração/);
-    expect(demoSrc).toMatch(/onClick=\{openDemo\}/);
-    expect(landing).toMatch(/const demo = demoWhatsappUrl\(/);
-    expect(landing).toMatch(/<DemoFloat\s+href=\{demo\}/);
-    expect(landing).toMatch(/<DemoDialogHost whatsappUrl=\{demo\}/);
+    const floatSrc = src('components/site/whatsapp-float.tsx');
+    expect(floatSrc).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Chamar no WhatsApp/);
+    expect(floatSrc).not.toMatch(/onClick/);
+    expect(landing).toMatch(/<WhatsappFloat href=\{wa\}/);
+    expect(landing).toMatch(/<RememberOrigin \/>/);
+    expect(landing).not.toMatch(/DemoDialogHost|demoWhatsappUrl|Agendar/);
     expect(landing).not.toMatch(/subtitle="Cenário Estofados"/);
   });
 });

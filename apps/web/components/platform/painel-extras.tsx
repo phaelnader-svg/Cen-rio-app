@@ -462,6 +462,9 @@ export function DemosCard() {
   });
   const items = q.data?.items ?? [];
   const pending = items.filter((i) => i.status === 'PENDENTE');
+  // 28/11/2026: o site não marca mais demonstração (o botão abre direto o WhatsApp). O cartão só
+  // aparece enquanto houver alguma marcada antes disso.
+  if (!q.isPending && pending.length === 0) return null;
   return (
     <Card className="mb-6 p-5" data-testid="demonstracoes">
       <h2 className="flex items-center gap-2 font-semibold">
@@ -471,11 +474,6 @@ export function DemosCard() {
       </h2>
       {q.isPending ? (
         <Spinner className="mt-3" />
-      ) : pending.length === 0 ? (
-        <p className="mt-2 text-sm text-ink-muted">
-          Nenhuma marcada. Quem toca em &ldquo;Agendar demonstração&rdquo; no site escolhe o dia e o
-          horário, e aparece aqui.
-        </p>
       ) : (
         <ul className="mt-3 divide-y divide-line">
           {pending.map((d) => (

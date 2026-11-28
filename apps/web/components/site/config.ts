@@ -195,15 +195,6 @@ export function whatsappMessage(site: typeof SITE = SITE, origem?: WhatsappOrige
     : 'Olá! Vim pelo blog. Quero conhecer o Cenário Gestão.';
 }
 
-/** Botão flutuante "Agendar demonstração" (26/11/2026): a mensagem já pede a demonstração. */
-export function demoWhatsappUrl(site: typeof SITE = SITE, origem?: WhatsappOrigem): string | null {
-  if (!site.whatsappNumber) return null;
-  const text = origem?.blog
-    ? `Olá! Vim pelo blog${origem.artigo ? `, do artigo "${origem.artigo}"` : ''}. Quero agendar uma demonstração do Cenário Gestão.`
-    : 'Olá! Quero agendar uma demonstração do Cenário Gestão.';
-  return `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(text)}`;
-}
-
 export function whatsappUrl(site: typeof SITE = SITE, origem?: WhatsappOrigem): string | null {
   if (!site.whatsappNumber) return null;
   return `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(whatsappMessage(site, origem))}`;

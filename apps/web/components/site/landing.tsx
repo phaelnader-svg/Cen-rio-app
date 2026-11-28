@@ -5,7 +5,8 @@ import { BrandMark } from '@/components/brand';
 import { jsonLd } from './agentes';
 import { artigosPublicados } from './blog/artigos';
 import { TopBar } from './top-bar';
-import { DemoDialogHost, DemoFloat } from './demo';
+import { RememberOrigin } from './remember-origin';
+import { WhatsappFloat } from './whatsapp-float';
 import { WebMcpTools } from './webmcp';
 import { LegalFooter, SiteConsent, SkipLink, type LegalMode } from './legal/legal';
 import { Alert, Badge, Card } from '@/components/ui/misc';
@@ -23,7 +24,6 @@ import {
   SITE,
   annualOffer,
   trialOffer,
-  demoWhatsappUrl,
   whatsappUrl,
   type ScreenSlot,
 } from './config';
@@ -380,10 +380,6 @@ export function Landing({
   blogOrigem?: { slug?: string; titulo?: string } | null;
 }) {
   const wa = whatsappUrl(SITE, blogOrigem ? { blog: true, artigo: blogOrigem.titulo } : undefined);
-  const demo = demoWhatsappUrl(
-    SITE,
-    blogOrigem ? { blog: true, artigo: blogOrigem.titulo } : undefined,
-  );
   const origem = blogOrigem ? (blogOrigem.slug ? `blog:${blogOrigem.slug}` : 'blog') : undefined;
   const price = SITE.monthlyPrice;
   const annual = annualOffer();
@@ -406,7 +402,7 @@ export function Landing({
         </div>
       )}
 
-      <TopBar href={demo} origem={origem} />
+      <TopBar href={wa} origem={origem} />
       <header className={clsx(WRAP, 'flex items-center justify-between gap-4 py-5')}>
         {/* Cenário Gestão e Cenário Estofados são empresas diferentes: o topo mostra só o sistema. */}
         <BrandMark />
@@ -713,8 +709,8 @@ export function Landing({
             <div>
               <SectionTitle>Quer ver o sistema funcionando?</SectionTitle>
               <p className="mt-2 text-[15px] text-ink-soft sm:text-base">
-                Crie a sua conta e comece agora. Se preferir ver antes, toque em Agendar
-                demonstração, no canto da tela, e a gente mostra pelo WhatsApp.
+                Crie a sua conta e comece agora. Se preferir conversar antes, toque em Chamar no
+                WhatsApp, no canto da tela, e a gente mostra.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -770,8 +766,8 @@ export function Landing({
         {/* Espaço para o botão flutuante não cobrir o fim do rodapé. */}
         <div className="h-20" aria-hidden />
       </footer>
-      <DemoFloat href={demo} origem={origem} />
-      <DemoDialogHost whatsappUrl={demo} />
+      <WhatsappFloat href={wa} origem={origem} />
+      <RememberOrigin />
     </div>
   );
 }

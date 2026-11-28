@@ -2,13 +2,12 @@
 
 import { ArrowRight, X } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
-import { openDemo } from './demo';
 
 const KEY = 'cenario-tarja-fechada-v1';
 
 /**
- * Tarja fina no topo da página de vendas (pedido do dono, 26/11/2026): convite para agendar
- * uma demonstração, pelo WhatsApp (o mesmo do botão do canto). Não fica o tempo todo: não acompanha a rolagem
+ * Tarja fina no topo da página de vendas (pedido do dono, 26/11/2026): convite para chamar no
+ * WhatsApp (o mesmo do botão do canto; desde 28/11/2026 abre direto a conversa). Não fica o tempo todo: não acompanha a rolagem
  * (some ao descer a página) e, fechada no X, não volta mais para aquele visitante.
  */
 const CHANGED = 'cenario-tarja-mudou';
@@ -55,11 +54,10 @@ export function TopBar({ href, origem }: { href: string | null; origem?: string 
             target="_blank"
             rel="noopener noreferrer"
             {...(origem ? { 'data-origem': origem } : {})}
-            onClick={openDemo}
             className="inline-flex items-center gap-1 font-semibold whitespace-nowrap underline underline-offset-4 hover:no-underline"
             data-testid="site-tarja-link"
           >
-            Agende uma demonstração <ArrowRight className="size-3.5" aria-hidden />
+            Chame no WhatsApp <ArrowRight className="size-3.5" aria-hidden />
           </a>
         </p>
         <button
